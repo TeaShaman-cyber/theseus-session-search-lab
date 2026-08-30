@@ -56,6 +56,20 @@ python3 -m session_search.search "workspace_shell" --db session-search.sqlite3 -
 
 Default search excludes hidden/system/thought-like content.
 
+### Multi-page capture
+
+The importer accepts a conversation-detail payload plus any captured paginated `conversation-messages` payloads from the same artifact. It preserves each payload page as provenance, merges messages deterministically, deduplicates identical repeated message IDs, rejects conflicting duplicate message IDs, and computes coverage from the oldest/newest observed page boundaries.
+
+```text
+PARTIAL_SESSION_SLICE
+  oldest observed page still has_previous_page=true
+
+COMPLETE_EXPOSED_CONVERSATION
+  oldest observed page has_previous_page=false
+```
+
+A sanitized real-world validation observed 13 captured payload pages and 2,034 unique message IDs with zero duplicate occurrences, reaching `COMPLETE_EXPOSED_CONVERSATION`. Raw session content and source identifiers remain private.
+
 ## Development roadmap
 
 1. Manual browser capture -> manual transport -> local import/search.

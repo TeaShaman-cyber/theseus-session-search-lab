@@ -1,0 +1,39 @@
+{
+  "schema": "theseus.session-search-public-receipt.v2",
+  "date": "2026-08-30",
+  "status": "PASS_SANITIZED_MULTIPAGE_IMPORT",
+  "implementation": {
+    "feature": "multi-page conversation import",
+    "runtime": "Python standard library plus SQLite FTS5",
+    "page_provenance": true,
+    "identical_duplicate_deduplication": true,
+    "conflicting_duplicate_rejected": true,
+    "coverage_states": [
+      "PARTIAL_SESSION_SLICE",
+      "COMPLETE_EXPOSED_CONVERSATION"
+    ]
+  },
+  "synthetic_verification": {
+    "multi_page_merge": "PASS",
+    "page_provenance": "PASS",
+    "complete_coverage_detection": "PASS",
+    "conflicting_duplicate_rejection": "PASS"
+  },
+  "sanitized_real_capture_observation": {
+    "adapter": "barn-doctor-export:v1",
+    "barn_doctor_version": "0.2.3",
+    "payload_pages": 13,
+    "message_occurrences": 2034,
+    "unique_message_ids": 2034,
+    "duplicate_message_occurrences": 0,
+    "coverage_state": "COMPLETE_EXPOSED_CONVERSATION",
+    "manifest_hashes": "PASS",
+    "collector_errors": 0
+  },
+  "privacy_boundary": [
+    "No raw session content is included.",
+    "No conversation identifier is included.",
+    "No Drive identifier or private source URL is included.",
+    "The public observation contains only aggregate counts and protocol-level facts."
+  ]
+}
