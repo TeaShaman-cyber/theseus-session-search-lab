@@ -1,0 +1,38 @@
+{
+  "schema": "theseus.session-search.public-research-receipt.v1",
+  "issue": 1,
+  "experiment": "001-manual-bridge",
+  "date": "2026-08-30",
+  "status": "VERIFIED_DEVELOPMENT_PROTOTYPE",
+  "public_scope": "SANITIZED_AGGREGATE_ONLY",
+  "observed_adapter": {
+    "format": "barn-doctor-export:v1",
+    "barn_doctor_version": "0.2.3",
+    "conversation_payload": "direct UTF-8 JSON"
+  },
+  "observed_corpus": {
+    "messages": 323,
+    "coverage": "PARTIAL_SESSION_SLICE",
+    "has_earlier_page": true
+  },
+  "projection": {
+    "engine": "SQLite FTS5",
+    "local_retrieval_verified": true,
+    "default_hidden_types_excluded": [
+      "system",
+      "thoughts",
+      "reasoning_recap",
+      "model_editable_context"
+    ]
+  },
+  "architecture_disposition": {
+    "marcopolo": "DEVELOPMENT_WORKBENCH_ONLY",
+    "google_drive": "CURRENT_TRANSPORT_ADAPTER",
+    "barn_doctor": "CURRENT_CAPTURE_ADAPTER",
+    "runtime_dependency_on_any_of_above": false
+  },
+  "privacy": {
+    "raw_session_content_published": false,
+    "private_source_identifiers_published": false
+  }
+}
