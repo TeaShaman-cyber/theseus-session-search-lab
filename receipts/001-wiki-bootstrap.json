@@ -1,0 +1,32 @@
+{
+  "schema": "theseus.session-search.wiki-bootstrap-receipt.v1",
+  "issue": 1,
+  "date": "2026-08-30",
+  "status": "WIKI_GIT_REMOTE_VERIFIED",
+  "manual_initialization": {
+    "first_page": "Home.md",
+    "observed_branch": "master",
+    "observed_sha": "951d87bc256881edef361c87a725e3d485379008"
+  },
+  "governed_seed": {
+    "branch": "master",
+    "commit": "fab484e1e22c982229d2aab2d80c933f4c5c1d93",
+    "wrapper": "/workspace/tools/wiki-push.sh",
+    "pages": [
+      "Home.md",
+      "Terminology.md",
+      "Architecture.md",
+      "Capture-Adapters.md",
+      "Session-Artifact-Contract.md",
+      "Session-Search-Contract.md",
+      "Experiment-Traceability.md",
+      "Research-Lifecycle.md"
+    ]
+  },
+  "verification": {
+    "wrapper_remote_sha_readback": true,
+    "independent_clone_sha_match": true,
+    "independent_content_invariants_observed": true
+  },
+  "boundary": "Wiki is a human navigation layer. The main repository remains canonical for contracts, experiments, receipts, tests, and source history."
+}

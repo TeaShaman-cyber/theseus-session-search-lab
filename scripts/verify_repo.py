@@ -16,6 +16,7 @@ REQUIRED = [
     'docs/wiki-bootstrap.md',
     'experiments/001-manual-bridge/README.md',
     'receipts/001-development-prototype.public.json',
+    'receipts/001-wiki-bootstrap.json',
     'tests/test_bootstrap_contract.py',
     '.github/workflows/docs-check.yml',
 ]
@@ -26,7 +27,8 @@ for rel in REQUIRED:
 readme = (ROOT/'README.md').read_text()
 for marker in [
     'MarcoPolo is not a runtime dependency',
-    'Wiki: ENABLED / MANUAL_FIRST_PAGE_REQUIRED',
+    'Wiki: WIKI_GIT_REMOTE_VERIFIED',
+    'fab484e1e22c982229d2aab2d80c933f4c5c1d93',
     'Session history is evidence, not semantic memory',
     'https://github.com/TeaShaman-cyber/theseus-research',
 ]:
@@ -34,6 +36,7 @@ for marker in [
         raise SystemExit(f'VERIFY FAIL README marker: {marker}')
 
 json.loads((ROOT/'receipts/001-development-prototype.public.json').read_text())
+json.loads((ROOT/'receipts/001-wiki-bootstrap.json').read_text())
 tracked = subprocess.check_output(['git','ls-files'], cwd=ROOT, text=True).splitlines()
 for p in tracked:
     lower=p.lower()

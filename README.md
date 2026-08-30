@@ -67,10 +67,19 @@ Default search excludes hidden/system/thought-like content.
 ## Wiki bootstrap
 
 ```text
-Wiki: ENABLED / MANUAL_FIRST_PAGE_REQUIRED
+Wiki: WIKI_GIT_REMOTE_VERIFIED
 ```
 
-GitHub does not create the `.wiki.git` remote merely because Wiki is enabled. A human must open the Wiki tab and **Create the first page** once. After that one-time bootstrap, Wiki maintenance is normal governed Git work with remote SHA readback.
+The one-time manual bootstrap is complete. The first `Home` page created the Wiki Git remote; the research navigation was then seeded through the governed Wiki wrapper.
+
+Verified Wiki seed:
+
+```text
+branch: master
+commit: fab484e1e22c982229d2aab2d80c933f4c5c1d93
+```
+
+The Wiki now contains `Home`, `Terminology`, `Architecture`, `Capture-Adapters`, `Session-Artifact-Contract`, `Session-Search-Contract`, `Experiment-Traceability`, and `Research-Lifecycle`. Wiki remains a human navigation layer; canonical contracts, experiments, receipts, tests, and source history remain in the main repository.
 
 ## Verification
 

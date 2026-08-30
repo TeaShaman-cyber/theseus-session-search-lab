@@ -32,10 +32,12 @@ def synthetic_export(path: pathlib.Path) -> None:
 
 
 class BootstrapContract(unittest.TestCase):
-    def test_readme_declares_portable_runtime_and_manual_wiki_boundary(self):
+    def test_readme_declares_portable_runtime_and_verified_wiki_boundary(self):
         text = (ROOT / 'README.md').read_text() if (ROOT / 'README.md').exists() else ''
         self.assertIn('MarcoPolo is not a runtime dependency', text)
-        self.assertIn('Wiki: ENABLED / MANUAL_FIRST_PAGE_REQUIRED', text)
+        self.assertIn('Wiki: WIKI_GIT_REMOTE_VERIFIED', text)
+        self.assertIn('fab484e1e22c982229d2aab2d80c933f4c5c1d93', text)
+        self.assertTrue((ROOT / 'receipts/001-wiki-bootstrap.json').is_file())
         self.assertIn('Session history is evidence, not semantic memory', text)
 
     def test_portable_import_and_search_work_without_marcopolo(self):
