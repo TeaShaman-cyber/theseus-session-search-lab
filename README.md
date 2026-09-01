@@ -2,7 +2,7 @@
 
 Theseus Session Search Lab is a public research line under the [Theseus public-interest research program](https://github.com/TeaShaman-cyber/theseus-research). This repository does not define the Theseus program contract.
 
-**Session history is evidence, not semantic memory. Search indexes are derived projections, not authority.**
+**Session history is evidence, not semantic memory. Search indexes are projections, not authority.**
 
 The lab studies portable, verifiable historical session retrieval for assistants while keeping capture sources, transports, browsers, and development environments replaceable.
 
@@ -33,6 +33,73 @@ The first development prototype used Barn Doctor, Google Drive, and MarcoPolo. *
 `Issue -> experiment -> commit/PR -> execution -> evidence -> verification -> receipt -> disposition`
 
 See [Architecture](docs/architecture.md), [Capture adapter contract](docs/capture-adapter-contract.md), and [Research lifecycle](docs/research-lifecycle.md).
+
+## Cumulative multi-session corpus
+
+The normal workflow can accumulate many independent chats and repeated captures into one searchable corpus. Portable capture artifacts remain durable private evidence; accepted-artifact ledger membership is the durable corpus boundary; `corpus.sqlite3` and FTS are regeneratable projections.
+
+Configure the private corpus location once. POSIX shell:
+
+```bash
+export SESSION_SEARCH_CORPUS=/private/path/session-search-corpus
+```
+
+PowerShell:
+
+```powershell
+$env:SESSION_SEARCH_CORPUS = 'C:\private\session-search-corpus'
+```
+
+Then ingest one or more verified portable captures without database surgery:
+
+```bash
+python3 -m session_search.corpus ingest capture-a.zip capture-b.zip
+```
+
+Search all accepted sessions together:
+
+```bash
+python3 -m session_search.search "previous decision"
+```
+
+Each corpus search hit carries session identity, title, coverage state, message time, role, search class, and score so the assistant can distinguish relevance from evidence completeness. Restrict a query when needed:
+
+```bash
+python3 -m session_search.search "previous decision" --session <stable-session-id>
+```
+
+Verify durable membership, immutable artifact bytes, relational/FTS invariants, and coverage summaries:
+
+```bash
+python3 -m session_search.corpus verify
+```
+
+Rebuild the disposable SQLite/FTS projection only from accepted-ledger artifacts:
+
+```bash
+python3 -m session_search.corpus rebuild
+```
+
+Inspect an active writer lock without breaking it:
+
+```bash
+python3 -m session_search.corpus lock-status
+```
+
+An explicit `--corpus PATH` always overrides `SESSION_SEARCH_CORPUS`. There is no hidden default corpus directory. `ingest` and `rebuild` serialize through one corpus mutation lock; search remains read-only.
+
+Real corpus directories contain raw private evidence and receipts and must never be committed to this public repository.
+
+### Legacy scratch projection
+
+The original one-artifact path remains available for debugging, portable reproduction, and scratch projections:
+
+```bash
+python3 -m session_search.importer capture.zip --db session-search.sqlite3
+python3 -m session_search.search "previous decision" --db session-search.sqlite3
+```
+
+`--db` treats that SQLite file as a legacy/scratch projection. It does not opt the file into cumulative corpus authority.
 
 ## Portable prototype
 
