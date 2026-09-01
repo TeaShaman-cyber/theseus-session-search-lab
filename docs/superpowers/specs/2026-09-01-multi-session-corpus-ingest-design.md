@@ -585,28 +585,28 @@ The implementation must test:
 
 ### 16.2 Private real-world acceptance cases
 
-No raw content or private identifiers are committed, but the private verification suite currently has three distinct evidence shapes:
+No raw content or private identifiers are committed, but the private verification suite currently has three artifact shapes resolving to two stable sessions:
 
 ```text
-case A: complete exposed session, 2034 messages
-case B: distinct partial session slice, 434 messages
+case A: complete exposed capture, 2034 messages
+case B: later partial capture of the same stable session as A, 434 novel messages
 case C: distinct complete exposed session, 1321 messages across 10 payload pages
 ```
 
-Observed overlap between A/B/C message-ID sets is zero.
+Observed overlap between A/B/C message-ID sets is zero. Live stable-session readback nevertheless proves A and B belong to the same session. Therefore non-overlapping message-ID sets are **not** evidence that two artifacts represent different sessions; adapter-resolved stable session identity remains authoritative for corpus grouping.
 
-Initial end-to-end acceptance target after implementation:
+Verified end-to-end acceptance target for these artifacts:
 
 ```text
-3 sessions
-3789 canonical messages before any within-session repeated-capture dedup
-all three searchable from one corpus
-case A coverage preserved complete
-case B preserved partial
-case C preserved complete
+2 sessions from 3 accepted artifacts
+3789 canonical messages
+case A + B aggregate coverage = PARTIAL_SESSION_SLICE
+  because B contributes later novel messages outside A's earlier complete capture
+case C coverage = COMPLETE_EXPOSED_CONVERSATION
+all accepted evidence searchable from one corpus
 SQLite integrity = ok
 artifact provenance retained
-rebuild reproduces corpus invariants
+rebuild reproduces corpus invariants and search canary counts
 ```
 
 The count is an acceptance fixture for these verified private artifacts, not a public dataset contract.
