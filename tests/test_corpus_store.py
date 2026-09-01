@@ -6,6 +6,7 @@ import sqlite3
 import zipfile
 import tempfile
 import unittest
+from unittest import mock
 
 from session_search.corpus_store import (
     CorpusMutationLock,
@@ -13,6 +14,11 @@ from session_search.corpus_store import (
     accepted_entry_path,
     init_corpus_db,
     ingest_artifact,
+    read_accepted_ledger,
+    read_lock_status,
+    rebuild_corpus,
+    semantic_snapshot,
+    verify_corpus,
     resolve_corpus_root,
     write_accepted_entry,
 )
@@ -294,6 +300,101 @@ class CorpusIngestTest(unittest.TestCase):
             self.assertTrue((paths.artifacts_sha256 / f"{bad_sha}.zip").exists())
             self.assertFalse(accepted_entry_path(paths, bad_sha).exists())
             self.assertEqual(_db_scalar(corpus, "SELECT count(*) FROM artifacts WHERE sha256=?", (bad_sha,)), 0)
+
+
+class CorpusVerifyRebuildTest(unittest.TestCase):
+    def test_verify_detects_tampered_accepted_artifact(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus"
+            capture = _write_capture(root / "a.zip", "session-a", [_message("m1", "alpha", 1.0)], complete=True)
+            result = ingest_artifact(capture, corpus)
+            blob = CorpusPaths.from_root(corpus).artifacts_sha256 / f"{result['artifact_sha256']}.zip"
+            blob.write_bytes(b"tampered")
+            self.assertEqual(verify_corpus(corpus)["status"], "FAILED_INTEGRITY")
+
+    def test_verify_detects_ledger_projection_membership_disagreement(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus"
+            capture = _write_capture(root / "a.zip", "session-a", [_message("m1", "alpha", 1.0)], complete=True)
+            result = ingest_artifact(capture, corpus)
+            accepted_entry_path(CorpusPaths.from_root(corpus), result["artifact_sha256"]).unlink()
+            self.assertEqual(verify_corpus(corpus)["status"], "RECONCILIATION_REQUIRED")
+
+    def test_blob_without_accepted_ledger_is_excluded_from_rebuild(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus"
+            accepted = _write_capture(root / "accepted.zip", "session-a", [_message("m1", "alpha", 1.0)], complete=True)
+            orphan = _write_capture(root / "orphan.zip", "session-b", [_message("m2", "orphan", 1.0)], complete=True)
+            ingest_artifact(accepted, corpus)
+            paths = CorpusPaths.from_root(corpus)
+            orphan_sha = hashlib.sha256(orphan.read_bytes()).hexdigest()
+            (paths.artifacts_sha256 / f"{orphan_sha}.zip").write_bytes(orphan.read_bytes())
+            result = rebuild_corpus(corpus)
+            self.assertEqual(result["status"], "REBUILT")
+            self.assertEqual(_db_scalar(corpus, "SELECT count(*) FROM artifacts"), 1)
+            self.assertEqual(_db_scalar(corpus, "SELECT count(*) FROM sessions"), 1)
+
+    def test_rebuild_reproduces_semantic_and_provenance_invariants(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus"
+            captures = [
+                _write_capture(root / "a.zip", "session-a", [_message("m1", "alpha", 1.0)], complete=True, title="A"),
+                _write_capture(root / "b.zip", "session-b", [_message("m1", "beta", 2.0)], complete=False, title="B"),
+                _write_capture(root / "c.zip", "session-a", [_message("m1", "alpha", 1.0), _message("m2", "gamma", 3.0)], complete=True, title="A newer"),
+            ]
+            for capture in captures:
+                ingest_artifact(capture, corpus)
+            before = semantic_snapshot(corpus)
+            result = rebuild_corpus(corpus)
+            self.assertEqual(result["status"], "REBUILT")
+            self.assertEqual(semantic_snapshot(corpus), before)
+            self.assertEqual(verify_corpus(corpus)["status"], "VERIFIED")
+
+    def test_rebuild_sorts_accepted_membership_independent_of_discovery_order(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus"
+            captures = [
+                _write_capture(root / "a.zip", "session-a", [_message("m1", "alpha", 1.0)], complete=True),
+                _write_capture(root / "b.zip", "session-b", [_message("m2", "beta", 2.0)], complete=True),
+            ]
+            for capture in captures:
+                ingest_artifact(capture, corpus)
+            expected = semantic_snapshot(corpus)
+            ledger = read_accepted_ledger(CorpusPaths.from_root(corpus))
+            reversed_ledger = dict(reversed(list(ledger.items())))
+            with mock.patch("session_search.corpus_store.read_accepted_ledger", return_value=reversed_ledger):
+                rebuild_corpus(corpus)
+            self.assertEqual(semantic_snapshot(corpus), expected)
+
+    def test_rebuild_failure_keeps_old_projection_untouched(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus"
+            capture = _write_capture(root / "a.zip", "session-a", [_message("m1", "alpha", 1.0)], complete=True)
+            result = ingest_artifact(capture, corpus)
+            paths = CorpusPaths.from_root(corpus)
+            before = hashlib.sha256(paths.db.read_bytes()).hexdigest()
+            blob = paths.artifacts_sha256 / f"{result['artifact_sha256']}.zip"
+            blob.write_bytes(b"tampered")
+            with self.assertRaisesRegex(RuntimeError, "FAILED_INTEGRITY"):
+                rebuild_corpus(corpus)
+            after = hashlib.sha256(paths.db.read_bytes()).hexdigest()
+            self.assertEqual(after, before)
+
+    def test_lock_status_reports_owner_without_breaking_lock(self):
+        with tempfile.TemporaryDirectory() as td:
+            paths = CorpusPaths.from_root(pathlib.Path(td))
+            paths.ensure_layout()
+            with CorpusMutationLock(paths, "ingest"):
+                status = read_lock_status(paths)
+                self.assertEqual(status["operation"], "ingest")
+                self.assertTrue(paths.mutation_lock.exists())
+            self.assertFalse(paths.mutation_lock.exists())
 
 
 if __name__ == "__main__":

@@ -571,7 +571,7 @@ def _recompute_ordinals(conn: sqlite3.Connection, session_id: str) -> None:
         conn.execute("UPDATE messages SET ordinal=? WHERE row_id=?", (ordinal, int(row["row_id"])))
 
 
-def _recompute_session_metadata(conn: sqlite3.Connection, session_id: str) -> None:
+def _session_metadata_values(conn: sqlite3.Connection, session_id: str) -> dict:
     artifacts = conn.execute(
         "SELECT * FROM artifacts WHERE session_id=?",
         (session_id,),
@@ -609,18 +609,14 @@ def _recompute_session_metadata(conn: sqlite3.Connection, session_id: str) -> No
         (session_id,),
     ).fetchone()
     accepted_times = [str(row["accepted_at"]) for row in artifacts]
-    title_source = sorted(
-        artifacts,
-        key=lambda row: (
-            0 if row["observed_max_time"] is None else 1,
-            float(row["observed_max_time"] or 0.0),
-            # reverse time below, sha handled separately
-        ),
-        reverse=True,
-    )
-    if title_source:
-        best_time = title_source[0]["observed_max_time"]
-        candidates = [row for row in artifacts if row["observed_max_time"] == best_time]
+    if artifacts:
+        timed = [row for row in artifacts if row["observed_max_time"] is not None]
+        if timed:
+            best_time = max(float(row["observed_max_time"]) for row in timed)
+            candidates = [row for row in timed if float(row["observed_max_time"]) == best_time]
+        else:
+            best_time = None
+            candidates = list(artifacts)
         chosen = sorted(candidates, key=lambda row: str(row["sha256"]))[0]
         title = str(chosen["observed_title"] or "")
         title_time = chosen["observed_max_time"]
@@ -629,6 +625,21 @@ def _recompute_session_metadata(conn: sqlite3.Connection, session_id: str) -> No
         title = ""
         title_time = None
         title_sha = None
+    return {
+        "title": title,
+        "coverage_state": coverage,
+        "coverage_reason": reason,
+        "first_message_time": bounds[0],
+        "last_message_time": bounds[1],
+        "first_accepted_at": min(accepted_times) if accepted_times else None,
+        "last_accepted_at": max(accepted_times) if accepted_times else None,
+        "title_source_time": title_time,
+        "title_source_artifact_sha256": title_sha,
+    }
+
+
+def _recompute_session_metadata(conn: sqlite3.Connection, session_id: str) -> None:
+    values = _session_metadata_values(conn, session_id)
     conn.execute(
         """
         UPDATE sessions SET
@@ -637,19 +648,18 @@ def _recompute_session_metadata(conn: sqlite3.Connection, session_id: str) -> No
         WHERE session_id=?
         """,
         (
-            title,
-            coverage,
-            reason,
-            bounds[0],
-            bounds[1],
-            min(accepted_times) if accepted_times else None,
-            max(accepted_times) if accepted_times else None,
-            title_time,
-            title_sha,
+            values["title"],
+            values["coverage_state"],
+            values["coverage_reason"],
+            values["first_message_time"],
+            values["last_message_time"],
+            values["first_accepted_at"],
+            values["last_accepted_at"],
+            values["title_source_time"],
+            values["title_source_artifact_sha256"],
             session_id,
         ),
     )
-
 
 def apply_normalized_artifact_to_projection(
     conn: sqlite3.Connection,
@@ -811,3 +821,267 @@ def ingest_many(
         "status": "COMPLETE" if all(r.get("status") != "FAILED" for r in results) else "DEGRADED",
         "results": results,
     }
+
+
+
+def read_lock_status(paths: CorpusPaths) -> dict:
+    if not paths.mutation_lock.exists():
+        return {"locked": False}
+    owner_path = paths.mutation_lock / "owner.json"
+    if not owner_path.exists():
+        return {"locked": True, "owner_state": "MISSING"}
+    try:
+        owner = json.loads(owner_path.read_text())
+    except Exception as exc:
+        return {"locked": True, "owner_state": "INVALID", "error": str(exc)}
+    return {"locked": True, "owner_state": "PRESENT", **owner}
+
+
+def _open_existing_projection(db_path: pathlib.Path) -> sqlite3.Connection | None:
+    if not db_path.exists():
+        return None
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys=ON")
+    return conn
+
+
+def _verify_projection(paths: CorpusPaths, db_path: pathlib.Path) -> dict:
+    ledger = read_accepted_ledger(paths)
+    for sha, entry in ledger.items():
+        blob = _artifact_blob_path(paths, sha)
+        if not blob.exists():
+            return {"status": "FAILED_INTEGRITY", "reason": "accepted artifact missing", "artifact_sha256": sha}
+        if blob.stat().st_size != int(entry["size_bytes"]) or file_sha256(blob) != sha:
+            return {"status": "FAILED_INTEGRITY", "reason": "accepted artifact hash/size mismatch", "artifact_sha256": sha}
+
+    conn = _open_existing_projection(db_path)
+    if conn is None:
+        if ledger:
+            return {"status": "RECONCILIATION_REQUIRED", "reason": "projection missing"}
+        return {"status": "RECONCILIATION_REQUIRED", "reason": "corpus projection not initialized"}
+    try:
+        try:
+            schema_row = conn.execute("SELECT value FROM corpus_meta WHERE key='schema_version'").fetchone()
+        except sqlite3.Error as exc:
+            return {"status": "RECONCILIATION_REQUIRED", "reason": f"projection schema unreadable: {exc}"}
+        if schema_row is None or schema_row[0] != CORPUS_SCHEMA_VERSION:
+            return {"status": "RECONCILIATION_REQUIRED", "reason": "projection schema mismatch"}
+        integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
+        if integrity != "ok":
+            return {"status": "FAILED_INTEGRITY", "reason": "sqlite integrity failure", "sqlite_integrity": integrity}
+        db_rows = conn.execute("SELECT * FROM artifacts ORDER BY sha256").fetchall()
+        db_map = {str(row["sha256"]): row for row in db_rows}
+        if set(db_map) != set(ledger):
+            return {
+                "status": "RECONCILIATION_REQUIRED",
+                "reason": "accepted ledger/projection membership disagreement",
+                "ledger_members": len(ledger),
+                "projection_members": len(db_map),
+            }
+        for sha, entry in ledger.items():
+            row = db_map[sha]
+            if row["ledger_sha256"] != accepted_entry_digest(entry):
+                return {"status": "RECONCILIATION_REQUIRED", "reason": "ledger digest mismatch", "artifact_sha256": sha}
+            if str(row["session_id"]) != str(entry["session_id"]):
+                return {"status": "RECONCILIATION_REQUIRED", "reason": "session identity mismatch", "artifact_sha256": sha}
+            if int(row["size_bytes"]) != int(entry["size_bytes"]):
+                return {"status": "RECONCILIATION_REQUIRED", "reason": "artifact size metadata mismatch", "artifact_sha256": sha}
+            if str(row["accepted_at"]) != str(entry["accepted_at"]):
+                return {"status": "RECONCILIATION_REQUIRED", "reason": "accepted timestamp mismatch", "artifact_sha256": sha}
+        fk = conn.execute("PRAGMA foreign_key_check").fetchall()
+        if fk:
+            return {"status": "FAILED_INTEGRITY", "reason": "foreign key check failed", "rows": len(fk)}
+        dup = conn.execute(
+            """
+            SELECT count(*) FROM (
+                SELECT session_id,message_id,count(*) AS n
+                FROM messages WHERE message_id IS NOT NULL
+                GROUP BY session_id,message_id HAVING n>1
+            )
+            """
+        ).fetchone()[0]
+        if int(dup) != 0:
+            return {"status": "FAILED_INTEGRITY", "reason": "identified message uniqueness failure"}
+        searchable = int(
+            conn.execute(
+                "SELECT count(*) FROM messages WHERE text<>'' AND search_class<>'hidden'"
+            ).fetchone()[0]
+        )
+        fts_rows = int(conn.execute("SELECT count(*) FROM messages_fts").fetchone()[0])
+        if searchable != fts_rows:
+            return {
+                "status": "FAILED_INTEGRITY",
+                "reason": "fts row coverage mismatch",
+                "searchable_messages": searchable,
+                "fts_rows": fts_rows,
+            }
+        for session in conn.execute("SELECT * FROM sessions ORDER BY session_id").fetchall():
+            expected = _session_metadata_values(conn, str(session["session_id"]))
+            for key, value in expected.items():
+                if session[key] != value:
+                    return {
+                        "status": "RECONCILIATION_REQUIRED",
+                        "reason": f"session metadata mismatch: {key}",
+                        "session_id": str(session["session_id"]),
+                    }
+        return {
+            "status": "VERIFIED",
+            "sqlite_integrity": integrity,
+            "sessions": int(conn.execute("SELECT count(*) FROM sessions").fetchone()[0]),
+            "artifacts": len(db_rows),
+            "messages": int(conn.execute("SELECT count(*) FROM messages").fetchone()[0]),
+            "payload_pages": int(conn.execute("SELECT count(*) FROM payload_pages").fetchone()[0]),
+            "message_sources": int(conn.execute("SELECT count(*) FROM message_sources").fetchone()[0]),
+            "fts_rows": fts_rows,
+        }
+    finally:
+        conn.close()
+
+
+def verify_corpus(corpus_root: pathlib.Path) -> dict:
+    paths = CorpusPaths.from_root(pathlib.Path(corpus_root))
+    paths.ensure_layout()
+    return _verify_projection(paths, paths.db)
+
+
+def semantic_snapshot(corpus_root: pathlib.Path, db_path: pathlib.Path | None = None) -> dict:
+    paths = CorpusPaths.from_root(pathlib.Path(corpus_root))
+    target = paths.db if db_path is None else pathlib.Path(db_path)
+    conn = _open_existing_projection(target)
+    if conn is None:
+        raise RuntimeError("projection missing")
+    try:
+        sessions = [tuple(row) for row in conn.execute(
+            """
+            SELECT session_id,title,coverage_state,coverage_reason,first_message_time,last_message_time,
+                   first_accepted_at,last_accepted_at,title_source_time,title_source_artifact_sha256
+            FROM sessions ORDER BY session_id
+            """
+        ).fetchall()]
+        artifacts = [tuple(row) for row in conn.execute(
+            """
+            SELECT sha256,size_bytes,source_schema,source_adapter,observed_title,accepted_at,
+                   coverage_state,session_id,ledger_sha256,observed_min_time,observed_max_time,
+                   observed_message_count
+            FROM artifacts ORDER BY sha256
+            """
+        ).fetchall()]
+        pages = [tuple(row) for row in conn.execute(
+            """
+            SELECT a.sha256,p.session_id,p.capture_sequence,p.member_name,p.start_cursor,p.end_cursor,
+                   p.has_previous_page,p.has_next_page,p.message_count,p.min_create_time,p.max_create_time
+            FROM payload_pages p JOIN artifacts a ON a.artifact_id=p.artifact_id
+            ORDER BY a.sha256,p.capture_sequence,p.member_name
+            """
+        ).fetchall()]
+        messages = [tuple(row) for row in conn.execute(
+            """
+            SELECT session_id,ordinal,message_id,local_identity,canonical_message_sha256,
+                   role,content_type,search_class,create_time,text
+            FROM messages ORDER BY session_id,ordinal,local_identity
+            """
+        ).fetchall()]
+        sources = [tuple(row) for row in conn.execute(
+            """
+            SELECT m.session_id,m.local_identity,a.sha256,p.member_name,ms.page_position,
+                   ms.source_message_id,ms.source_object_sha256
+            FROM message_sources ms
+            JOIN messages m ON m.row_id=ms.message_row_id
+            JOIN payload_pages p ON p.page_id=ms.page_id
+            JOIN artifacts a ON a.artifact_id=p.artifact_id
+            ORDER BY m.session_id,m.local_identity,a.sha256,p.member_name,ms.page_position
+            """
+        ).fetchall()]
+        return {
+            "sessions": sessions,
+            "artifacts": artifacts,
+            "pages": pages,
+            "messages": messages,
+            "sources": sources,
+            "fts_rows": int(conn.execute("SELECT count(*) FROM messages_fts").fetchone()[0]),
+        }
+    finally:
+        conn.close()
+
+
+def _write_rebuild_receipt(paths: CorpusPaths, result: dict) -> pathlib.Path:
+    paths.ensure_layout()
+    receipt = {
+        "schema": "theseus.session-search-corpus-rebuild-receipt.v1",
+        "recorded_at": _utc_now(),
+        **result,
+    }
+    target = paths.rebuild_receipts / f"rebuild-{uuid.uuid4().hex}.json"
+    temp = paths.staging / f"rebuild-receipt-{uuid.uuid4().hex}.tmp"
+    try:
+        with temp.open("xb") as fh:
+            fh.write(_stable_json_bytes(receipt))
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(temp, target)
+        return target
+    finally:
+        if temp.exists():
+            temp.unlink()
+
+
+def rebuild_corpus(corpus_root: pathlib.Path) -> dict:
+    paths = CorpusPaths.from_root(pathlib.Path(corpus_root))
+    with CorpusMutationLock(paths, "rebuild"):
+        ledger = read_accepted_ledger(paths)
+        normalized: list[tuple[dict, NormalizedArtifact]] = []
+        for sha, entry in sorted(ledger.items(), key=lambda item: item[0]):
+            blob = _artifact_blob_path(paths, sha)
+            if not blob.exists() or blob.stat().st_size != int(entry["size_bytes"]) or file_sha256(blob) != sha:
+                raise RuntimeError(f"FAILED_INTEGRITY: accepted artifact {sha} invalid")
+            artifact = normalize_artifact(blob)
+            if artifact.artifact_sha256 != sha:
+                raise RuntimeError("FAILED_INTEGRITY: normalized artifact hash mismatch")
+            if artifact.session_id != entry["session_id"] or artifact.coverage_state != entry["coverage_state"]:
+                raise RuntimeError("RECONCILIATION_REQUIRED: accepted ledger metadata mismatch")
+            normalized.append((entry, artifact))
+
+        old_verify = _verify_projection(paths, paths.db)
+        old_snapshot = semantic_snapshot(paths.root) if old_verify.get("status") == "VERIFIED" else None
+
+        new_db = paths.root / "corpus.sqlite3.new"
+        if new_db.exists():
+            new_db.unlink()
+        conn = sqlite3.connect(new_db)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys=ON")
+        try:
+            init_corpus_db(conn)
+            conn.execute("BEGIN")
+            for entry, artifact in normalized:
+                apply_normalized_artifact_to_projection(conn, artifact, str(entry["accepted_at"]))
+                assert_transaction_invariants(conn, artifact)
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            conn.close()
+            if new_db.exists():
+                new_db.unlink()
+            raise
+        else:
+            conn.close()
+
+        new_verify = _verify_projection(paths, new_db)
+        if new_verify.get("status") != "VERIFIED":
+            raise RuntimeError(f"REBUILD_VERIFY_FAILED: {new_verify}")
+        new_snapshot = semantic_snapshot(paths.root, new_db)
+        if old_snapshot is not None and new_snapshot != old_snapshot:
+            raise RuntimeError("REBUILD_EQUIVALENCE_MISMATCH")
+        try:
+            os.replace(new_db, paths.db)
+        except OSError:
+            result = {"status": "REBUILD_SWAP_BLOCKED", **new_verify}
+            _write_rebuild_receipt(paths, result)
+            return result
+        final_verify = _verify_projection(paths, paths.db)
+        if final_verify.get("status") != "VERIFIED":
+            raise RuntimeError(f"REBUILD_POSTCONDITION_FAILED: {final_verify}")
+        result = {"status": "REBUILT", **{k: v for k, v in final_verify.items() if k != "status"}}
+        _write_rebuild_receipt(paths, result)
+        return result
