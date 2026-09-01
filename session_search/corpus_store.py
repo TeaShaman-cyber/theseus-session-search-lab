@@ -5,11 +5,14 @@ import hashlib
 import json
 import os
 import pathlib
+import shutil
 import socket
 import sqlite3
 import uuid
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
+
+from .artifact import NormalizedArtifact, file_sha256, normalize_artifact
 
 CORPUS_SCHEMA_VERSION = "session-search-corpus-v1"
 ACCEPTED_LEDGER_SCHEMA = "theseus.session-search-accepted-artifact.v1"
@@ -222,6 +225,7 @@ def init_corpus_db(conn: sqlite3.Connection) -> None:
             source_schema TEXT NOT NULL,
             source_adapter TEXT NOT NULL,
             original_filename TEXT,
+            observed_title TEXT NOT NULL,
             accepted_at TEXT NOT NULL,
             coverage_state TEXT NOT NULL,
             session_id TEXT NOT NULL,
@@ -255,6 +259,7 @@ def init_corpus_db(conn: sqlite3.Connection) -> None:
             session_id TEXT NOT NULL,
             ordinal INTEGER NOT NULL,
             message_id TEXT,
+            local_identity TEXT NOT NULL,
             canonical_message_sha256 TEXT NOT NULL,
             role TEXT NOT NULL,
             content_type TEXT NOT NULL,
@@ -266,6 +271,7 @@ def init_corpus_db(conn: sqlite3.Connection) -> None:
         CREATE UNIQUE INDEX messages_identified_identity
         ON messages(session_id, message_id)
         WHERE message_id IS NOT NULL;
+        CREATE UNIQUE INDEX messages_local_identity ON messages(session_id, local_identity);
         CREATE INDEX messages_session_ordinal ON messages(session_id, ordinal);
 
         CREATE TABLE message_sources (
@@ -285,3 +291,523 @@ def init_corpus_db(conn: sqlite3.Connection) -> None:
         );
         """
     )
+
+
+
+def _artifact_blob_path(paths: CorpusPaths, sha256: str) -> pathlib.Path:
+    return paths.artifacts_sha256 / f"{sha256}.zip"
+
+
+def _copy_artifact_blob(paths: CorpusPaths, artifact: NormalizedArtifact) -> pathlib.Path:
+    paths.ensure_layout()
+    target = _artifact_blob_path(paths, artifact.artifact_sha256)
+    if target.exists():
+        if target.stat().st_size != artifact.size_bytes or file_sha256(target) != artifact.artifact_sha256:
+            raise RuntimeError("FAILED_INTEGRITY: existing artifact blob mismatch")
+        return target
+    temp = paths.staging / f"artifact-{artifact.artifact_sha256}-{uuid.uuid4().hex}.tmp"
+    try:
+        with artifact.source.open("rb") as src, temp.open("xb") as dst:
+            shutil.copyfileobj(src, dst, length=1024 * 1024)
+            dst.flush()
+            os.fsync(dst.fileno())
+        if temp.stat().st_size != artifact.size_bytes or file_sha256(temp) != artifact.artifact_sha256:
+            raise RuntimeError("FAILED_INTEGRITY: staged artifact mismatch")
+        os.replace(temp, target)
+        if file_sha256(target) != artifact.artifact_sha256:
+            raise RuntimeError("FAILED_INTEGRITY: stored artifact mismatch")
+        return target
+    finally:
+        if temp.exists():
+            temp.unlink()
+
+
+def _connect_corpus(paths: CorpusPaths) -> sqlite3.Connection:
+    paths.ensure_layout()
+    new_db = not paths.db.exists()
+    conn = sqlite3.connect(paths.db)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys=ON")
+    if new_db:
+        init_corpus_db(conn)
+        conn.commit()
+    else:
+        row = conn.execute("SELECT value FROM corpus_meta WHERE key='schema_version'").fetchone()
+        if row is None or row[0] != CORPUS_SCHEMA_VERSION:
+            conn.close()
+            raise RuntimeError("CORPUS_SCHEMA_MISMATCH")
+    return conn
+
+
+def _artifact_time_bounds(artifact: NormalizedArtifact) -> tuple[float | None, float | None]:
+    values = [m.create_time for m in artifact.messages if m.create_time is not None]
+    return (min(values), max(values)) if values else (None, None)
+
+
+def _accepted_entry_for_artifact(artifact: NormalizedArtifact, accepted_at: str) -> dict:
+    return {
+        "schema": ACCEPTED_LEDGER_SCHEMA,
+        "artifact_sha256": artifact.artifact_sha256,
+        "size_bytes": artifact.size_bytes,
+        "session_id": artifact.session_id,
+        "coverage_state": artifact.coverage_state,
+        "source_schema": artifact.source_schema,
+        "source_adapter": artifact.source_adapter,
+        "accepted_at": accepted_at,
+    }
+
+
+def _read_one_accepted_entry(paths: CorpusPaths, sha256: str) -> dict | None:
+    path = accepted_entry_path(paths, sha256)
+    if not path.exists():
+        return None
+    entry = json.loads(path.read_text())
+    _validate_accepted_entry(entry)
+    if entry["artifact_sha256"] != sha256:
+        raise RuntimeError("ACCEPTED_LEDGER_PATH_MISMATCH")
+    return entry
+
+
+def _membership_state(conn: sqlite3.Connection, paths: CorpusPaths, sha256: str) -> tuple[dict | None, sqlite3.Row | None]:
+    ledger = _read_one_accepted_entry(paths, sha256)
+    db_row = conn.execute("SELECT * FROM artifacts WHERE sha256=?", (sha256,)).fetchone()
+    return ledger, db_row
+
+
+def _verify_existing_membership(
+    conn: sqlite3.Connection,
+    paths: CorpusPaths,
+    artifact: NormalizedArtifact,
+    ledger: dict,
+    db_row: sqlite3.Row,
+) -> dict:
+    blob = _artifact_blob_path(paths, artifact.artifact_sha256)
+    if not blob.exists() or blob.stat().st_size != artifact.size_bytes or file_sha256(blob) != artifact.artifact_sha256:
+        raise RuntimeError("RECONCILIATION_REQUIRED: accepted artifact blob mismatch")
+    if int(ledger["size_bytes"]) != artifact.size_bytes or ledger["session_id"] != artifact.session_id:
+        raise RuntimeError("RECONCILIATION_REQUIRED: ledger metadata mismatch")
+    if db_row["session_id"] != artifact.session_id or int(db_row["size_bytes"]) != artifact.size_bytes:
+        raise RuntimeError("RECONCILIATION_REQUIRED: projection metadata mismatch")
+    if db_row["ledger_sha256"] != accepted_entry_digest(ledger):
+        raise RuntimeError("RECONCILIATION_REQUIRED: projection ledger digest mismatch")
+    if conn.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+        raise RuntimeError("RECONCILIATION_REQUIRED: sqlite integrity failure")
+    return {
+        "status": "ALREADY_INGESTED",
+        "mutation": "none",
+        "artifact_sha256": artifact.artifact_sha256,
+        "session_id": artifact.session_id,
+    }
+
+
+def _ensure_session_stub(conn: sqlite3.Connection, artifact: NormalizedArtifact, accepted_at: str) -> None:
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO sessions(
+            session_id,title,coverage_state,coverage_reason,
+            first_message_time,last_message_time,first_accepted_at,last_accepted_at,
+            title_source_time,title_source_artifact_sha256
+        ) VALUES (?,?,?,?,?,?,?,?,?,?)
+        """,
+        (
+            artifact.session_id,
+            artifact.title,
+            "PARTIAL_SESSION_SLICE",
+            "pending_recompute",
+            None,
+            None,
+            accepted_at,
+            accepted_at,
+            None,
+            artifact.artifact_sha256,
+        ),
+    )
+
+
+def _insert_artifact_row(conn: sqlite3.Connection, artifact: NormalizedArtifact, accepted_at: str) -> int:
+    min_time, max_time = _artifact_time_bounds(artifact)
+    entry = _accepted_entry_for_artifact(artifact, accepted_at)
+    cur = conn.execute(
+        """
+        INSERT INTO artifacts(
+            sha256,size_bytes,source_schema,source_adapter,original_filename,observed_title,
+            accepted_at,coverage_state,session_id,ledger_sha256,
+            observed_min_time,observed_max_time,observed_message_count
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """,
+        (
+            artifact.artifact_sha256,
+            artifact.size_bytes,
+            artifact.source_schema,
+            artifact.source_adapter,
+            artifact.source.name,
+            artifact.title,
+            accepted_at,
+            artifact.coverage_state,
+            artifact.session_id,
+            accepted_entry_digest(entry),
+            min_time,
+            max_time,
+            len(artifact.messages),
+        ),
+    )
+    return int(cur.lastrowid)
+
+
+def _insert_pages(conn: sqlite3.Connection, artifact: NormalizedArtifact, artifact_id: int) -> dict[int, int]:
+    page_ids: dict[int, int] = {}
+    for page in artifact.pages:
+        cur = conn.execute(
+            """
+            INSERT INTO payload_pages(
+                artifact_id,session_id,capture_sequence,member_name,start_cursor,end_cursor,
+                has_previous_page,has_next_page,message_count,min_create_time,max_create_time
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                artifact_id,
+                artifact.session_id,
+                page.capture_sequence,
+                page.member_name,
+                page.start_cursor,
+                page.end_cursor,
+                int(page.has_previous_page),
+                int(page.has_next_page),
+                page.message_count,
+                page.min_create_time,
+                page.max_create_time,
+            ),
+        )
+        page_ids[page.capture_sequence] = int(cur.lastrowid)
+    return page_ids
+
+
+def _deterministic_local_identity(artifact: NormalizedArtifact, message) -> str:
+    if message.message_id is not None:
+        return f"id:{message.message_id}"
+    source = min(message.sources, key=lambda s: (s.capture_sequence, s.page_position, s.member_name))
+    return f"anon:{artifact.artifact_sha256}:{source.capture_sequence}:{source.page_position}"
+
+
+def _upsert_messages(
+    conn: sqlite3.Connection,
+    artifact: NormalizedArtifact,
+    page_ids: dict[int, int],
+) -> dict:
+    novel = 0
+    reused = 0
+    source_additions = 0
+    for message in artifact.messages:
+        row = None
+        if message.message_id is not None:
+            row = conn.execute(
+                "SELECT * FROM messages WHERE session_id=? AND message_id=?",
+                (artifact.session_id, message.message_id),
+            ).fetchone()
+        if row is None:
+            local_identity = _deterministic_local_identity(artifact, message)
+            cur = conn.execute(
+                """
+                INSERT INTO messages(
+                    session_id,ordinal,message_id,local_identity,canonical_message_sha256,
+                    role,content_type,search_class,create_time,text
+                ) VALUES (?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    artifact.session_id,
+                    0,
+                    message.message_id,
+                    local_identity,
+                    message.canonical_message_sha256,
+                    message.role,
+                    message.content_type,
+                    message.search_class,
+                    message.create_time,
+                    message.text,
+                ),
+            )
+            row_id = int(cur.lastrowid)
+            if message.text and message.search_class != "hidden":
+                conn.execute("INSERT INTO messages_fts(rowid,text) VALUES (?,?)", (row_id, message.text))
+            novel += 1
+        else:
+            if row["canonical_message_sha256"] != message.canonical_message_sha256:
+                raise RuntimeError("FAILED_CONFLICTING_DUPLICATE")
+            row_id = int(row["row_id"])
+            existing_time = row["create_time"]
+            incoming_time = message.create_time
+            if incoming_time is not None and (existing_time is None or float(incoming_time) < float(existing_time)):
+                conn.execute("UPDATE messages SET create_time=? WHERE row_id=?", (incoming_time, row_id))
+            reused += 1
+        for source in message.sources:
+            conn.execute(
+                """
+                INSERT INTO message_sources(
+                    message_row_id,page_id,page_position,source_message_id,source_object_sha256
+                ) VALUES (?,?,?,?,?)
+                """,
+                (
+                    row_id,
+                    page_ids[source.capture_sequence],
+                    source.page_position,
+                    message.message_id,
+                    source.source_object_sha256,
+                ),
+            )
+            source_additions += 1
+    return {"novel_messages": novel, "reused_messages": reused, "provenance_additions": source_additions}
+
+
+def _recompute_ordinals(conn: sqlite3.Connection, session_id: str) -> None:
+    rows = conn.execute(
+        """
+        SELECT row_id FROM messages
+        WHERE session_id=?
+        ORDER BY (create_time IS NULL), create_time, local_identity
+        """,
+        (session_id,),
+    ).fetchall()
+    for ordinal, row in enumerate(rows):
+        conn.execute("UPDATE messages SET ordinal=? WHERE row_id=?", (ordinal, int(row["row_id"])))
+
+
+def _recompute_session_metadata(conn: sqlite3.Connection, session_id: str) -> None:
+    artifacts = conn.execute(
+        "SELECT * FROM artifacts WHERE session_id=?",
+        (session_id,),
+    ).fetchall()
+    total_messages = int(
+        conn.execute("SELECT count(*) FROM messages WHERE session_id=?", (session_id,)).fetchone()[0]
+    )
+    complete_cover = False
+    for artifact in artifacts:
+        if artifact["coverage_state"] != "COMPLETE_EXPOSED_CONVERSATION":
+            continue
+        covered = int(
+            conn.execute(
+                """
+                SELECT count(DISTINCT ms.message_row_id)
+                FROM message_sources ms
+                JOIN payload_pages p ON p.page_id=ms.page_id
+                JOIN messages m ON m.row_id=ms.message_row_id
+                WHERE p.artifact_id=? AND m.session_id=?
+                """,
+                (artifact["artifact_id"], session_id),
+            ).fetchone()[0]
+        )
+        if covered == total_messages:
+            complete_cover = True
+            break
+    coverage = "COMPLETE_EXPOSED_CONVERSATION" if complete_cover else "PARTIAL_SESSION_SLICE"
+    reason = (
+        "explicit_complete_artifact_covers_all_messages"
+        if complete_cover
+        else "no_single_complete_artifact_covers_all_messages"
+    )
+    bounds = conn.execute(
+        "SELECT min(create_time),max(create_time) FROM messages WHERE session_id=? AND create_time IS NOT NULL",
+        (session_id,),
+    ).fetchone()
+    accepted_times = [str(row["accepted_at"]) for row in artifacts]
+    title_source = sorted(
+        artifacts,
+        key=lambda row: (
+            0 if row["observed_max_time"] is None else 1,
+            float(row["observed_max_time"] or 0.0),
+            # reverse time below, sha handled separately
+        ),
+        reverse=True,
+    )
+    if title_source:
+        best_time = title_source[0]["observed_max_time"]
+        candidates = [row for row in artifacts if row["observed_max_time"] == best_time]
+        chosen = sorted(candidates, key=lambda row: str(row["sha256"]))[0]
+        title = str(chosen["observed_title"] or "")
+        title_time = chosen["observed_max_time"]
+        title_sha = str(chosen["sha256"])
+    else:
+        title = ""
+        title_time = None
+        title_sha = None
+    conn.execute(
+        """
+        UPDATE sessions SET
+            title=?,coverage_state=?,coverage_reason=?,first_message_time=?,last_message_time=?,
+            first_accepted_at=?,last_accepted_at=?,title_source_time=?,title_source_artifact_sha256=?
+        WHERE session_id=?
+        """,
+        (
+            title,
+            coverage,
+            reason,
+            bounds[0],
+            bounds[1],
+            min(accepted_times) if accepted_times else None,
+            max(accepted_times) if accepted_times else None,
+            title_time,
+            title_sha,
+            session_id,
+        ),
+    )
+
+
+def apply_normalized_artifact_to_projection(
+    conn: sqlite3.Connection,
+    artifact: NormalizedArtifact,
+    accepted_at: str,
+) -> dict:
+    _ensure_session_stub(conn, artifact, accepted_at)
+    artifact_id = _insert_artifact_row(conn, artifact, accepted_at)
+    page_ids = _insert_pages(conn, artifact, artifact_id)
+    delta = _upsert_messages(conn, artifact, page_ids)
+    _recompute_ordinals(conn, artifact.session_id)
+    _recompute_session_metadata(conn, artifact.session_id)
+    return {"artifact_id": artifact_id, **delta}
+
+
+def assert_transaction_invariants(conn: sqlite3.Connection, artifact: NormalizedArtifact) -> None:
+    if conn.execute("PRAGMA foreign_key_check").fetchall():
+        raise RuntimeError("FAILED_TRANSACTION: foreign key invariant")
+    row = conn.execute("SELECT count(*) FROM artifacts WHERE sha256=?", (artifact.artifact_sha256,)).fetchone()
+    if int(row[0]) != 1:
+        raise RuntimeError("FAILED_TRANSACTION: artifact registry invariant")
+    duplicates = conn.execute(
+        """
+        SELECT session_id,message_id,count(*)
+        FROM messages WHERE message_id IS NOT NULL
+        GROUP BY session_id,message_id HAVING count(*)>1
+        """
+    ).fetchall()
+    if duplicates:
+        raise RuntimeError("FAILED_TRANSACTION: identified message uniqueness invariant")
+
+
+def verify_ingest_postconditions(paths: CorpusPaths, sha256: str) -> dict:
+    ledger = _read_one_accepted_entry(paths, sha256)
+    if ledger is None:
+        raise RuntimeError("RECONCILIATION_REQUIRED: accepted ledger missing")
+    blob = _artifact_blob_path(paths, sha256)
+    if not blob.exists() or blob.stat().st_size != int(ledger["size_bytes"]) or file_sha256(blob) != sha256:
+        raise RuntimeError("RECONCILIATION_REQUIRED: artifact blob mismatch")
+    conn = _connect_corpus(paths)
+    try:
+        row = conn.execute("SELECT * FROM artifacts WHERE sha256=?", (sha256,)).fetchone()
+        if row is None:
+            raise RuntimeError("RECONCILIATION_REQUIRED: projection artifact missing")
+        if row["ledger_sha256"] != accepted_entry_digest(ledger):
+            raise RuntimeError("RECONCILIATION_REQUIRED: ledger digest mismatch")
+        integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
+        if integrity != "ok":
+            raise RuntimeError("RECONCILIATION_REQUIRED: sqlite integrity failure")
+        return {
+            "sqlite_integrity": integrity,
+            "sessions": int(conn.execute("SELECT count(*) FROM sessions").fetchone()[0]),
+            "artifacts": int(conn.execute("SELECT count(*) FROM artifacts").fetchone()[0]),
+            "messages": int(conn.execute("SELECT count(*) FROM messages").fetchone()[0]),
+            "payload_pages": int(conn.execute("SELECT count(*) FROM payload_pages").fetchone()[0]),
+            "message_sources": int(conn.execute("SELECT count(*) FROM message_sources").fetchone()[0]),
+        }
+    finally:
+        conn.close()
+
+
+def write_ingest_receipt(
+    paths: CorpusPaths,
+    artifact_sha256: str,
+    status: str,
+    postconditions: dict,
+) -> pathlib.Path:
+    paths.ensure_layout()
+    receipt = {
+        "schema": "theseus.session-search-corpus-ingest-receipt.v1",
+        "artifact_sha256": artifact_sha256,
+        "status": status,
+        "postconditions": postconditions,
+        "recorded_at": _utc_now(),
+    }
+    target = paths.ingest_receipts / f"{artifact_sha256}-{uuid.uuid4().hex}.json"
+    temp = paths.staging / f"receipt-{uuid.uuid4().hex}.tmp"
+    try:
+        data = _stable_json_bytes(receipt)
+        with temp.open("xb") as fh:
+            fh.write(data)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(temp, target)
+        return target
+    finally:
+        if temp.exists():
+            temp.unlink()
+
+
+def ingest_artifact(source: pathlib.Path, corpus_root: pathlib.Path) -> dict:
+    source = pathlib.Path(source)
+    paths = CorpusPaths.from_root(pathlib.Path(corpus_root))
+    with CorpusMutationLock(paths, "ingest"):
+        artifact = normalize_artifact(source)
+        _copy_artifact_blob(paths, artifact)
+        conn = _connect_corpus(paths)
+        ledger_written = False
+        try:
+            ledger, db_row = _membership_state(conn, paths, artifact.artifact_sha256)
+            if ledger is not None or db_row is not None:
+                if ledger is None or db_row is None:
+                    raise RuntimeError("RECONCILIATION_REQUIRED: ledger/projection membership disagreement")
+                return _verify_existing_membership(conn, paths, artifact, ledger, db_row)
+
+            accepted_at = _utc_now()
+            entry = _accepted_entry_for_artifact(artifact, accepted_at)
+            conn.execute("BEGIN IMMEDIATE")
+            delta = apply_normalized_artifact_to_projection(conn, artifact, accepted_at)
+            assert_transaction_invariants(conn, artifact)
+            ledger_path = write_accepted_entry(paths, entry)
+            observed = json.loads(ledger_path.read_text())
+            if observed != entry:
+                raise RuntimeError("ACCEPTED_LEDGER_READBACK_MISMATCH")
+            ledger_written = True
+            conn.commit()
+        except Exception as exc:
+            try:
+                conn.rollback()
+            finally:
+                conn.close()
+            if ledger_written:
+                raise RuntimeError(
+                    "RECONCILIATION_REQUIRED: ledger accepted but projection commit failed"
+                ) from exc
+            raise
+        else:
+            conn.close()
+
+        postconditions = verify_ingest_postconditions(paths, artifact.artifact_sha256)
+        write_ingest_receipt(
+            paths,
+            artifact_sha256=artifact.artifact_sha256,
+            status="INGESTED",
+            postconditions=postconditions,
+        )
+        return {
+            "status": "INGESTED",
+            "mutation": "applied",
+            "artifact_sha256": artifact.artifact_sha256,
+            "session_id": artifact.session_id,
+            "coverage_state": artifact.coverage_state,
+            **delta,
+            **postconditions,
+        }
+
+
+def ingest_many(
+    sources: Sequence[pathlib.Path],
+    corpus_root: pathlib.Path,
+) -> dict:
+    results = []
+    for source in sources:
+        try:
+            results.append({"source": str(source), **ingest_artifact(pathlib.Path(source), corpus_root)})
+        except Exception as exc:
+            results.append({"source": str(source), "status": "FAILED", "error": str(exc)})
+    return {
+        "status": "COMPLETE" if all(r.get("status") != "FAILED" for r in results) else "DEGRADED",
+        "results": results,
+    }
