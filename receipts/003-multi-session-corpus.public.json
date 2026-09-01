@@ -1,0 +1,23 @@
+{
+  "schema": "theseus.session-search-corpus-acceptance.public.v1",
+  "issue": 7,
+  "implementation_code_commit": "177a0c67ae423bf48b3c79cd3436bd9428e4537f",
+  "design_evidence_commit": "3e2ad074fe9dbaf594ef8568ee2ee2bb440d636d",
+  "accepted_artifacts": 3,
+  "sessions": 2,
+  "canonical_messages": 3789,
+  "payload_pages": 24,
+  "message_sources": 3789,
+  "fts_rows": 2367,
+  "coverage_states": {
+    "COMPLETE_EXPOSED_CONVERSATION": 1,
+    "PARTIAL_SESSION_SLICE": 1
+  },
+  "stable_session_identity_finding": "TWO_ACCEPTED_ARTIFACTS_SHARE_ONE_STABLE_SESSION_DESPITE_ZERO_MESSAGE_ID_OVERLAP",
+  "sqlite_integrity": "ok",
+  "cross_session_search": "PASS",
+  "cross_session_search_distinct_sessions": 2,
+  "rebuild_equivalence": "PASS",
+  "post_rebuild_verify": "VERIFIED",
+  "privacy": "SANITIZED_NO_RAW_SESSION_IDENTIFIERS"
+}

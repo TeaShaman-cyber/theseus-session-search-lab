@@ -18,6 +18,7 @@ REQUIRED = [
     'receipts/001-development-prototype.public.json',
     'receipts/001-wiki-bootstrap.json',
     'receipts/002-multipage-importer.public.json',
+    'receipts/003-multi-session-corpus.public.json',
     'tests/test_bootstrap_contract.py',
     '.github/workflows/docs-check.yml',
 ]
@@ -39,6 +40,7 @@ for marker in [
 json.loads((ROOT/'receipts/001-development-prototype.public.json').read_text())
 json.loads((ROOT/'receipts/001-wiki-bootstrap.json').read_text())
 json.loads((ROOT/'receipts/002-multipage-importer.public.json').read_text())
+json.loads((ROOT/'receipts/003-multi-session-corpus.public.json').read_text())
 tracked = subprocess.check_output(['git','ls-files'], cwd=ROOT, text=True).splitlines()
 for p in tracked:
     lower=p.lower()

@@ -93,6 +93,37 @@ def synthetic_multipage_export(path: pathlib.Path, *, conflict_duplicate: bool =
 
 
 class BootstrapContract(unittest.TestCase):
+    def test_readme_documents_cumulative_corpus_happy_path(self):
+        text = (ROOT / 'README.md').read_text() if (ROOT / 'README.md').exists() else ''
+        self.assertIn('SESSION_SEARCH_CORPUS', text)
+        self.assertIn('session_search.corpus ingest', text)
+        self.assertIn('session_search.corpus verify', text)
+        self.assertIn('session_search.corpus rebuild', text)
+        self.assertIn('--db', text)
+        self.assertIn('Search indexes are projections, not authority', text)
+
+    def test_public_multi_session_acceptance_receipt_is_sanitized_and_matches_verified_counts(self):
+        receipt_path = ROOT / 'receipts/003-multi-session-corpus.public.json'
+        self.assertTrue(receipt_path.is_file())
+        receipt = json.loads(receipt_path.read_text())
+        self.assertEqual(receipt['schema'], 'theseus.session-search-corpus-acceptance.public.v1')
+        self.assertEqual(receipt['issue'], 7)
+        self.assertEqual(receipt['accepted_artifacts'], 3)
+        self.assertEqual(receipt['sessions'], 2)
+        self.assertEqual(receipt['canonical_messages'], 3789)
+        self.assertEqual(receipt['coverage_states'], {
+            'COMPLETE_EXPOSED_CONVERSATION': 1,
+            'PARTIAL_SESSION_SLICE': 1,
+        })
+        self.assertEqual(receipt['sqlite_integrity'], 'ok')
+        self.assertEqual(receipt['cross_session_search'], 'PASS')
+        self.assertEqual(receipt['rebuild_equivalence'], 'PASS')
+        self.assertEqual(receipt['privacy'], 'SANITIZED_NO_RAW_SESSION_IDENTIFIERS')
+        raw = receipt_path.read_text().lower()
+        self.assertNotIn('conversation_id', raw)
+        self.assertNotIn('drive.google.com', raw)
+        self.assertNotIn('/workspace/', raw)
+
     def test_readme_declares_portable_runtime_and_verified_wiki_boundary(self):
         text = (ROOT / 'README.md').read_text() if (ROOT / 'README.md').exists() else ''
         self.assertIn('MarcoPolo is not a runtime dependency', text)
