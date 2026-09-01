@@ -924,7 +924,7 @@ git commit -m "feat: search across Session Search corpus (refs #7)"
 
 ---
 
-### Task 6: Document the seamless workflow and run private three-session acceptance
+### Task 6: Document the seamless workflow and run private three-artifact acceptance
 
 **Files:**
 - Modify: `README.md`
@@ -983,19 +983,19 @@ python3 -m session_search.corpus ingest <private-case-A.zip> <private-case-B.zip
 python3 -m session_search.corpus verify --json
 ```
 
-Expected postconditions from the approved spec evidence set:
+Expected postconditions from verified stable-session readback:
 
 ```text
-sessions = 3
-canonical messages = 3789 before any within-session repeated-capture dedup
-case A coverage = COMPLETE_EXPOSED_CONVERSATION
-case B coverage = PARTIAL_SESSION_SLICE
-case C coverage = COMPLETE_EXPOSED_CONVERSATION
-sqlite integrity = ok
+sessions = 2
 accepted ledger members = 3
+canonical messages = 3789
+case A and case B resolve to the same stable session
+case A + B aggregate coverage = PARTIAL_SESSION_SLICE
+case C resolves to a distinct session with COMPLETE_EXPOSED_CONVERSATION
+sqlite integrity = ok
 ```
 
-If actual canonical counts differ because newly defined canonicalization exposes a true within-session duplicate/conflict, stop and investigate rather than editing the expected count silently.
+The earlier inference that zero message-ID overlap implied three distinct sessions was disproven by stable-session identity. If canonical counts or session relationships differ from these verified inputs, stop and investigate rather than editing the expected count silently.
 
 - [ ] **Step 5: Prove cross-session search and rebuild on private data**
 
@@ -1019,10 +1019,10 @@ Create `receipts/003-multi-session-corpus.public.json` with this shape:
 {
   "schema": "theseus.session-search-corpus-acceptance.public.v1",
   "issue": 7,
-  "sessions": 3,
+  "sessions": 2,
   "canonical_messages": 3789,
   "coverage_states": {
-    "COMPLETE_EXPOSED_CONVERSATION": 2,
+    "COMPLETE_EXPOSED_CONVERSATION": 1,
     "PARTIAL_SESSION_SLICE": 1
   },
   "accepted_artifacts": 3,
