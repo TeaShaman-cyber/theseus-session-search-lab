@@ -293,6 +293,8 @@ def normalize_artifact(source: pathlib.Path) -> NormalizedArtifact:
         role = str(author.get("role") or "unknown")
         content_type = str(content.get("content_type") or "unknown")
         create_time = message.get("create_time")
+        metadata = message.get("metadata")
+        explicit_order = metadata.get("session_search_order") if isinstance(metadata, dict) else None
         normalized_messages.append(
             NormalizedMessage(
                 message_id=(str(message.get("id")) if message.get("id") else None),
@@ -300,7 +302,7 @@ def normalize_artifact(source: pathlib.Path) -> NormalizedArtifact:
                 content_type=content_type,
                 search_class=classify(role, content_type),
                 create_time=(float(create_time) if isinstance(create_time, (int, float)) else None),
-                provider_order=(int((message.get("metadata") or {}).get("session_search_order")) if isinstance((message.get("metadata") or {}).get("session_search_order"), int) and not isinstance((message.get("metadata") or {}).get("session_search_order"), bool) else None),
+                provider_order=(int(explicit_order) if isinstance(explicit_order, int) and not isinstance(explicit_order, bool) else None),
                 text=extract_text(content),
                 canonical_message_sha256=canonical_digests[key],
                 sources=tuple(sources[key]),

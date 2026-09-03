@@ -378,6 +378,17 @@ class DeepSeekExportAdapterTest(unittest.TestCase):
             posix=_portable_zip_bytes("optional/conversation-x.bin",payload,manifest)
         self.assertEqual(win,posix)
 
+    def test_non_root_node_without_message_is_blocked(self):
+        from session_search.deepseek_export import materialize_export
+        with tempfile.TemporaryDirectory() as td:
+            root=pathlib.Path(td)
+            c=self._conversation("missing-message-node","hello")
+            c["mapping"]["1"]["message"]=None
+            source=root/"conversations.json"
+            source.write_text(json.dumps([c]),encoding="utf-8")
+            with self.assertRaisesRegex(ValueError,"message"):
+                materialize_export(source,root/"out")
+
     def test_timezone_naive_timestamp_is_rejected(self):
         from session_search.deepseek_export import materialize_export
         with tempfile.TemporaryDirectory() as td:

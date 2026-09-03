@@ -91,6 +91,21 @@ class ArtifactNormalizationTest(unittest.TestCase):
             b = normalize_artifact(second).messages[0]
             self.assertNotEqual(a.canonical_message_sha256, b.canonical_message_sha256)
 
+    def test_non_object_metadata_does_not_break_provider_order_extraction(self):
+        with tempfile.TemporaryDirectory() as td:
+            td=pathlib.Path(td)
+            msg={
+                "id":"m-meta",
+                "author":{"role":"user"},
+                "create_time":1.0,
+                "content":{"content_type":"text","parts":["legacy metadata"]},
+                "metadata":"legacy-string",
+            }
+            path=write_capture(td/"legacy-meta.zip",[("optional/conversation-1.bin",detail("legacy-meta",[msg]))])
+            artifact=normalize_artifact(path)
+            self.assertEqual(artifact.messages[0].text,"legacy metadata")
+            self.assertIsNone(artifact.messages[0].provider_order)
+
     def test_unresolved_session_id_is_blocked(self):
         with tempfile.TemporaryDirectory() as td:
             path = pathlib.Path(td) / "missing.zip"

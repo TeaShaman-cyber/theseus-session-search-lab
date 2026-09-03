@@ -195,7 +195,9 @@ def _conversation_payload(conversation: dict, nodes: list[dict], leaf_id: str, b
     for node in nodes:
         raw_message = node.get("message")
         if raw_message is None:
-            continue
+            if node.get("parent") is None:
+                continue
+            raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: non-root message missing")
         if not isinstance(raw_message, dict):
             raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: message must be object")
         if "fragments" not in raw_message or not isinstance(raw_message.get("fragments"), list):
