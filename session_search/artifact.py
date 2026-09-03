@@ -306,7 +306,7 @@ def normalize_artifact(source: pathlib.Path) -> NormalizedArtifact:
         artifact_sha256=file_sha256(source),
         size_bytes=source.stat().st_size,
         source_schema=str(manifest.get("schema") or ""),
-        source_adapter="barn-doctor",
+        source_adapter=str(manifest.get("source_adapter") or "barn-doctor"),
         session_id=session_id,
         title=title,
         coverage_state=coverage,

@@ -90,6 +90,25 @@ An explicit `--corpus PATH` always overrides `SESSION_SEARCH_CORPUS`. There is n
 
 Real corpus directories contain raw private evidence and receipts and must never be committed to this public repository.
 
+### Official DeepSeek export adapter
+
+Official DeepSeek `conversations.json` exports can be transcoded into the same portable per-session artifact contract used by the rest of Session Search. One provider export may contain many conversations; the adapter deterministically materializes one immutable child artifact per conversation and records the parent export SHA-256 in each child manifest.
+
+Materialize portable artifacts only:
+
+```bash
+python3 -m session_search.deepseek_export conversations.json --output-dir ./deepseek-artifacts
+```
+
+Or ingest the official export directly into a cumulative corpus:
+
+```bash
+python3 -m session_search.deepseek_export conversations.json --corpus /private/path/session-search-corpus
+python3 -m session_search.search "previous decision" --corpus /private/path/session-search-corpus
+```
+
+The adapter treats the DeepSeek `parent`/`children` graph as ordering authority, maps `REQUEST` to user dialogue and `RESPONSE` to assistant dialogue, preserves non-dialogue fragments as evidence/trace where possible, and blocks unsupported or inconsistent graph shapes instead of guessing. Public tests use synthetic exports only; real export bytes, conversation text, and account-specific identifiers remain private.
+
 ### Legacy scratch projection
 
 The original one-artifact path remains available for debugging, portable reproduction, and scratch projections:
