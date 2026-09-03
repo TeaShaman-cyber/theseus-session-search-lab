@@ -1,0 +1,186 @@
+import hashlib
+import json
+import pathlib
+import tempfile
+import unittest
+import zipfile
+
+from session_search.artifact import normalize_artifact
+
+
+class XaiExportAdapterTest(unittest.TestCase):
+    def response(self, rid, parent, sender, message, ms, model="grok-4", children=None):
+        return {
+            "response": {
+                "_id": rid,
+                "conversation_id": "conv-active",
+                "parent_response_id": parent,
+                "children": children,
+                "sender": sender,
+                "message": message,
+                "model": model,
+                "create_time": {"$date": {"$numberLong": str(ms)}},
+                "metadata": {},
+            },
+            "share_link": None,
+        }
+
+    def conversation(self, cid="conv-active", leaf="a2", responses=None, title="Grok notes"):
+        responses = list(responses or [])
+        for item in responses:
+            item["response"]["conversation_id"] = cid
+        return {
+            "conversation": {
+                "id": cid,
+                "title": title,
+                "create_time": {"$date": {"$numberLong": "1700000000000"}},
+                "modify_time": {"$date": {"$numberLong": "1700000005000"}},
+                "leaf_response_id": leaf,
+            },
+            "responses": responses,
+        }
+
+    def write_export(self, root: pathlib.Path, conversations):
+        source = root / "xai-export.zip"
+        payload = {"conversations": conversations, "media_posts": [], "projects": [], "tasks": []}
+        with zipfile.ZipFile(source, "w") as zf:
+            zf.writestr("ttl/30d/export_data/synthetic/prod-grok-backend.json", json.dumps(payload))
+        return source
+
+    def active_branch_conversation(self):
+        # children is deliberately absent/incomplete; parent_response_id is authority.
+        return self.conversation(responses=[
+            self.response("u1", "external-anchor", "human", "shared question", 1700000001000, children=None),
+            self.response("a1", "u1", "ASSISTANT", "abandoned answer", 1700000002000, children=None),
+            self.response("a2", "u1", "assistant", "active answer", 1700000003000, children=None),
+            self.response("m1", "a2", "grok-4-auto", "model-side trace", 1700000004000, model="grok-4-auto", children=None),
+        ], leaf="m1")
+
+    def test_explicit_leaf_selects_active_dialogue_and_preserves_off_path_as_trace(self):
+        from session_search.xai_export import materialize_export
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            child = materialize_export(self.write_export(root, [self.active_branch_conversation()]), root / "out")[0]
+            artifact = normalize_artifact(child)
+            self.assertEqual(artifact.session_id, "conv-active")
+            by_text = {m.text: m for m in artifact.messages}
+            self.assertEqual(by_text["shared question"].search_class, "dialogue")
+            self.assertEqual(by_text["active answer"].search_class, "dialogue")
+            self.assertEqual(by_text["abandoned answer"].search_class, "trace")
+            self.assertEqual(by_text["model-side trace"].search_class, "trace")
+            self.assertEqual(by_text["shared question"].role, "user")
+            self.assertEqual(by_text["active answer"].role, "assistant")
+
+    def test_missing_active_leaf_with_multiple_leaves_materializes_explicit_branch_variants(self):
+        from session_search.xai_export import materialize_export
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            c = self.conversation(cid="conv-branch", leaf=None, responses=[
+                self.response("u", None, "human", "question", 1700000001000),
+                self.response("a", "u", "assistant", "answer A", 1700000002000),
+                self.response("b", "u", "assistant", "answer B", 1700000003000),
+            ], title="Branched")
+            source = self.write_export(root, [c])
+            outputs = materialize_export(source, root / "out")
+            self.assertEqual(len(outputs), 2)
+            artifacts = [normalize_artifact(p) for p in outputs]
+            self.assertEqual(len({a.session_id for a in artifacts}), 2)
+            self.assertTrue(all("~branch-" in a.session_id for a in artifacts))
+            for a in artifacts:
+                dialogue = {m.text for m in a.messages if m.search_class == "dialogue"}
+                trace = {m.text for m in a.messages if m.search_class == "trace"}
+                self.assertIn("question", dialogue)
+                self.assertEqual(len({"answer A", "answer B"} & dialogue), 1)
+                self.assertEqual(len({"answer A", "answer B"} & trace), 1)
+
+    def test_unique_leaf_without_leaf_metadata_still_materializes_one_linear_session(self):
+        from session_search.xai_export import materialize_export
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            c = self.conversation(cid="conv-linear", leaf=None, responses=[
+                self.response("u", "external", "human", "hello", 1700000001000),
+                self.response("a", "u", "assistant", "world", 1700000002000),
+            ], title="Linear")
+            outputs = materialize_export(self.write_export(root, [c]), root / "out")
+            self.assertEqual(len(outputs), 1)
+            artifact = normalize_artifact(outputs[0])
+            self.assertEqual(artifact.session_id, "conv-linear")
+            self.assertEqual([m.text for m in artifact.messages if m.search_class == "dialogue"], ["hello", "world"])
+
+    def test_parent_links_are_authority_even_when_children_is_none(self):
+        from session_search.xai_export import materialize_export
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            c = self.conversation(cid="conv-links", leaf="a", responses=[
+                self.response("u", "external", "human", "hello", 1700000001000, children=None),
+                self.response("a", "u", "assistant", "world", 1700000002000, children=None),
+            ])
+            artifact = normalize_artifact(materialize_export(self.write_export(root, [c]), root / "out")[0])
+            self.assertEqual([m.text for m in artifact.messages if m.search_class == "dialogue"], ["hello", "world"])
+
+    def test_mongo_timestamp_is_deterministic_and_missing_timestamp_stays_unknown(self):
+        from session_search.xai_export import materialize_export
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            c = self.conversation(cid="conv-time", leaf="a", responses=[
+                self.response("u", None, "human", "dated", 1700000000123),
+                self.response("a", "u", "assistant", "undated", 1700000001000),
+            ])
+            c["responses"][1]["response"]["create_time"] = None
+            artifact = normalize_artifact(materialize_export(self.write_export(root, [c]), root / "out")[0])
+            by_text = {m.text: m for m in artifact.messages}
+            self.assertAlmostEqual(by_text["dated"].create_time, 1700000000.123)
+            self.assertIsNone(by_text["undated"].create_time)
+
+    def test_child_artifacts_are_content_addressed_and_bind_parent_zip_sha(self):
+        from session_search.xai_export import materialize_export
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            source = self.write_export(root, [self.active_branch_conversation()])
+            parent_sha = hashlib.sha256(source.read_bytes()).hexdigest()
+            first = materialize_export(source, root / "out")[0]
+            first_bytes = first.read_bytes()
+            with zipfile.ZipFile(first) as zf:
+                manifest = json.loads(zf.read("manifest.json"))
+            self.assertEqual(manifest["source_adapter"], "xai-export")
+            self.assertEqual(manifest["source_export_sha256"], parent_sha)
+            changed = self.active_branch_conversation()
+            changed["responses"][2]["response"]["message"] = "changed active answer"
+            self.write_export(root, [changed])
+            second = materialize_export(source, root / "out")[0]
+            self.assertNotEqual(first, second)
+            self.assertEqual(first.read_bytes(), first_bytes)
+
+    def test_mismatched_response_conversation_id_is_blocked(self):
+        from session_search.xai_export import materialize_export
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            c = self.active_branch_conversation()
+            c["responses"][0]["response"]["conversation_id"] = "wrong"
+            with self.assertRaisesRegex(ValueError, "conversation_id"):
+                materialize_export(self.write_export(root, [c]), root / "out")
+
+
+class XaiExportEndToEndTest(unittest.TestCase):
+    def test_direct_ingest_uses_existing_corpus_and_search_api(self):
+        from session_search.xai_export import ingest_export
+        from session_search.search import search_corpus
+        helper = XaiExportAdapterTest()
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            source = helper.write_export(root, [helper.active_branch_conversation()])
+            corpus = root / "corpus"
+            result = ingest_export(source, corpus)
+            self.assertEqual(result["status"], "COMPLETE")
+            self.assertEqual(result["conversation_count"], 1)
+            self.assertEqual(result["artifact_count"], 1)
+            active = search_corpus(corpus, "active answer", ["dialogue"], 8)
+            abandoned = search_corpus(corpus, "abandoned answer", ["dialogue"], 8)
+            traced = search_corpus(corpus, "abandoned answer", ["trace"], 8)
+            self.assertEqual(len(active), 1)
+            self.assertEqual(abandoned, [])
+            self.assertEqual(len(traced), 1)
+
+
+if __name__ == "__main__":
+    unittest.main()
