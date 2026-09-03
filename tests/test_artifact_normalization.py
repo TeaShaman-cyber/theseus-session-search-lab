@@ -59,6 +59,21 @@ class ArtifactNormalizationTest(unittest.TestCase):
             self.assertNotEqual(a.sources[0].source_object_sha256, b.sources[0].source_object_sha256)
             self.assertEqual(a.canonical_message_sha256, b.canonical_message_sha256)
 
+
+    def test_legacy_barn_doctor_manifest_does_not_reinterpret_source_adapter(self):
+        with tempfile.TemporaryDirectory() as td:
+            td=pathlib.Path(td)
+            path=write_capture(td/"legacy.zip", [("optional/conversation-1.bin", detail("legacy-session", []))])
+            with zipfile.ZipFile(path, "r") as src:
+                files={name:src.read(name) for name in src.namelist()}
+            manifest=json.loads(files["manifest.json"])
+            manifest["source_adapter"]="deepseek-export"
+            with zipfile.ZipFile(path,"w") as dst:
+                dst.writestr("manifest.json",json.dumps(manifest,sort_keys=True))
+                for name,data in files.items():
+                    if name!="manifest.json": dst.writestr(name,data)
+            self.assertEqual(normalize_artifact(path).source_adapter,"barn-doctor")
+
     def test_changed_semantic_payload_changes_canonical_digest(self):
         with tempfile.TemporaryDirectory() as td:
             td = pathlib.Path(td)

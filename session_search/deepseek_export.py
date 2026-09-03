@@ -177,21 +177,20 @@ def _conversation_payload(conversation: dict, nodes: list[dict], leaf_id: str, b
     title = conversation.get("title")
     if not isinstance(source_session_id, str) or not source_session_id or not isinstance(title, str):
         raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: conversation identity/title missing")
+    branch_choices = []
+    for parent, child in zip(nodes, nodes[1:]):
+        children = [str(value) for value in (parent.get("children") or [])]
+        if len(children) > 1:
+            selected = str(child.get("id") or "")
+            if selected != children[0]:
+                branch_choices.append([str(parent.get("id") or ""), selected])
     session_id = source_session_id
-    if branch_count > 1:
-        branch_choices = []
-        for parent, child in zip(nodes, nodes[1:]):
-            children = parent.get("children") or []
-            if len(children) > 1:
-                branch_choices.append([str(parent.get("id") or ""), str(child.get("id") or "")])
-        if not branch_choices:
-            raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: branched path missing branch choice")
+    if branch_choices:
         branch_hash = hashlib.sha256(_stable_json_bytes(branch_choices)).hexdigest()[:12]
         session_id = f"{source_session_id}~branch-{branch_hash}"
 
     messages = []
     generated_ids: set[str] = set()
-    last_time: float | None = None
     order = 0
     for node in nodes:
         raw_message = node.get("message")
@@ -202,10 +201,7 @@ def _conversation_payload(conversation: dict, nodes: list[dict], leaf_id: str, b
         if "fragments" not in raw_message or not isinstance(raw_message.get("fragments"), list):
             raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: fragments must be list")
         fragments = raw_message["fragments"]
-        observed = _parse_time(raw_message.get("inserted_at"))
-        base = observed
-        if base is not None and last_time is not None and base <= last_time:
-            base = last_time + 0.000001
+        base = _parse_time(raw_message.get("inserted_at"))
         if not fragments:
             placeholder = _empty_fragment_placeholder(node, base, order)
             order += 1
@@ -213,21 +209,17 @@ def _conversation_payload(conversation: dict, nodes: list[dict], leaf_id: str, b
                 raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: generated message id collision")
             generated_ids.add(placeholder["id"])
             messages.append(placeholder)
-            if base is not None:
-                last_time = base
             continue
         for fragment_index, fragment in enumerate(fragments):
             if not isinstance(fragment, dict):
                 raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: fragment must be object")
-            create_time = None if base is None else base + fragment_index * 0.0000001
+            create_time = base
             converted = _fragment_message(node, fragment, fragment_index, create_time, order)
             order += 1
             if converted["id"] in generated_ids:
                 raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: generated message id collision")
             generated_ids.add(converted["id"])
             messages.append(converted)
-            if create_time is not None:
-                last_time = create_time
     return {
         "conversation_id": session_id,
         "title": title,

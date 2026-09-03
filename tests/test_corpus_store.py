@@ -139,6 +139,28 @@ class CorpusPrimitiveTest(unittest.TestCase):
             self.assertEqual(json.loads(path.read_text()), entry)
             self.assertFalse(any(paths.staging.iterdir()))
 
+    def test_existing_v1_corpus_adds_nullable_provider_order_projection_column(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=pathlib.Path(td); corpus=root/"corpus"
+            corpus.mkdir(parents=True)
+            db=corpus/"corpus.sqlite3"
+            conn=sqlite3.connect(db)
+            try:
+                init_corpus_db(conn)
+                conn.execute("CREATE TABLE messages_old AS SELECT * FROM messages")
+                conn.execute("DROP TABLE messages")
+                conn.execute("ALTER TABLE messages_old RENAME TO messages")
+                conn.commit()
+            finally:
+                conn.close()
+            from session_search.corpus_store import CorpusPaths, _connect_corpus
+            conn=_connect_corpus(CorpusPaths.from_root(corpus))
+            try:
+                cols={r[1] for r in conn.execute("PRAGMA table_info(messages)")}
+                self.assertIn("provider_order",cols)
+            finally:
+                conn.close()
+
     def test_schema_supports_many_sessions_and_scoped_message_identity(self):
         conn = sqlite3.connect(":memory:")
         try:

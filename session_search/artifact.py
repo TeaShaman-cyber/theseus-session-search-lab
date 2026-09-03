@@ -27,6 +27,7 @@ class NormalizedMessage:
     content_type: str
     search_class: str
     create_time: float | None
+    provider_order: int | None
     text: str
     canonical_message_sha256: str
     sources: tuple[MessageSource, ...]
@@ -299,6 +300,7 @@ def normalize_artifact(source: pathlib.Path) -> NormalizedArtifact:
                 content_type=content_type,
                 search_class=classify(role, content_type),
                 create_time=(float(create_time) if isinstance(create_time, (int, float)) else None),
+                provider_order=(int((message.get("metadata") or {}).get("session_search_order")) if isinstance((message.get("metadata") or {}).get("session_search_order"), int) and not isinstance((message.get("metadata") or {}).get("session_search_order"), bool) else None),
                 text=extract_text(content),
                 canonical_message_sha256=canonical_digests[key],
                 sources=tuple(sources[key]),
@@ -310,7 +312,7 @@ def normalize_artifact(source: pathlib.Path) -> NormalizedArtifact:
         artifact_sha256=file_sha256(source),
         size_bytes=source.stat().st_size,
         source_schema=str(manifest.get("schema") or ""),
-        source_adapter=str(manifest.get("source_adapter") or "barn-doctor"),
+        source_adapter=(str(manifest.get("source_adapter") or "barn-doctor") if str(manifest.get("schema") or "").startswith("theseus.session-search.") else "barn-doctor"),
         session_id=session_id,
         title=title,
         coverage_state=coverage,

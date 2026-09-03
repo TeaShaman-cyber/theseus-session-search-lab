@@ -278,6 +278,38 @@ class DeepSeekExportAdapterTest(unittest.TestCase):
             a2=next(a for a in second if any(m.text=="answer A" for m in a.messages))
             self.assertEqual(a1.session_id,a2.session_id)
 
+    def test_linear_session_keeps_base_identity_when_first_branch_appears(self):
+        from session_search.deepseek_export import materialize_export
+        with tempfile.TemporaryDirectory() as td:
+            root=pathlib.Path(td); source=root/"conversations.json"
+            linear=self._conversation("first-branch","question")
+            source.write_text(json.dumps([linear]),encoding="utf-8")
+            first=normalize_artifact(materialize_export(source,root/"v1")[0])
+            branched=self._conversation("first-branch","question")
+            branched["mapping"]["1"]["children"]=["a","b"]
+            for node_id,text in [("a","answer A"),("b","answer B")]:
+                branched["mapping"][node_id]={"id":node_id,"parent":"1","children":[],"message":{
+                    "inserted_at":"2026-09-03T12:00:01+00:00","model":"deepseek-chat","fragments":[{"type":"RESPONSE","content":text}]}}
+            source.write_text(json.dumps([branched]),encoding="utf-8")
+            variants=[normalize_artifact(p) for p in materialize_export(source,root/"v2")]
+            self.assertEqual(first.session_id,"first-branch")
+            self.assertIn("first-branch",{a.session_id for a in variants})
+            self.assertEqual(len({a.session_id for a in variants}),2)
+
+    def test_provider_timestamp_is_not_rewritten_for_graph_monotonicity(self):
+        from session_search.deepseek_export import materialize_export
+        with tempfile.TemporaryDirectory() as td:
+            root=pathlib.Path(td)
+            c=self._conversation("raw-time","request")
+            c["mapping"]["1"]["message"]["inserted_at"]="2026-09-03T12:00:02+00:00"
+            c["mapping"]["1"]["children"]=["2"]
+            c["mapping"]["2"]={"id":"2","parent":"1","children":[],"message":{
+                "inserted_at":"2026-09-03T12:00:01+00:00","model":"deepseek-chat","fragments":[{"type":"RESPONSE","content":"response"}]}}
+            source=root/"conversations.json"; source.write_text(json.dumps([c]),encoding="utf-8")
+            artifact=normalize_artifact(materialize_export(source,root/"out")[0])
+            self.assertEqual([m.text for m in artifact.messages],["request","response"])
+            self.assertGreater(artifact.messages[0].create_time,artifact.messages[1].create_time)
+
     def test_many_fragments_keep_provider_order_without_float_ties(self):
         from session_search.deepseek_export import materialize_export
         with tempfile.TemporaryDirectory() as td:
@@ -311,6 +343,30 @@ class DeepSeekExportAdapterTest(unittest.TestCase):
                 result=ingest_export(source,root/"corpus")
             self.assertTrue(result["results"][0]["source"].startswith("deepseek-child-sha256:"))
             self.assertNotIn("session-search-deepseek-",result["results"][0]["source"])
+
+    def test_direct_corpus_and_rebuild_preserve_graph_order_with_missing_timestamp(self):
+        from session_search.deepseek_export import ingest_export
+        from session_search.corpus_store import rebuild_corpus
+        import sqlite3
+        with tempfile.TemporaryDirectory() as td:
+            root=pathlib.Path(td)
+            c=self._conversation("persist-order","request")
+            del c["mapping"]["1"]["message"]["inserted_at"]
+            c["mapping"]["1"]["children"]=["2"]
+            c["mapping"]["2"]={"id":"2","parent":"1","children":[],"message":{
+                "inserted_at":"2026-09-03T12:00:01+00:00","model":"deepseek-chat",
+                "fragments":[{"type":"RESPONSE","content":"response"}]}}
+            source=root/"conversations.json"; source.write_text(json.dumps([c]),encoding="utf-8")
+            corpus=root/"corpus"
+            self.assertEqual(ingest_export(source,corpus)["status"],"COMPLETE")
+            def ordered_texts():
+                conn=sqlite3.connect(corpus/"corpus.sqlite3")
+                try:
+                    return [r[0] for r in conn.execute("SELECT text FROM messages WHERE session_id LIKE 'persist-order%' ORDER BY ordinal")]
+                finally: conn.close()
+            self.assertEqual(ordered_texts(),["request","response"])
+            self.assertEqual(rebuild_corpus(corpus)["status"],"REBUILT")
+            self.assertEqual(ordered_texts(),["request","response"])
 
     def test_zip_bytes_are_independent_of_host_platform_creator_metadata(self):
         from unittest import mock
