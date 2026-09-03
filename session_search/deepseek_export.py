@@ -268,8 +268,8 @@ def _materialize_export_snapshot(source: pathlib.Path, output_dir: pathlib.Path)
         raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: invalid JSON") from exc
     if not isinstance(conversations, list):
         raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: top level must be list")
-    output_dir.mkdir(parents=True, exist_ok=True)
     outputs: list[pathlib.Path] = []
+    pending: list[tuple[pathlib.Path, bytes]] = []
     seen_source_ids: set[str] = set()
     seen_session_ids: set[str] = set()
     for conversation in sorted(conversations, key=lambda item: str(item.get("id") if isinstance(item, dict) else "")):
@@ -308,17 +308,21 @@ def _materialize_export_snapshot(source: pathlib.Path, output_dir: pathlib.Path)
             archive_bytes = _portable_zip_bytes(member, payload_bytes, manifest)
             archive_sha = _sha256(archive_bytes)
             target = output_dir / f"deepseek-{safe_id}-{archive_sha[:16]}.zip"
-            if target.exists():
-                if target.read_bytes() != archive_bytes:
-                    raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: content-address collision")
-            else:
-                try:
-                    with target.open("xb") as handle:
-                        handle.write(archive_bytes)
-                except FileExistsError:
-                    if target.read_bytes() != archive_bytes:
-                        raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: concurrent content-address collision")
+            pending.append((target, archive_bytes))
             outputs.append(target)
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for target, archive_bytes in pending:
+        if target.exists():
+            if target.read_bytes() != archive_bytes:
+                raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: content-address collision")
+            continue
+        try:
+            with target.open("xb") as handle:
+                handle.write(archive_bytes)
+        except FileExistsError:
+            if target.read_bytes() != archive_bytes:
+                raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: concurrent content-address collision")
     return _MaterializedSnapshot(tuple(outputs), parent_sha, len(conversations))
 
 

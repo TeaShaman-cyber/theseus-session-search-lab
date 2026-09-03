@@ -292,8 +292,8 @@ class DeepSeekExportAdapterTest(unittest.TestCase):
         from session_search.deepseek_export import materialize_export
         with tempfile.TemporaryDirectory() as td:
             root=pathlib.Path(td); out=root/"out"
-            good=self._conversation("good","ok")
-            bad=self._conversation("bad","bad")
+            good=self._conversation("aaa-good","ok")
+            bad=self._conversation("zzz-bad","bad")
             del bad["mapping"]["1"]["message"]["fragments"]
             source=root/"conversations.json"; source.write_text(json.dumps([good,bad]),encoding="utf-8")
             with self.assertRaises(ValueError): materialize_export(source,out)
