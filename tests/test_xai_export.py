@@ -85,7 +85,8 @@ class XaiExportAdapterTest(unittest.TestCase):
             self.assertEqual(len(outputs), 2)
             artifacts = [normalize_artifact(p) for p in outputs]
             self.assertEqual(len({a.session_id for a in artifacts}), 2)
-            self.assertTrue(all("~branch-" in a.session_id for a in artifacts))
+            self.assertIn("conv-branch", {a.session_id for a in artifacts})
+            self.assertEqual(sum("~branch-" in a.session_id for a in artifacts), 1)
             for a in artifacts:
                 dialogue = {m.text for m in a.messages if m.search_class == "dialogue"}
                 trace = {m.text for m in a.messages if m.search_class == "trace"}
@@ -104,7 +105,7 @@ class XaiExportAdapterTest(unittest.TestCase):
             outputs = materialize_export(self.write_export(root, [c]), root / "out")
             self.assertEqual(len(outputs), 1)
             artifact = normalize_artifact(outputs[0])
-            self.assertTrue(artifact.session_id.startswith("conv-linear~branch-"))
+            self.assertEqual(artifact.session_id, "conv-linear")
             self.assertEqual([m.text for m in artifact.messages if m.search_class == "dialogue"], ["hello", "world"])
 
     def test_parent_links_are_authority_even_when_children_is_none(self):
@@ -168,7 +169,7 @@ class XaiExportAdapterTest(unittest.TestCase):
             self.write_export(root,[b])
             second=normalize_artifact(materialize_export(source,root/"v2")[0])
             self.assertNotEqual(first.session_id,second.session_id)
-            self.assertTrue(first.session_id.startswith("switch~branch-"))
+            self.assertEqual(first.session_id, "switch")
             self.assertTrue(second.session_id.startswith("switch~branch-"))
 
     def test_missing_parent_timestamp_preserves_graph_order(self):
@@ -215,7 +216,46 @@ class XaiExportAdapterTest(unittest.TestCase):
             variants=[normalize_artifact(p) for p in materialize_export(source,root/"v2")]
             continued=next(a for a in variants if "answer A" in {m.text for m in a.messages if m.search_class=="dialogue"})
             self.assertEqual(first.session_id,continued.session_id)
-            self.assertTrue(first.session_id.startswith("grow-branch~branch-"))
+            self.assertEqual(first.session_id, "grow-branch")
+
+    def test_linear_continuation_keeps_same_session_identity(self):
+        from session_search.xai_export import materialize_export
+        with tempfile.TemporaryDirectory() as td:
+            root=pathlib.Path(td)
+            first_c=self.conversation(cid="linear-grow",leaf="a",responses=[
+                self.response("u",None,"human","question",1700000001000),
+                self.response("a","u","assistant","answer",1700000002000),
+            ])
+            source=self.write_export(root,[first_c])
+            first=normalize_artifact(materialize_export(source,root/"v1")[0])
+            second_c=self.conversation(cid="linear-grow",leaf="u2",responses=[
+                self.response("u",None,"human","question",1700000001000),
+                self.response("a","u","assistant","answer",1700000002000),
+                self.response("u2","a","human","followup",1700000003000),
+            ])
+            self.write_export(root,[second_c])
+            second=normalize_artifact(materialize_export(source,root/"v2")[0])
+            self.assertEqual(first.session_id,second.session_id)
+            self.assertEqual(first.session_id,"linear-grow")
+
+    def test_empty_response_graph_with_active_leaf_is_blocked(self):
+        from session_search.xai_export import materialize_export
+        with tempfile.TemporaryDirectory() as td:
+            root=pathlib.Path(td)
+            c=self.conversation(cid="empty-active",leaf="ghost",responses=[])
+            with self.assertRaisesRegex(ValueError,"active leaf"):
+                materialize_export(self.write_export(root,[c]),root/"out")
+
+    def test_atomic_publisher_never_exposes_final_path_before_replace(self):
+        from unittest import mock
+        from session_search.xai_export import _publish_content_addressed
+        with tempfile.TemporaryDirectory() as td:
+            target=pathlib.Path(td)/"child.zip"
+            with mock.patch("session_search.xai_export.os.replace",side_effect=RuntimeError("synthetic replace failure")):
+                with self.assertRaisesRegex(RuntimeError,"synthetic replace failure"):
+                    _publish_content_addressed(target,b"complete-bytes")
+            self.assertFalse(target.exists())
+            self.assertEqual(list(target.parent.glob("*.tmp")),[])
 
     def test_mismatched_response_conversation_id_is_blocked(self):
         from session_search.xai_export import materialize_export
@@ -225,6 +265,7 @@ class XaiExportAdapterTest(unittest.TestCase):
             c["responses"][0]["response"]["conversation_id"] = "wrong"
             with self.assertRaisesRegex(ValueError, "conversation_id"):
                 materialize_export(self.write_export(root, [c]), root / "out")
+
 
 
 class XaiExportEndToEndTest(unittest.TestCase):

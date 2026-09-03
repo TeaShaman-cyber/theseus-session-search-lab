@@ -5,7 +5,9 @@ import dataclasses
 import hashlib
 import io
 import json
+import os
 import pathlib
+import uuid
 import re
 import tempfile
 import zipfile
@@ -220,7 +222,10 @@ def _conversation_variants(item: dict) -> list[dict]:
         raise ValueError("BLOCKED_UNSUPPORTED_XAI_EXPORT: conversation identity/title missing")
 
     by_id, source_order, root_id, children, leaves = _response_graph(conversation, item.get("responses"))
+    explicit_leaf = conversation.get("leaf_response_id")
     if not by_id:
+        if explicit_leaf is not None:
+            raise ValueError("BLOCKED_UNSUPPORTED_XAI_EXPORT: active leaf declared for empty response graph")
         return [{
             "conversation_id": source_session_id,
             "title": title,
@@ -232,7 +237,6 @@ def _conversation_variants(item: dict) -> list[dict]:
             "xai_leaf_count": 0,
         }]
 
-    explicit_leaf = conversation.get("leaf_response_id")
     selections: list[tuple[str, str]] = []
     if explicit_leaf is not None:
         if not isinstance(explicit_leaf, str) or explicit_leaf not in by_id:
@@ -249,8 +253,15 @@ def _conversation_variants(item: dict) -> list[dict]:
     for leaf_id, mode in selections:
         path_ids = _path_to_root(by_id, root_id, leaf_id)
         selected = set(path_ids)
-        leaf_hash = hashlib.sha256(leaf_id.encode("utf-8")).hexdigest()[:12]
-        session_id = f"{source_session_id}~branch-{leaf_hash}"
+        branch_choices = []
+        for parent_id, child_id in zip(path_ids, path_ids[1:]):
+            siblings = children[parent_id]
+            if len(siblings) > 1 and child_id != siblings[0]:
+                branch_choices.append([parent_id, child_id])
+        session_id = source_session_id
+        if branch_choices:
+            branch_hash = hashlib.sha256(_stable_json_bytes(branch_choices)).hexdigest()[:12]
+            session_id = f"{source_session_id}~branch-{branch_hash}"
         ordered_ids = path_ids + [rid for rid in source_order if rid not in selected]
         messages = [_response_message(by_id[rid], rid in selected, order) for order, rid in enumerate(ordered_ids)]
         variants.append({
@@ -264,6 +275,30 @@ def _conversation_variants(item: dict) -> list[dict]:
             "xai_leaf_count": len(leaves),
         })
     return variants
+
+
+def _publish_content_addressed(target: pathlib.Path, data: bytes) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists():
+        if target.read_bytes() != data:
+            raise ValueError("BLOCKED_UNSUPPORTED_XAI_EXPORT: content-address collision")
+        return
+    temp = target.parent / f".{target.name}.{uuid.uuid4().hex}.tmp"
+    try:
+        with temp.open("xb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if target.exists():
+            if target.read_bytes() != data:
+                raise ValueError("BLOCKED_UNSUPPORTED_XAI_EXPORT: concurrent content-address collision")
+            return
+        os.replace(temp, target)
+        if target.read_bytes() != data:
+            raise ValueError("BLOCKED_UNSUPPORTED_XAI_EXPORT: published artifact mismatch")
+    finally:
+        if temp.exists():
+            temp.unlink()
 
 
 def _materialize_export_snapshot(source: pathlib.Path, output_dir: pathlib.Path) -> _MaterializedSnapshot:
@@ -317,16 +352,7 @@ def _materialize_export_snapshot(source: pathlib.Path, output_dir: pathlib.Path)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     for target, archive_bytes in pending:
-        if target.exists():
-            if target.read_bytes() != archive_bytes:
-                raise ValueError("BLOCKED_UNSUPPORTED_XAI_EXPORT: content-address collision")
-            continue
-        try:
-            with target.open("xb") as handle:
-                handle.write(archive_bytes)
-        except FileExistsError:
-            if target.read_bytes() != archive_bytes:
-                raise ValueError("BLOCKED_UNSUPPORTED_XAI_EXPORT: concurrent content-address collision")
+        _publish_content_addressed(target, archive_bytes)
     return _MaterializedSnapshot(tuple(artifacts), parent_sha, len(conversations))
 
 
