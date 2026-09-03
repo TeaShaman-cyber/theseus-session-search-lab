@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import dataclasses
+import io
 import hashlib
 import json
 import pathlib
@@ -35,7 +38,14 @@ def _parse_time(value: object) -> float | None:
     return parsed.timestamp()
 
 
-def _ordered_nodes(mapping: dict) -> list[dict]:
+@dataclasses.dataclass(frozen=True)
+class _MaterializedSnapshot:
+    artifacts: tuple[pathlib.Path, ...]
+    source_export_sha256: str
+    conversation_count: int
+
+
+def _mapping_paths(mapping: dict) -> list[tuple[str, list[dict]]]:
     if not isinstance(mapping, dict) or not mapping:
         raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: mapping missing")
     roots = [node for node in mapping.values() if isinstance(node, dict) and node.get("parent") is None]
@@ -46,14 +56,23 @@ def _ordered_nodes(mapping: dict) -> list[dict]:
     if not root_id or mapping.get(root_id) is not root:
         raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: root identity mismatch")
 
-    ordered: list[dict] = []
+    for node_id, node in mapping.items():
+        if not isinstance(node, dict) or str(node.get("id") or "") != str(node_id):
+            raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: node identity mismatch")
+        if "children" not in node or not isinstance(node.get("children"), list):
+            raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: children must be list")
+        if node_id != root_id and not isinstance(node.get("parent"), str):
+            raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: non-root parent missing")
+        for child_id_raw in node["children"]:
+            child_id = str(child_id_raw)
+            child = mapping.get(child_id)
+            if not isinstance(child, dict) or str(child.get("parent") or "") != str(node_id):
+                raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: broken parent link")
+
     state: dict[str, int] = {}
     stack: list[tuple[str, bool]] = [(root_id, False)]
     while stack:
         node_id, exiting = stack.pop()
-        node = mapping.get(node_id)
-        if not isinstance(node, dict) or str(node.get("id") or "") != node_id:
-            raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: child identity mismatch")
         if exiting:
             state[node_id] = 2
             continue
@@ -63,26 +82,47 @@ def _ordered_nodes(mapping: dict) -> list[dict]:
         if current == 2:
             continue
         state[node_id] = 1
-        if node.get("message") is not None:
-            ordered.append(node)
-        children = node.get("children") or []
-        if not isinstance(children, list):
-            raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: children must be list")
         stack.append((node_id, True))
-        for child_id_raw in reversed(children):
-            child_id = str(child_id_raw)
-            child = mapping.get(child_id)
-            if not isinstance(child, dict) or str(child.get("parent") or "") != node_id:
-                raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: broken parent link")
-            stack.append((child_id, False))
+        for child_id_raw in reversed(mapping[node_id]["children"]):
+            stack.append((str(child_id_raw), False))
     if set(state) != set(mapping):
         raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: disconnected mapping")
-    return ordered
 
-def _fragment_message(node: dict, fragment: dict, fragment_index: int, create_time: float) -> dict | None:
+    leaves = sorted(str(node_id) for node_id, node in mapping.items() if not node["children"])
+    if not leaves:
+        raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: mapping has no leaf")
+    paths: list[tuple[str, list[dict]]] = []
+    for leaf_id in leaves:
+        reversed_ids: list[str] = []
+        current: str | None = leaf_id
+        seen: set[str] = set()
+        while current is not None:
+            if current in seen:
+                raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: mapping cycle")
+            seen.add(current)
+            node = mapping.get(current)
+            if not isinstance(node, dict):
+                raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: broken path")
+            reversed_ids.append(current)
+            parent = node.get("parent")
+            current = str(parent) if parent is not None else None
+        path_ids = list(reversed(reversed_ids))
+        if not path_ids or path_ids[0] != root_id:
+            raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: leaf not rooted")
+        paths.append((leaf_id, [mapping[node_id] for node_id in path_ids]))
+    return paths
+
+
+def _fragment_message_id(node_id: str, fragment_index: int) -> str:
+    raw = _stable_json_bytes([node_id, int(fragment_index)])
+    encoded = base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+    return f"deepseek-fragment-v1:{encoded}"
+
+
+def _fragment_message(node: dict, fragment: dict, fragment_index: int, create_time: float | None) -> dict | None:
     kind = str(fragment.get("type") or "")
     node_id = str(node.get("id") or "")
-    message_id = node_id if fragment_index == 0 else f"{node_id}:{fragment_index}"
+    message_id = _fragment_message_id(node_id, fragment_index)
     if kind == "REQUEST":
         role, search_content = "user", str(fragment.get("content") or "")
     elif kind == "RESPONSE":
@@ -109,43 +149,83 @@ def _fragment_message(node: dict, fragment: dict, fragment_index: int, create_ti
             "deepseek_inserted_at": message.get("inserted_at"),
             "deepseek_model": message.get("model"),
             "deepseek_node_id": node_id,
+            "deepseek_fragment_index": fragment_index,
         },
     }
 
 
-def _conversation_payload(conversation: dict) -> dict:
-    session_id = conversation.get("id")
+def _empty_fragment_placeholder(node: dict, create_time: float | None) -> dict:
+    node_id = str(node.get("id") or "")
+    message = node.get("message") or {}
+    return {
+        "id": _fragment_message_id(node_id, -1),
+        "author": {"role": "unknown"},
+        "create_time": create_time,
+        "content": {"content_type": "deepseek_empty_fragments", "parts": []},
+        "metadata": {
+            "deepseek_fragment_type": "EMPTY_COLLECTION",
+            "deepseek_inserted_at": message.get("inserted_at"),
+            "deepseek_model": message.get("model"),
+            "deepseek_node_id": node_id,
+        },
+    }
+
+
+def _conversation_payload(conversation: dict, nodes: list[dict], leaf_id: str, branch_count: int) -> dict:
+    source_session_id = conversation.get("id")
     title = conversation.get("title")
-    mapping = conversation.get("mapping")
-    if not isinstance(session_id, str) or not session_id or not isinstance(title, str):
+    if not isinstance(source_session_id, str) or not source_session_id or not isinstance(title, str):
         raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: conversation identity/title missing")
-    nodes = _ordered_nodes(mapping)
+    session_id = source_session_id
+    if branch_count > 1:
+        leaf_hash = hashlib.sha256(leaf_id.encode("utf-8")).hexdigest()[:12]
+        session_id = f"{source_session_id}~branch-{leaf_hash}"
+
     messages = []
+    generated_ids: set[str] = set()
     last_time: float | None = None
-    for sequence, node in enumerate(nodes):
-        message = node.get("message") or {}
-        fragments = message.get("fragments") or []
-        if not isinstance(fragments, list):
+    for node in nodes:
+        raw_message = node.get("message")
+        if raw_message is None:
+            continue
+        if not isinstance(raw_message, dict):
+            raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: message must be object")
+        if "fragments" not in raw_message or not isinstance(raw_message.get("fragments"), list):
             raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: fragments must be list")
-        observed = _parse_time(message.get("inserted_at"))
-        base = observed if observed is not None else float(sequence)
-        if last_time is not None and base <= last_time:
+        fragments = raw_message["fragments"]
+        observed = _parse_time(raw_message.get("inserted_at"))
+        base = observed
+        if base is not None and last_time is not None and base <= last_time:
             base = last_time + 0.000001
+        if not fragments:
+            placeholder = _empty_fragment_placeholder(node, base)
+            if placeholder["id"] in generated_ids:
+                raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: generated message id collision")
+            generated_ids.add(placeholder["id"])
+            messages.append(placeholder)
+            if base is not None:
+                last_time = base
+            continue
         for fragment_index, fragment in enumerate(fragments):
             if not isinstance(fragment, dict):
                 raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: fragment must be object")
-            create_time = base + fragment_index * 0.0000001
+            create_time = None if base is None else base + fragment_index * 0.0000001
             converted = _fragment_message(node, fragment, fragment_index, create_time)
             if converted is not None:
+                if converted["id"] in generated_ids:
+                    raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: generated message id collision")
+                generated_ids.add(converted["id"])
                 messages.append(converted)
-                last_time = create_time
-        if last_time is None:
-            last_time = base
+                if create_time is not None:
+                    last_time = create_time
     return {
         "conversation_id": session_id,
         "title": title,
         "messages": messages,
         "page_info": {"has_previous_page": False, "has_next_page": False},
+        "deepseek_source_conversation_id": source_session_id,
+        "deepseek_leaf_node_id": leaf_id,
+        "deepseek_branch_count": branch_count,
         "deepseek_inserted_at": conversation.get("inserted_at"),
         "deepseek_updated_at": conversation.get("updated_at"),
     }
@@ -158,7 +238,15 @@ def _zip_write(zf: zipfile.ZipFile, name: str, data: bytes) -> None:
     zf.writestr(info, data)
 
 
-def materialize_export(source: pathlib.Path, output_dir: pathlib.Path) -> list[pathlib.Path]:
+def _portable_zip_bytes(member: str, payload_bytes: bytes, manifest: dict) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as zf:
+        _zip_write(zf, member, payload_bytes)
+        _zip_write(zf, "manifest.json", _stable_json_bytes(manifest))
+    return buffer.getvalue()
+
+
+def _materialize_export_snapshot(source: pathlib.Path, output_dir: pathlib.Path) -> _MaterializedSnapshot:
     source = pathlib.Path(source)
     output_dir = pathlib.Path(output_dir)
     raw = source.read_bytes()
@@ -170,36 +258,61 @@ def materialize_export(source: pathlib.Path, output_dir: pathlib.Path) -> list[p
     if not isinstance(conversations, list):
         raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: top level must be list")
     output_dir.mkdir(parents=True, exist_ok=True)
-    outputs = []
-    seen: set[str] = set()
+    outputs: list[pathlib.Path] = []
+    seen_source_ids: set[str] = set()
+    seen_session_ids: set[str] = set()
     for conversation in sorted(conversations, key=lambda item: str(item.get("id") if isinstance(item, dict) else "")):
         if not isinstance(conversation, dict):
             raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: conversation must be object")
-        payload = _conversation_payload(conversation)
-        session_id = payload["conversation_id"]
-        if session_id in seen:
+        source_session_id = conversation.get("id")
+        if not isinstance(source_session_id, str) or not source_session_id:
+            raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: conversation identity/title missing")
+        if source_session_id in seen_source_ids:
             raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: duplicate conversation id")
-        seen.add(session_id)
-        sanitized = _SAFE_ID.sub("_", session_id).strip("._") or "session"
-        id_hash = hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:12]
-        safe_id = f"{sanitized}-{id_hash}"
-        member = f"optional/conversation-deepseek-{safe_id}.bin"
-        payload_bytes = _stable_json_bytes(payload)
-        manifest = {
-            "schema": SCHEMA,
-            "source_adapter": ADAPTER,
-            "source_export_sha256": parent_sha,
-            "source_export_bytes": len(raw),
-            "session_id": session_id,
-            "files": [{"name": member, "bytes": len(payload_bytes), "sha256": _sha256(payload_bytes)}],
-        }
-        target = output_dir / f"deepseek-{safe_id}.zip"
-        with zipfile.ZipFile(target, "w") as zf:
-            _zip_write(zf, member, payload_bytes)
-            _zip_write(zf, "manifest.json", _stable_json_bytes(manifest))
-        outputs.append(target)
-    return outputs
+        seen_source_ids.add(source_session_id)
+        paths = _mapping_paths(conversation.get("mapping"))
+        branch_count = len(paths)
+        for leaf_id, nodes in paths:
+            payload = _conversation_payload(conversation, nodes, leaf_id, branch_count)
+            session_id = payload["conversation_id"]
+            if session_id in seen_session_ids:
+                raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: duplicate materialized session id")
+            seen_session_ids.add(session_id)
+            sanitized = _SAFE_ID.sub("_", session_id).strip("._") or "session"
+            id_hash = hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:12]
+            safe_id = f"{sanitized}-{id_hash}"
+            member = f"optional/conversation-deepseek-{safe_id}.bin"
+            payload_bytes = _stable_json_bytes(payload)
+            manifest = {
+                "schema": SCHEMA,
+                "source_adapter": ADAPTER,
+                "source_export_sha256": parent_sha,
+                "source_export_bytes": len(raw),
+                "source_conversation_id": source_session_id,
+                "session_id": session_id,
+                "branch_leaf_id": leaf_id,
+                "branch_count": branch_count,
+                "files": [{"name": member, "bytes": len(payload_bytes), "sha256": _sha256(payload_bytes)}],
+            }
+            archive_bytes = _portable_zip_bytes(member, payload_bytes, manifest)
+            archive_sha = _sha256(archive_bytes)
+            target = output_dir / f"deepseek-{safe_id}-{archive_sha[:16]}.zip"
+            if target.exists():
+                if target.read_bytes() != archive_bytes:
+                    raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: content-address collision")
+            else:
+                try:
+                    with target.open("xb") as handle:
+                        handle.write(archive_bytes)
+                except FileExistsError:
+                    if target.read_bytes() != archive_bytes:
+                        raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: concurrent content-address collision")
+            outputs.append(target)
+    return _MaterializedSnapshot(tuple(outputs), parent_sha, len(conversations))
 
+
+def materialize_export(source: pathlib.Path, output_dir: pathlib.Path) -> list[pathlib.Path]:
+    return list(_materialize_export_snapshot(source, output_dir).artifacts)
 
 
 def ingest_export(source: pathlib.Path, corpus_root: pathlib.Path) -> dict:
@@ -207,9 +320,15 @@ def ingest_export(source: pathlib.Path, corpus_root: pathlib.Path) -> dict:
 
     source = pathlib.Path(source)
     with tempfile.TemporaryDirectory(prefix="session-search-deepseek-") as td:
-        children = materialize_export(source, pathlib.Path(td))
-        result = ingest_many(children, pathlib.Path(corpus_root))
-    return {**result, "conversation_count": len(children), "source_export_sha256": _sha256(source.read_bytes())}
+        snapshot = _materialize_export_snapshot(source, pathlib.Path(td))
+        result = ingest_many(list(snapshot.artifacts), pathlib.Path(corpus_root))
+    return {
+        **result,
+        "conversation_count": snapshot.conversation_count,
+        "artifact_count": len(snapshot.artifacts),
+        "source_export_sha256": snapshot.source_export_sha256,
+    }
+
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="Materialize official DeepSeek conversations.json into portable per-session Session Search artifacts.")
