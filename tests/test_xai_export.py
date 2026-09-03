@@ -62,7 +62,7 @@ class XaiExportAdapterTest(unittest.TestCase):
             root = pathlib.Path(td)
             child = materialize_export(self.write_export(root, [self.active_branch_conversation()]), root / "out")[0]
             artifact = normalize_artifact(child)
-            self.assertEqual(artifact.session_id, "conv-active")
+            self.assertTrue(artifact.session_id.startswith("conv-active~branch-"))
             by_text = {m.text: m for m in artifact.messages}
             self.assertEqual(by_text["shared question"].search_class, "dialogue")
             self.assertEqual(by_text["active answer"].search_class, "dialogue")
@@ -104,7 +104,7 @@ class XaiExportAdapterTest(unittest.TestCase):
             outputs = materialize_export(self.write_export(root, [c]), root / "out")
             self.assertEqual(len(outputs), 1)
             artifact = normalize_artifact(outputs[0])
-            self.assertEqual(artifact.session_id, "conv-linear")
+            self.assertTrue(artifact.session_id.startswith("conv-linear~branch-"))
             self.assertEqual([m.text for m in artifact.messages if m.search_class == "dialogue"], ["hello", "world"])
 
     def test_parent_links_are_authority_even_when_children_is_none(self):
@@ -150,6 +150,72 @@ class XaiExportAdapterTest(unittest.TestCase):
             second = materialize_export(source, root / "out")[0]
             self.assertNotEqual(first, second)
             self.assertEqual(first.read_bytes(), first_bytes)
+
+
+    def test_active_leaf_switch_uses_path_specific_session_identity_and_does_not_conflict(self):
+        from session_search.xai_export import materialize_export
+        with tempfile.TemporaryDirectory() as td:
+            root=pathlib.Path(td)
+            responses=[
+                self.response("u",None,"human","question",1700000001000),
+                self.response("a","u","assistant","answer A",1700000002000),
+                self.response("b","u","assistant","answer B",1700000003000),
+            ]
+            a=self.conversation(cid="switch",leaf="a",responses=responses,title="Switch")
+            source=self.write_export(root,[a])
+            first=normalize_artifact(materialize_export(source,root/"v1")[0])
+            b=self.conversation(cid="switch",leaf="b",responses=responses,title="Switch")
+            self.write_export(root,[b])
+            second=normalize_artifact(materialize_export(source,root/"v2")[0])
+            self.assertNotEqual(first.session_id,second.session_id)
+            self.assertTrue(first.session_id.startswith("switch~branch-"))
+            self.assertTrue(second.session_id.startswith("switch~branch-"))
+
+    def test_missing_parent_timestamp_preserves_graph_order(self):
+        from session_search.xai_export import materialize_export
+        with tempfile.TemporaryDirectory() as td:
+            root=pathlib.Path(td)
+            c=self.conversation(cid="missing-order",leaf="a",responses=[
+                self.response("u",None,"human","question",1700000001000),
+                self.response("a","u","assistant","answer",1700000002000),
+            ])
+            c["responses"][0]["response"]["create_time"]=None
+            artifact=normalize_artifact(materialize_export(self.write_export(root,[c]),root/"out")[0])
+            selected=[m for m in artifact.messages if m.search_class=="dialogue"]
+            self.assertEqual([m.text for m in selected],["question","answer"])
+            self.assertIsNone(selected[0].create_time)
+
+    def test_backend_member_requires_exact_basename(self):
+        from session_search.xai_export import materialize_export
+        with tempfile.TemporaryDirectory() as td:
+            root=pathlib.Path(td)
+            source=root/"xai-export.zip"
+            payload={"conversations":[],"media_posts":[],"projects":[],"tasks":[]}
+            with zipfile.ZipFile(source,"w") as zf:
+                zf.writestr("ttl/backup-prod-grok-backend.json",json.dumps(payload))
+            with self.assertRaisesRegex(ValueError,"exactly one"):
+                materialize_export(source,root/"out")
+
+    def test_unique_leaf_identity_survives_later_sibling_branch(self):
+        from session_search.xai_export import materialize_export
+        with tempfile.TemporaryDirectory() as td:
+            root=pathlib.Path(td)
+            first_c=self.conversation(cid="grow-branch",leaf=None,responses=[
+                self.response("u",None,"human","question",1700000001000),
+                self.response("a","u","assistant","answer A",1700000002000),
+            ])
+            source=self.write_export(root,[first_c])
+            first=normalize_artifact(materialize_export(source,root/"v1")[0])
+            second_c=self.conversation(cid="grow-branch",leaf=None,responses=[
+                self.response("u",None,"human","question",1700000001000),
+                self.response("a","u","assistant","answer A",1700000002000),
+                self.response("b","u","assistant","answer B",1700000003000),
+            ])
+            self.write_export(root,[second_c])
+            variants=[normalize_artifact(p) for p in materialize_export(source,root/"v2")]
+            continued=next(a for a in variants if "answer A" in {m.text for m in a.messages if m.search_class=="dialogue"})
+            self.assertEqual(first.session_id,continued.session_id)
+            self.assertTrue(first.session_id.startswith("grow-branch~branch-"))
 
     def test_mismatched_response_conversation_id_is_blocked(self):
         from session_search.xai_export import materialize_export

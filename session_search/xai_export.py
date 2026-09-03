@@ -53,6 +53,7 @@ def _parse_mongo_time(value: object) -> float | None:
 def _zip_write(zf: zipfile.ZipFile, name: str, data: bytes) -> None:
     info = zipfile.ZipInfo(name, _FIXED_ZIP_TIME)
     info.compress_type = zipfile.ZIP_DEFLATED
+    info.create_system = 3
     info.external_attr = 0o644 << 16
     zf.writestr(info, data)
 
@@ -68,7 +69,7 @@ def _portable_zip_bytes(member: str, payload_bytes: bytes, manifest: dict) -> by
 def _backend_payload(raw_zip: bytes) -> tuple[str, dict]:
     try:
         with zipfile.ZipFile(io.BytesIO(raw_zip)) as zf:
-            members = [name for name in zf.namelist() if name.rstrip("/").endswith(_BACKEND_MEMBER)]
+            members = [name for name in zf.namelist() if pathlib.PurePosixPath(name.rstrip("/")).name == _BACKEND_MEMBER]
             if len(members) != 1:
                 raise ValueError("BLOCKED_UNSUPPORTED_XAI_EXPORT: expected exactly one prod-grok-backend.json")
             member = members[0]
@@ -191,7 +192,7 @@ def _mapped_role(sender: object, on_selected_path: bool) -> str:
     return "unknown"
 
 
-def _response_message(response: dict, on_selected_path: bool) -> dict:
+def _response_message(response: dict, on_selected_path: bool, order: int) -> dict:
     rid = response["_id"]
     return {
         "id": rid,
@@ -204,6 +205,7 @@ def _response_message(response: dict, on_selected_path: bool) -> dict:
             "xai_sender": response.get("sender"),
             "xai_model": response.get("model"),
             "xai_selected_path": bool(on_selected_path),
+            "session_search_order": order,
         },
     }
 
@@ -247,13 +249,10 @@ def _conversation_variants(item: dict) -> list[dict]:
     for leaf_id, mode in selections:
         path_ids = _path_to_root(by_id, root_id, leaf_id)
         selected = set(path_ids)
-        if mode == "branch-variant":
-            leaf_hash = hashlib.sha256(leaf_id.encode("utf-8")).hexdigest()[:12]
-            session_id = f"{source_session_id}~branch-{leaf_hash}"
-        else:
-            session_id = source_session_id
+        leaf_hash = hashlib.sha256(leaf_id.encode("utf-8")).hexdigest()[:12]
+        session_id = f"{source_session_id}~branch-{leaf_hash}"
         ordered_ids = path_ids + [rid for rid in source_order if rid not in selected]
-        messages = [_response_message(by_id[rid], rid in selected) for rid in ordered_ids]
+        messages = [_response_message(by_id[rid], rid in selected, order) for order, rid in enumerate(ordered_ids)]
         variants.append({
             "conversation_id": session_id,
             "title": title,
@@ -274,9 +273,8 @@ def _materialize_export_snapshot(source: pathlib.Path, output_dir: pathlib.Path)
     parent_sha = _sha256(raw_zip)
     backend_member, backend = _backend_payload(raw_zip)
     conversations = backend["conversations"]
-    output_dir.mkdir(parents=True, exist_ok=True)
-
     artifacts: list[pathlib.Path] = []
+    pending: list[tuple[pathlib.Path, bytes]] = []
     seen_source_ids: set[str] = set()
     seen_session_ids: set[str] = set()
     for item in conversations:
@@ -314,17 +312,21 @@ def _materialize_export_snapshot(source: pathlib.Path, output_dir: pathlib.Path)
             archive_bytes = _portable_zip_bytes(member, payload_bytes, manifest)
             archive_sha = _sha256(archive_bytes)
             target = output_dir / f"xai-{safe_id}-{archive_sha[:16]}.zip"
-            if target.exists():
-                if target.read_bytes() != archive_bytes:
-                    raise ValueError("BLOCKED_UNSUPPORTED_XAI_EXPORT: content-address collision")
-            else:
-                try:
-                    with target.open("xb") as handle:
-                        handle.write(archive_bytes)
-                except FileExistsError:
-                    if target.read_bytes() != archive_bytes:
-                        raise ValueError("BLOCKED_UNSUPPORTED_XAI_EXPORT: concurrent content-address collision")
+            pending.append((target, archive_bytes))
             artifacts.append(target)
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for target, archive_bytes in pending:
+        if target.exists():
+            if target.read_bytes() != archive_bytes:
+                raise ValueError("BLOCKED_UNSUPPORTED_XAI_EXPORT: content-address collision")
+            continue
+        try:
+            with target.open("xb") as handle:
+                handle.write(archive_bytes)
+        except FileExistsError:
+            if target.read_bytes() != archive_bytes:
+                raise ValueError("BLOCKED_UNSUPPORTED_XAI_EXPORT: concurrent content-address collision")
     return _MaterializedSnapshot(tuple(artifacts), parent_sha, len(conversations))
 
 
@@ -337,7 +339,12 @@ def ingest_export(source: pathlib.Path, corpus_root: pathlib.Path) -> dict:
 
     with tempfile.TemporaryDirectory(prefix="session-search-xai-") as td:
         snapshot = _materialize_export_snapshot(pathlib.Path(source), pathlib.Path(td))
+        child_ids = {str(path): f"xai-child-sha256:{_sha256(path.read_bytes())}" for path in snapshot.artifacts}
         result = ingest_many(list(snapshot.artifacts), pathlib.Path(corpus_root))
+        for item in result.get("results", []):
+            source_value = item.get("source")
+            if source_value in child_ids:
+                item["source"] = child_ids[source_value]
     return {
         **result,
         "conversation_count": snapshot.conversation_count,
