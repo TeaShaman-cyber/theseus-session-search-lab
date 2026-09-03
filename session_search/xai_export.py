@@ -255,7 +255,7 @@ def _conversation_variants(item: dict) -> list[dict]:
         selected = set(path_ids)
         branch_choices = []
         for parent_id, child_id in zip(path_ids, path_ids[1:]):
-            siblings = children[parent_id]
+            siblings = sorted(children[parent_id])
             if len(siblings) > 1 and child_id != siblings[0]:
                 branch_choices.append([parent_id, child_id])
         session_id = source_session_id

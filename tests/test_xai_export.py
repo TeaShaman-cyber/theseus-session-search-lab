@@ -267,6 +267,27 @@ class XaiExportAdapterTest(unittest.TestCase):
                 materialize_export(self.write_export(root, [c]), root / "out")
 
 
+    def test_wrapper_reordering_does_not_change_default_branch_identity(self):
+        from session_search.xai_export import materialize_export
+        with tempfile.TemporaryDirectory() as td:
+            root=pathlib.Path(td)
+            responses=[
+                self.response("u",None,"human","question",1700000001000),
+                self.response("b","u","assistant","answer B",1700000003000),
+                self.response("a","u","assistant","answer A",1700000002000),
+            ]
+            first=self.conversation(cid="reorder",leaf=None,responses=responses,title="Reorder")
+            source=self.write_export(root,[first])
+            v1=[normalize_artifact(p) for p in materialize_export(source,root/"v1")]
+            base1=next(a for a in v1 if a.session_id=="reorder")
+            second=self.conversation(cid="reorder",leaf=None,responses=[responses[0],responses[2],responses[1]],title="Reorder")
+            self.write_export(root,[second])
+            v2=[normalize_artifact(p) for p in materialize_export(source,root/"v2")]
+            base2=next(a for a in v2 if a.session_id=="reorder")
+            d1={m.text for m in base1.messages if m.search_class=="dialogue"}
+            d2={m.text for m in base2.messages if m.search_class=="dialogue"}
+            self.assertEqual(d1,d2)
+
 
 class XaiExportEndToEndTest(unittest.TestCase):
     def test_direct_ingest_uses_existing_corpus_and_search_api(self):
