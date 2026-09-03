@@ -227,6 +227,101 @@ class DeepSeekExportAdapterTest(unittest.TestCase):
             self.assertEqual(result["conversation_count"], 1)
             self.assertEqual(result["artifact_count"], 1)
 
+    def test_graph_order_survives_missing_parent_timestamp(self):
+        from session_search.deepseek_export import materialize_export
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            c = self._conversation("order-missing-time", "request")
+            del c["mapping"]["1"]["message"]["inserted_at"]
+            c["mapping"]["1"]["children"] = ["2"]
+            c["mapping"]["2"] = {"id":"2","parent":"1","children":[],"message":{
+                "inserted_at":"2026-09-03T12:00:01+00:00","model":"deepseek-chat",
+                "fragments":[{"type":"RESPONSE","content":"response"}]}}
+            source=root/"conversations.json"; source.write_text(json.dumps([c]),encoding="utf-8")
+            artifact=normalize_artifact(materialize_export(source,root/"out")[0])
+            self.assertEqual([m.text for m in artifact.messages],["request","response"])
+            self.assertIsNone(artifact.messages[0].create_time)
+
+    def test_unknown_fragment_without_content_is_preserved_as_trace(self):
+        from session_search.deepseek_export import materialize_export
+        with tempfile.TemporaryDirectory() as td:
+            root=pathlib.Path(td)
+            c=self._conversation("unknown-fragment","ignored")
+            c["mapping"]["1"]["message"]["fragments"]=[{"type":"NEW_PROVIDER_KIND","payload":{"x":1}}]
+            source=root/"conversations.json"; source.write_text(json.dumps([c]),encoding="utf-8")
+            artifact=normalize_artifact(materialize_export(source,root/"out")[0])
+            self.assertEqual(len(artifact.messages),1)
+            self.assertEqual(artifact.messages[0].search_class,"trace")
+            self.assertEqual(artifact.messages[0].text,"")
+
+    def test_branch_session_identity_survives_linear_leaf_extension(self):
+        from session_search.deepseek_export import materialize_export
+        def branched(extend=False):
+            c=self._conversation("stable-branch","question")
+            c["mapping"]["1"]["children"]=["a","b"]
+            c["mapping"]["a"]={"id":"a","parent":"1","children":["a2"] if extend else [],"message":{
+                "inserted_at":"2026-09-03T12:00:01+00:00","model":"deepseek-chat","fragments":[{"type":"RESPONSE","content":"answer A"}]}}
+            if extend:
+                c["mapping"]["a2"]={"id":"a2","parent":"a","children":[],"message":{
+                    "inserted_at":"2026-09-03T12:00:02+00:00","model":"deepseek-chat","fragments":[{"type":"REQUEST","content":"followup A"}]}}
+            c["mapping"]["b"]={"id":"b","parent":"1","children":[],"message":{
+                "inserted_at":"2026-09-03T12:00:01+00:00","model":"deepseek-chat","fragments":[{"type":"RESPONSE","content":"answer B"}]}}
+            return c
+        with tempfile.TemporaryDirectory() as td:
+            root=pathlib.Path(td)
+            source=root/"conversations.json"
+            source.write_text(json.dumps([branched(False)]),encoding="utf-8")
+            first=[normalize_artifact(p) for p in materialize_export(source,root/"v1")]
+            a1=next(a for a in first if any(m.text=="answer A" for m in a.messages))
+            source.write_text(json.dumps([branched(True)]),encoding="utf-8")
+            second=[normalize_artifact(p) for p in materialize_export(source,root/"v2")]
+            a2=next(a for a in second if any(m.text=="answer A" for m in a.messages))
+            self.assertEqual(a1.session_id,a2.session_id)
+
+    def test_many_fragments_keep_provider_order_without_float_ties(self):
+        from session_search.deepseek_export import materialize_export
+        with tempfile.TemporaryDirectory() as td:
+            root=pathlib.Path(td)
+            c=self._conversation("many-fragments","x")
+            c["mapping"]["1"]["message"]["fragments"]=[{"type":"REQUEST","content":f"f{i:02d}"} for i in range(30)]
+            source=root/"conversations.json"; source.write_text(json.dumps([c]),encoding="utf-8")
+            artifact=normalize_artifact(materialize_export(source,root/"out")[0])
+            self.assertEqual([m.text for m in artifact.messages],[f"f{i:02d}" for i in range(30)])
+
+    def test_late_invalid_conversation_publishes_no_partial_children(self):
+        from session_search.deepseek_export import materialize_export
+        with tempfile.TemporaryDirectory() as td:
+            root=pathlib.Path(td); out=root/"out"
+            good=self._conversation("good","ok")
+            bad=self._conversation("bad","bad")
+            del bad["mapping"]["1"]["message"]["fragments"]
+            source=root/"conversations.json"; source.write_text(json.dumps([good,bad]),encoding="utf-8")
+            with self.assertRaises(ValueError): materialize_export(source,out)
+            self.assertEqual(list(out.glob("*.zip")),[])
+
+    def test_direct_ingest_rewrites_temporary_source_to_durable_child_identifier(self):
+        from unittest import mock
+        from session_search.deepseek_export import ingest_export
+        with tempfile.TemporaryDirectory() as td:
+            root=pathlib.Path(td); source=root/"conversations.json"
+            source.write_text(json.dumps([self._conversation("durable-source","hello")]),encoding="utf-8")
+            def degraded(children, corpus_root):
+                return {"status":"DEGRADED","results":[{"source":str(children[0]),"status":"FAILED","error":"synthetic"}]}
+            with mock.patch("session_search.corpus_store.ingest_many",side_effect=degraded):
+                result=ingest_export(source,root/"corpus")
+            self.assertTrue(result["results"][0]["source"].startswith("deepseek-child-sha256:"))
+            self.assertNotIn("session-search-deepseek-",result["results"][0]["source"])
+
+    def test_zip_bytes_are_independent_of_host_platform_creator_metadata(self):
+        from unittest import mock
+        from session_search.deepseek_export import _portable_zip_bytes
+        payload=b"{}"; manifest={"schema":"x"}
+        with mock.patch("sys.platform","win32"):
+            win=_portable_zip_bytes("optional/conversation-x.bin",payload,manifest)
+        with mock.patch("sys.platform","linux"):
+            posix=_portable_zip_bytes("optional/conversation-x.bin",payload,manifest)
+        self.assertEqual(win,posix)
+
     def test_timezone_naive_timestamp_is_rejected(self):
         from session_search.deepseek_export import materialize_export
         with tempfile.TemporaryDirectory() as td:

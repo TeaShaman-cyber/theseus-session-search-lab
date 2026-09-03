@@ -275,11 +275,15 @@ def normalize_artifact(source: pathlib.Path) -> NormalizedArtifact:
 
     def message_order(item: tuple[str, dict]) -> tuple[int, float, int, int]:
         key, message = item
-        create_time = message.get("create_time")
+        metadata = message.get("metadata") or {}
+        explicit_order = metadata.get("session_search_order") if isinstance(metadata, dict) else None
         first_source = min((src.capture_sequence, src.page_position) for src in sources[key])
+        if isinstance(explicit_order, int) and not isinstance(explicit_order, bool):
+            return (0, float(explicit_order), first_source[0], first_source[1])
+        create_time = message.get("create_time")
         if isinstance(create_time, (int, float)):
-            return (0, float(create_time), first_source[0], first_source[1])
-        return (1, 0.0, first_source[0], first_source[1])
+            return (1, float(create_time), first_source[0], first_source[1])
+        return (2, 0.0, first_source[0], first_source[1])
 
     normalized_messages = []
     for key, message in sorted(canonical.items(), key=message_order):

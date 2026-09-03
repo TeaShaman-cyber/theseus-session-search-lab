@@ -119,7 +119,7 @@ def _fragment_message_id(node_id: str, fragment_index: int) -> str:
     return f"deepseek-fragment-v1:{encoded}"
 
 
-def _fragment_message(node: dict, fragment: dict, fragment_index: int, create_time: float | None) -> dict | None:
+def _fragment_message(node: dict, fragment: dict, fragment_index: int, create_time: float | None, order: int) -> dict:
     kind = str(fragment.get("type") or "")
     node_id = str(node.get("id") or "")
     message_id = _fragment_message_id(node_id, fragment_index)
@@ -135,9 +135,8 @@ def _fragment_message(node: dict, fragment: dict, fragment_index: int, create_ti
         )
     else:
         content = fragment.get("content")
-        if content is None:
-            return None
-        role, search_content = "unknown", str(content)
+        role = "unknown"
+        search_content = "" if content is None else str(content)
     message = node.get("message") or {}
     return {
         "id": message_id,
@@ -150,11 +149,12 @@ def _fragment_message(node: dict, fragment: dict, fragment_index: int, create_ti
             "deepseek_model": message.get("model"),
             "deepseek_node_id": node_id,
             "deepseek_fragment_index": fragment_index,
+            "session_search_order": order,
         },
     }
 
 
-def _empty_fragment_placeholder(node: dict, create_time: float | None) -> dict:
+def _empty_fragment_placeholder(node: dict, create_time: float | None, order: int) -> dict:
     node_id = str(node.get("id") or "")
     message = node.get("message") or {}
     return {
@@ -167,6 +167,7 @@ def _empty_fragment_placeholder(node: dict, create_time: float | None) -> dict:
             "deepseek_inserted_at": message.get("inserted_at"),
             "deepseek_model": message.get("model"),
             "deepseek_node_id": node_id,
+            "session_search_order": order,
         },
     }
 
@@ -178,12 +179,20 @@ def _conversation_payload(conversation: dict, nodes: list[dict], leaf_id: str, b
         raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: conversation identity/title missing")
     session_id = source_session_id
     if branch_count > 1:
-        leaf_hash = hashlib.sha256(leaf_id.encode("utf-8")).hexdigest()[:12]
-        session_id = f"{source_session_id}~branch-{leaf_hash}"
+        branch_choices = []
+        for parent, child in zip(nodes, nodes[1:]):
+            children = parent.get("children") or []
+            if len(children) > 1:
+                branch_choices.append([str(parent.get("id") or ""), str(child.get("id") or "")])
+        if not branch_choices:
+            raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: branched path missing branch choice")
+        branch_hash = hashlib.sha256(_stable_json_bytes(branch_choices)).hexdigest()[:12]
+        session_id = f"{source_session_id}~branch-{branch_hash}"
 
     messages = []
     generated_ids: set[str] = set()
     last_time: float | None = None
+    order = 0
     for node in nodes:
         raw_message = node.get("message")
         if raw_message is None:
@@ -198,7 +207,8 @@ def _conversation_payload(conversation: dict, nodes: list[dict], leaf_id: str, b
         if base is not None and last_time is not None and base <= last_time:
             base = last_time + 0.000001
         if not fragments:
-            placeholder = _empty_fragment_placeholder(node, base)
+            placeholder = _empty_fragment_placeholder(node, base, order)
+            order += 1
             if placeholder["id"] in generated_ids:
                 raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: generated message id collision")
             generated_ids.add(placeholder["id"])
@@ -210,14 +220,14 @@ def _conversation_payload(conversation: dict, nodes: list[dict], leaf_id: str, b
             if not isinstance(fragment, dict):
                 raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: fragment must be object")
             create_time = None if base is None else base + fragment_index * 0.0000001
-            converted = _fragment_message(node, fragment, fragment_index, create_time)
-            if converted is not None:
-                if converted["id"] in generated_ids:
-                    raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: generated message id collision")
-                generated_ids.add(converted["id"])
-                messages.append(converted)
-                if create_time is not None:
-                    last_time = create_time
+            converted = _fragment_message(node, fragment, fragment_index, create_time, order)
+            order += 1
+            if converted["id"] in generated_ids:
+                raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: generated message id collision")
+            generated_ids.add(converted["id"])
+            messages.append(converted)
+            if create_time is not None:
+                last_time = create_time
     return {
         "conversation_id": session_id,
         "title": title,
@@ -234,6 +244,7 @@ def _conversation_payload(conversation: dict, nodes: list[dict], leaf_id: str, b
 def _zip_write(zf: zipfile.ZipFile, name: str, data: bytes) -> None:
     info = zipfile.ZipInfo(name, _FIXED_ZIP_TIME)
     info.compress_type = zipfile.ZIP_DEFLATED
+    info.create_system = 3
     info.external_attr = 0o644 << 16
     zf.writestr(info, data)
 
@@ -321,7 +332,12 @@ def ingest_export(source: pathlib.Path, corpus_root: pathlib.Path) -> dict:
     source = pathlib.Path(source)
     with tempfile.TemporaryDirectory(prefix="session-search-deepseek-") as td:
         snapshot = _materialize_export_snapshot(source, pathlib.Path(td))
+        child_ids = {str(path): f"deepseek-child-sha256:{_sha256(path.read_bytes())}" for path in snapshot.artifacts}
         result = ingest_many(list(snapshot.artifacts), pathlib.Path(corpus_root))
+        for item in result.get("results", []):
+            source_value = item.get("source")
+            if source_value in child_ids:
+                item["source"] = child_ids[source_value]
     return {
         **result,
         "conversation_count": snapshot.conversation_count,
