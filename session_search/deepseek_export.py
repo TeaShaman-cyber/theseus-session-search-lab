@@ -27,9 +27,12 @@ def _parse_time(value: object) -> float | None:
     if not isinstance(value, str) or not value:
         return None
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
-    except ValueError:
-        return None
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: invalid timestamp") from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: timestamp must be timezone-aware")
+    return parsed.timestamp()
 
 
 def _ordered_nodes(mapping: dict) -> list[dict]:
@@ -177,7 +180,9 @@ def materialize_export(source: pathlib.Path, output_dir: pathlib.Path) -> list[p
         if session_id in seen:
             raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: duplicate conversation id")
         seen.add(session_id)
-        safe_id = _SAFE_ID.sub("_", session_id).strip("._") or hashlib.sha256(session_id.encode()).hexdigest()[:16]
+        sanitized = _SAFE_ID.sub("_", session_id).strip("._") or "session"
+        id_hash = hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:12]
+        safe_id = f"{sanitized}-{id_hash}"
         member = f"optional/conversation-deepseek-{safe_id}.bin"
         payload_bytes = _stable_json_bytes(payload)
         manifest = {

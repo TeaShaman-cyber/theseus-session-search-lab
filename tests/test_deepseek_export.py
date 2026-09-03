@@ -36,6 +36,21 @@ class DeepSeekExportAdapterTest(unittest.TestCase):
         ], ensure_ascii=False), encoding="utf-8")
         return source
 
+
+    def _conversation(self, session_id: str, content: str) -> dict:
+        return {
+            "id": session_id,
+            "title": session_id,
+            "mapping": {
+                "root": {"id": "root", "parent": None, "children": ["1"], "message": None},
+                "1": {"id": "1", "parent": "root", "children": [], "message": {
+                    "inserted_at": "2026-09-03T12:00:00+00:00",
+                    "model": "deepseek-chat",
+                    "fragments": [{"type": "REQUEST", "content": content}],
+                }},
+            },
+        }
+
     def test_materialization_is_deterministic_and_preserves_parent_export_sha(self):
         from session_search.deepseek_export import materialize_export
 
@@ -45,7 +60,10 @@ class DeepSeekExportAdapterTest(unittest.TestCase):
             parent_sha = hashlib.sha256(source.read_bytes()).hexdigest()
             first = materialize_export(source, root / "one")
             second = materialize_export(source, root / "two")
-            self.assertEqual([p.name for p in first], ["deepseek-conv-alpha.zip", "deepseek-conv-beta.zip"])
+            self.assertEqual([p.name for p in first], [
+                "deepseek-conv-alpha-8d4f6cf15890.zip",
+                "deepseek-conv-beta-9faa2efd77b6.zip",
+            ])
             self.assertEqual([p.read_bytes() for p in first], [p.read_bytes() for p in second])
             with zipfile.ZipFile(first[0]) as zf:
                 manifest = json.loads(zf.read("manifest.json"))
@@ -78,6 +96,31 @@ class DeepSeekExportAdapterTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT"):
                 materialize_export(source, root / "out")
 
+    def test_sanitized_child_filenames_remain_collision_free(self):
+        from session_search.deepseek_export import materialize_export
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            source = root / "conversations.json"
+            source.write_text(json.dumps([
+                self._conversation("a/b", "one"),
+                self._conversation("a?b", "two"),
+            ]), encoding="utf-8")
+            outputs = materialize_export(source, root / "out")
+            self.assertEqual(2, len(outputs))
+            self.assertEqual(2, len({path.name for path in outputs}))
+            self.assertTrue(all(path.exists() for path in outputs))
+
+    def test_timezone_naive_timestamp_is_rejected(self):
+        from session_search.deepseek_export import materialize_export
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            source = root / "conversations.json"
+            conversation = self._conversation("tz-test", "hello")
+            conversation["mapping"]["1"]["message"]["inserted_at"] = "2026-09-03T12:00:00"
+            source.write_text(json.dumps([conversation]), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "timezone-aware"):
+                materialize_export(source, root / "out")
+
 
 if __name__ == "__main__":
     unittest.main()
@@ -99,6 +142,7 @@ class DeepSeekEndToEndCorpusTest(unittest.TestCase):
             self.assertEqual(hits[0]["session_id"], "conv-alpha")
             self.assertEqual(hits[0]["session_title"], "Robot notes")
             self.assertEqual(hits[0]["session_coverage"], "COMPLETE_EXPOSED_CONVERSATION")
+
 
 class DeepSeekLongChainRegressionTest(unittest.TestCase):
     def test_long_official_mapping_chain_does_not_depend_on_python_recursion_limit(self):
