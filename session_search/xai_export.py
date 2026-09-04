@@ -255,9 +255,14 @@ def _conversation_variants(item: dict) -> list[dict]:
         selected = set(path_ids)
         branch_choices = []
         for parent_id, child_id in zip(path_ids, path_ids[1:]):
-            siblings = sorted(children[parent_id])
-            if len(siblings) > 1 and child_id != siblings[0]:
-                branch_choices.append([parent_id, child_id])
+            siblings = children[parent_id]
+            if len(siblings) > 1:
+                def branch_key(rid: str) -> tuple[bool, float, str]:
+                    observed = _parse_mongo_time(by_id[rid].get("create_time"))
+                    return (observed is None, observed if observed is not None else 0.0, rid)
+                default_child = min(siblings, key=branch_key)
+                if child_id != default_child:
+                    branch_choices.append([parent_id, child_id])
         session_id = source_session_id
         if branch_choices:
             branch_hash = hashlib.sha256(_stable_json_bytes(branch_choices)).hexdigest()[:12]

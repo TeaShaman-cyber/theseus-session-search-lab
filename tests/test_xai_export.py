@@ -288,6 +288,61 @@ class XaiExportAdapterTest(unittest.TestCase):
             d2={m.text for m in base2.messages if m.search_class=="dialogue"}
             self.assertEqual(d1,d2)
 
+    def test_later_lexicographically_earlier_sibling_does_not_steal_base_session(self):
+        from session_search.xai_export import materialize_export
+        with tempfile.TemporaryDirectory() as td:
+            root=pathlib.Path(td)
+            first=self.conversation(cid="stable-default",leaf=None,responses=[
+                self.response("u",None,"human","question",1700000001000),
+                self.response("a","u","assistant","answer A",1700000002000),
+            ])
+            source=self.write_export(root,[first])
+            a1=normalize_artifact(materialize_export(source,root/"v1")[0])
+            second=self.conversation(cid="stable-default",leaf=None,responses=[
+                self.response("u",None,"human","question",1700000001000),
+                self.response("a","u","assistant","answer A",1700000002000),
+                self.response("0","u","assistant","answer later sibling",1700000003000),
+            ])
+            self.write_export(root,[second])
+            variants=[normalize_artifact(p) for p in materialize_export(source,root/"v2")]
+            base=next(a for a in variants if a.session_id=="stable-default")
+            dialogue={m.text for m in base.messages if m.search_class=="dialogue"}
+            self.assertIn("answer A",dialogue)
+            self.assertNotIn("answer later sibling",dialogue)
+            self.assertEqual(a1.session_id,base.session_id)
+
+    def test_cumulative_branch_extension_keeps_off_path_trace_after_new_dialogue(self):
+        from session_search.xai_export import materialize_export
+        from session_search.corpus_store import ingest_artifact
+        import sqlite3
+        with tempfile.TemporaryDirectory() as td:
+            root=pathlib.Path(td); corpus=root/"corpus"
+            first=self.conversation(cid="order-grow",leaf="a",responses=[
+                self.response("u",None,"human","question",1700000001000),
+                self.response("a","u","assistant","answer",1700000002000),
+                self.response("b","u","assistant","alternate",1700000002500),
+            ])
+            source=self.write_export(root,[first])
+            child1=materialize_export(source,root/"v1")[0]
+            self.assertEqual(ingest_artifact(child1,corpus)["status"],"INGESTED")
+            second=self.conversation(cid="order-grow",leaf="c",responses=[
+                self.response("u",None,"human","question",1700000001000),
+                self.response("a","u","assistant","answer",1700000002000),
+                self.response("c","a","human","followup",1700000003000),
+                self.response("b","u","assistant","alternate",1700000002500),
+            ])
+            self.write_export(root,[second])
+            child2=materialize_export(source,root/"v2")[0]
+            self.assertEqual(ingest_artifact(child2,corpus)["status"],"INGESTED")
+            conn=sqlite3.connect(corpus/"corpus.sqlite3")
+            try:
+                rows=conn.execute("SELECT text,ordinal FROM messages WHERE session_id='order-grow' ORDER BY ordinal").fetchall()
+            finally:
+                conn.close()
+            texts=[row[0] for row in rows]
+            self.assertLess(texts.index("followup"),texts.index("alternate"))
+
+
 
 class XaiExportEndToEndTest(unittest.TestCase):
     def test_direct_ingest_uses_existing_corpus_and_search_api(self):
