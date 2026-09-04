@@ -28,3 +28,18 @@ The initial prototype established that a captured session export can be integrit
 ## Target direction
 
 The long-term target can remove the browser entirely if an authoritative session-history source becomes available. Session Search should survive that transition because its stable boundary is the portable artifact/import contract, not the capture implementation.
+
+## Optional provenance recovery layer
+
+The normal path assumes a portable artifact already has one unambiguous session boundary. Browser/network captures can violate that assumption by collecting unrelated provider fetches in one raw export.
+
+When this occurs, an optional provenance-aware adapter stage may derive a single-session portable artifact before the normal importer:
+
+```text
+raw mixed capture
+  -> provenance-aware recovery adapter
+  -> portable single-session artifact + transformation receipt
+  -> importer/normalizer
+```
+
+This layer is not permission to weaken importer validation. Ambiguous membership remains blocked, and the immutable raw capture stays source evidence. See [Mixed capture artifact recovery](mixed-artifact-recovery.md).

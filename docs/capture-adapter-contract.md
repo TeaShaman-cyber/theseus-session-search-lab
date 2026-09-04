@@ -34,3 +34,16 @@ Coverage is explicit:
 - `COMPLETE_EXPOSED_CONVERSATION` when the oldest observed page reports `has_previous_page=false`.
 
 `COMPLETE_EXPOSED_CONVERSATION` is scoped to the history exposed by the captured source for that conversation. It does not imply completeness across other chats, deleted history, inaccessible branches, or unobserved provider state.
+
+## Cross-conversation contamination and membership provenance
+
+A capture artifact can contain provider fetches for more than one conversation even when the user-visible workflow appears to be focused on one active chat. Therefore payload membership is an explicit capture concern, not something the importer may infer from proximity.
+
+For adapters that record network request metadata, preserve enough provenance to bind each captured payload to its request and stable provider conversation identity when available. For Barn Doctor-style captures this includes the request key, endpoint class, and `conversationId` associated with captured `conversation_get` / `conversation_messages` bodies.
+
+A complete pagination claim requires both:
+
+1. coverage evidence showing the exposed history boundary was reached; and
+2. membership evidence showing every included page belongs to the claimed conversation.
+
+If a portable artifact exposes multiple stable conversation identities, the ordinary importer remains fail-closed with `BLOCKED_MIXED_SESSION_ARTIFACT`. Provenance-aware preprocessing is a separate adapter/recovery layer; see [Mixed capture artifact recovery](mixed-artifact-recovery.md) and Issue #16.

@@ -32,7 +32,7 @@ The first development prototype used Barn Doctor, Google Drive, and MarcoPolo. *
 
 `Issue -> experiment -> commit/PR -> execution -> evidence -> verification -> receipt -> disposition`
 
-See [Architecture](docs/architecture.md), [Capture adapter contract](docs/capture-adapter-contract.md), and [Research lifecycle](docs/research-lifecycle.md).
+See [Architecture](docs/architecture.md), [Capture adapter contract](docs/capture-adapter-contract.md), [Mixed capture artifact recovery](docs/mixed-artifact-recovery.md), and [Research lifecycle](docs/research-lifecycle.md).
 
 ## Cumulative multi-session corpus
 
