@@ -139,6 +139,28 @@ class CorpusPrimitiveTest(unittest.TestCase):
             self.assertEqual(json.loads(path.read_text()), entry)
             self.assertFalse(any(paths.staging.iterdir()))
 
+    def test_existing_v1_corpus_adds_nullable_provider_order_projection_column(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=pathlib.Path(td); corpus=root/"corpus"
+            corpus.mkdir(parents=True)
+            db=corpus/"corpus.sqlite3"
+            conn=sqlite3.connect(db)
+            try:
+                init_corpus_db(conn)
+                conn.execute("CREATE TABLE messages_old AS SELECT * FROM messages")
+                conn.execute("DROP TABLE messages")
+                conn.execute("ALTER TABLE messages_old RENAME TO messages")
+                conn.commit()
+            finally:
+                conn.close()
+            from session_search.corpus_store import CorpusPaths, _connect_corpus
+            conn=_connect_corpus(CorpusPaths.from_root(corpus))
+            try:
+                cols={r[1] for r in conn.execute("PRAGMA table_info(messages)")}
+                self.assertIn("provider_order",cols)
+            finally:
+                conn.close()
+
     def test_schema_supports_many_sessions_and_scoped_message_identity(self):
         conn = sqlite3.connect(":memory:")
         try:
@@ -174,6 +196,31 @@ class CorpusPrimitiveTest(unittest.TestCase):
         finally:
             conn.close()
 
+
+class CorpusProviderOrderMergeTest(unittest.TestCase):
+    def test_provider_order_merge_is_ingestion_order_independent_and_rebuild_equivalent(self):
+        from session_search.corpus_store import ingest_artifact, rebuild_corpus, verify_corpus
+        with tempfile.TemporaryDirectory() as td:
+            root=pathlib.Path(td)
+            def capture(name, order):
+                msg=_message("m1","stable",1.0)
+                msg["metadata"]={"session_search_order":order}
+                return _write_capture(root/name,"session-order",[msg])
+            a=capture("a.zip",2); b=capture("b.zip",3)
+            observed=[]
+            for idx, sequence in enumerate(((a,b),(b,a))):
+                corpus=root/f"corpus-{idx}"
+                for item in sequence: self.assertEqual(ingest_artifact(item,corpus)["status"],"INGESTED")
+                import sqlite3
+                conn=sqlite3.connect(corpus/"corpus.sqlite3")
+                try: observed.append(conn.execute("SELECT provider_order FROM messages WHERE message_id='m1'").fetchone()[0])
+                finally: conn.close()
+                self.assertEqual(rebuild_corpus(corpus)["status"],"REBUILT")
+                self.assertEqual(verify_corpus(corpus)["status"],"VERIFIED")
+                conn=sqlite3.connect(corpus/"corpus.sqlite3")
+                try: self.assertEqual(conn.execute("SELECT provider_order FROM messages WHERE message_id='m1'").fetchone()[0],observed[-1])
+                finally: conn.close()
+            self.assertEqual(observed,[3,3])
 
 class CorpusIngestTest(unittest.TestCase):
     def test_two_sessions_coexist_and_same_message_id_does_not_cross_collide(self):

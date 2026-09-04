@@ -59,6 +59,21 @@ class ArtifactNormalizationTest(unittest.TestCase):
             self.assertNotEqual(a.sources[0].source_object_sha256, b.sources[0].source_object_sha256)
             self.assertEqual(a.canonical_message_sha256, b.canonical_message_sha256)
 
+
+    def test_legacy_barn_doctor_manifest_does_not_reinterpret_source_adapter(self):
+        with tempfile.TemporaryDirectory() as td:
+            td=pathlib.Path(td)
+            path=write_capture(td/"legacy.zip", [("optional/conversation-1.bin", detail("legacy-session", []))])
+            with zipfile.ZipFile(path, "r") as src:
+                files={name:src.read(name) for name in src.namelist()}
+            manifest=json.loads(files["manifest.json"])
+            manifest["source_adapter"]="deepseek-export"
+            with zipfile.ZipFile(path,"w") as dst:
+                dst.writestr("manifest.json",json.dumps(manifest,sort_keys=True))
+                for name,data in files.items():
+                    if name!="manifest.json": dst.writestr(name,data)
+            self.assertEqual(normalize_artifact(path).source_adapter,"barn-doctor")
+
     def test_changed_semantic_payload_changes_canonical_digest(self):
         with tempfile.TemporaryDirectory() as td:
             td = pathlib.Path(td)
@@ -75,6 +90,21 @@ class ArtifactNormalizationTest(unittest.TestCase):
             a = normalize_artifact(first).messages[0]
             b = normalize_artifact(second).messages[0]
             self.assertNotEqual(a.canonical_message_sha256, b.canonical_message_sha256)
+
+    def test_non_object_metadata_does_not_break_provider_order_extraction(self):
+        with tempfile.TemporaryDirectory() as td:
+            td=pathlib.Path(td)
+            msg={
+                "id":"m-meta",
+                "author":{"role":"user"},
+                "create_time":1.0,
+                "content":{"content_type":"text","parts":["legacy metadata"]},
+                "metadata":"legacy-string",
+            }
+            path=write_capture(td/"legacy-meta.zip",[("optional/conversation-1.bin",detail("legacy-meta",[msg]))])
+            artifact=normalize_artifact(path)
+            self.assertEqual(artifact.messages[0].text,"legacy metadata")
+            self.assertIsNone(artifact.messages[0].provider_order)
 
     def test_unresolved_session_id_is_blocked(self):
         with tempfile.TemporaryDirectory() as td:

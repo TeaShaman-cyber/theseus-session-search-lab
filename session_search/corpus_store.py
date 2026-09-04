@@ -265,6 +265,7 @@ def init_corpus_db(conn: sqlite3.Connection) -> None:
             content_type TEXT NOT NULL,
             search_class TEXT NOT NULL,
             create_time REAL,
+            provider_order INTEGER,
             text TEXT NOT NULL,
             FOREIGN KEY(session_id) REFERENCES sessions(session_id)
         );
@@ -336,6 +337,10 @@ def _connect_corpus(paths: CorpusPaths) -> sqlite3.Connection:
         if row is None or row[0] != CORPUS_SCHEMA_VERSION:
             conn.close()
             raise RuntimeError("CORPUS_SCHEMA_MISMATCH")
+        columns={r[1] for r in conn.execute("PRAGMA table_info(messages)")}
+        if "provider_order" not in columns:
+            conn.execute("ALTER TABLE messages ADD COLUMN provider_order INTEGER")
+            conn.commit()
     return conn
 
 
@@ -510,8 +515,8 @@ def _upsert_messages(
                 """
                 INSERT INTO messages(
                     session_id,ordinal,message_id,local_identity,canonical_message_sha256,
-                    role,content_type,search_class,create_time,text
-                ) VALUES (?,?,?,?,?,?,?,?,?,?)
+                    role,content_type,search_class,create_time,provider_order,text
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     artifact.session_id,
@@ -523,6 +528,7 @@ def _upsert_messages(
                     message.content_type,
                     message.search_class,
                     message.create_time,
+                    message.provider_order,
                     message.text,
                 ),
             )
@@ -536,6 +542,12 @@ def _upsert_messages(
             row_id = int(row["row_id"])
             existing_time = row["create_time"]
             incoming_time = message.create_time
+            existing_order = row["provider_order"] if "provider_order" in row.keys() else None
+            incoming_order = message.provider_order
+            if incoming_order is not None:
+                merged_order = incoming_order if existing_order is None else max(int(existing_order), int(incoming_order))
+                if existing_order != merged_order:
+                    conn.execute("UPDATE messages SET provider_order=? WHERE row_id=?", (merged_order, row_id))
             if incoming_time is not None and (existing_time is None or float(incoming_time) < float(existing_time)):
                 conn.execute("UPDATE messages SET create_time=? WHERE row_id=?", (incoming_time, row_id))
             reused += 1
@@ -563,7 +575,7 @@ def _recompute_ordinals(conn: sqlite3.Connection, session_id: str) -> None:
         """
         SELECT row_id FROM messages
         WHERE session_id=?
-        ORDER BY (create_time IS NULL), create_time, local_identity
+        ORDER BY (provider_order IS NULL), provider_order, (create_time IS NULL), create_time, local_identity
         """,
         (session_id,),
     ).fetchall()

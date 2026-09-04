@@ -27,6 +27,7 @@ class NormalizedMessage:
     content_type: str
     search_class: str
     create_time: float | None
+    provider_order: int | None
     text: str
     canonical_message_sha256: str
     sources: tuple[MessageSource, ...]
@@ -275,11 +276,15 @@ def normalize_artifact(source: pathlib.Path) -> NormalizedArtifact:
 
     def message_order(item: tuple[str, dict]) -> tuple[int, float, int, int]:
         key, message = item
-        create_time = message.get("create_time")
+        metadata = message.get("metadata") or {}
+        explicit_order = metadata.get("session_search_order") if isinstance(metadata, dict) else None
         first_source = min((src.capture_sequence, src.page_position) for src in sources[key])
+        if isinstance(explicit_order, int) and not isinstance(explicit_order, bool):
+            return (0, float(explicit_order), first_source[0], first_source[1])
+        create_time = message.get("create_time")
         if isinstance(create_time, (int, float)):
-            return (0, float(create_time), first_source[0], first_source[1])
-        return (1, 0.0, first_source[0], first_source[1])
+            return (1, float(create_time), first_source[0], first_source[1])
+        return (2, 0.0, first_source[0], first_source[1])
 
     normalized_messages = []
     for key, message in sorted(canonical.items(), key=message_order):
@@ -288,6 +293,8 @@ def normalize_artifact(source: pathlib.Path) -> NormalizedArtifact:
         role = str(author.get("role") or "unknown")
         content_type = str(content.get("content_type") or "unknown")
         create_time = message.get("create_time")
+        metadata = message.get("metadata")
+        explicit_order = metadata.get("session_search_order") if isinstance(metadata, dict) else None
         normalized_messages.append(
             NormalizedMessage(
                 message_id=(str(message.get("id")) if message.get("id") else None),
@@ -295,6 +302,7 @@ def normalize_artifact(source: pathlib.Path) -> NormalizedArtifact:
                 content_type=content_type,
                 search_class=classify(role, content_type),
                 create_time=(float(create_time) if isinstance(create_time, (int, float)) else None),
+                provider_order=(int(explicit_order) if isinstance(explicit_order, int) and not isinstance(explicit_order, bool) else None),
                 text=extract_text(content),
                 canonical_message_sha256=canonical_digests[key],
                 sources=tuple(sources[key]),
@@ -306,7 +314,7 @@ def normalize_artifact(source: pathlib.Path) -> NormalizedArtifact:
         artifact_sha256=file_sha256(source),
         size_bytes=source.stat().st_size,
         source_schema=str(manifest.get("schema") or ""),
-        source_adapter="barn-doctor",
+        source_adapter=(str(manifest.get("source_adapter") or "barn-doctor") if str(manifest.get("schema") or "").startswith("theseus.session-search.") else "barn-doctor"),
         session_id=session_id,
         title=title,
         coverage_state=coverage,
