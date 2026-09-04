@@ -543,8 +543,11 @@ def _upsert_messages(
             existing_time = row["create_time"]
             incoming_time = message.create_time
             existing_order = row["provider_order"] if "provider_order" in row.keys() else None
-            if message.provider_order is not None and existing_order is None:
-                conn.execute("UPDATE messages SET provider_order=? WHERE row_id=?", (message.provider_order, row_id))
+            incoming_order = message.provider_order
+            if incoming_order is not None:
+                merged_order = incoming_order if existing_order is None else max(int(existing_order), int(incoming_order))
+                if existing_order != merged_order:
+                    conn.execute("UPDATE messages SET provider_order=? WHERE row_id=?", (merged_order, row_id))
             if incoming_time is not None and (existing_time is None or float(incoming_time) < float(existing_time)):
                 conn.execute("UPDATE messages SET create_time=? WHERE row_id=?", (incoming_time, row_id))
             reused += 1
