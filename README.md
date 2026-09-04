@@ -109,6 +109,25 @@ python3 -m session_search.search "previous decision" --corpus /private/path/sess
 
 The adapter treats the DeepSeek `parent`/`children` graph as ordering authority, maps `REQUEST` to user dialogue and `RESPONSE` to assistant dialogue, preserves explicit empty fragment collections as trace placeholders, preserves missing timestamps as unknown rather than inventing epoch values, and blocks missing/malformed fragment collections or inconsistent graph shapes instead of guessing. Fragment identities use an unambiguous tuple encoding, and direct corpus ingest reuses the same source snapshot hash that produced the child artifacts. Public tests use synthetic exports only; real export bytes, conversation text, and account-specific identifiers remain private.
 
+### Official xAI/Grok export adapter
+
+Official xAI data-export ZIPs can be transcoded into the same portable Session Search artifact contract without a provider-specific database or search path. The adapter reads the single `prod-grok-backend.json` payload from the official ZIP, binds every child artifact to the parent ZIP SHA-256, and uses content-addressed immutable child names.
+
+Materialize portable artifacts only:
+
+```bash
+python3 -m session_search.xai_export xai-export.zip --output-dir ./xai-artifacts
+```
+
+Or ingest directly into an existing cumulative corpus:
+
+```bash
+python3 -m session_search.xai_export xai-export.zip --corpus /private/path/session-search-corpus
+python3 -m session_search.search "previous decision" --corpus /private/path/session-search-corpus
+```
+
+For xAI, `parent_response_id` is graph authority because official exports may omit or partially populate `children`. When `leaf_response_id` is present, that root-to-leaf path is indexed as normal dialogue and off-path alternatives are retained as `trace`. Without explicit active-leaf metadata, a unique leaf is unambiguous; multiple leaves materialize explicit branch variants rather than guessing. `human` maps to user dialogue, `assistant`/`ASSISTANT` map to assistant dialogue, and unrecognized sender values remain trace. Mongo-style millisecond timestamps are parsed deterministically; missing time remains unknown.
+
 ### Legacy scratch projection
 
 The original one-artifact path remains available for debugging, portable reproduction, and scratch projections:
