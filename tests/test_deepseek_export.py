@@ -331,6 +331,17 @@ class DeepSeekExportAdapterTest(unittest.TestCase):
             with self.assertRaises(ValueError): materialize_export(source,out)
             self.assertEqual(list(out.glob("*.zip")),[])
 
+    def test_atomic_publisher_never_exposes_final_path_before_replace(self):
+        from unittest import mock
+        from session_search.deepseek_export import _publish_content_addressed
+        with tempfile.TemporaryDirectory() as td:
+            target=pathlib.Path(td)/"child.zip"
+            with mock.patch("session_search.deepseek_export.os.replace",side_effect=RuntimeError("synthetic replace failure")):
+                with self.assertRaisesRegex(RuntimeError,"synthetic replace failure"):
+                    _publish_content_addressed(target,b"complete-bytes")
+            self.assertFalse(target.exists())
+            self.assertEqual(list(target.parent.glob("*.tmp")),[])
+
     def test_direct_ingest_rewrites_temporary_source_to_durable_child_identifier(self):
         from unittest import mock
         from session_search.deepseek_export import ingest_export

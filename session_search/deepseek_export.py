@@ -6,7 +6,9 @@ import dataclasses
 import io
 import hashlib
 import json
+import os
 import pathlib
+import uuid
 import re
 import tempfile
 import zipfile
@@ -251,6 +253,30 @@ def _portable_zip_bytes(member: str, payload_bytes: bytes, manifest: dict) -> by
     return buffer.getvalue()
 
 
+def _publish_content_addressed(target: pathlib.Path, data: bytes) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists():
+        if target.read_bytes() != data:
+            raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: content-address collision")
+        return
+    temp = target.parent / f".{target.name}.{uuid.uuid4().hex}.tmp"
+    try:
+        with temp.open("xb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if target.exists():
+            if target.read_bytes() != data:
+                raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: concurrent content-address collision")
+            return
+        os.replace(temp, target)
+        if target.read_bytes() != data:
+            raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: published artifact mismatch")
+    finally:
+        if temp.exists():
+            temp.unlink()
+
+
 def _materialize_export_snapshot(source: pathlib.Path, output_dir: pathlib.Path) -> _MaterializedSnapshot:
     source = pathlib.Path(source)
     output_dir = pathlib.Path(output_dir)
@@ -307,16 +333,7 @@ def _materialize_export_snapshot(source: pathlib.Path, output_dir: pathlib.Path)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     for target, archive_bytes in pending:
-        if target.exists():
-            if target.read_bytes() != archive_bytes:
-                raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: content-address collision")
-            continue
-        try:
-            with target.open("xb") as handle:
-                handle.write(archive_bytes)
-        except FileExistsError:
-            if target.read_bytes() != archive_bytes:
-                raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: concurrent content-address collision")
+        _publish_content_addressed(target, archive_bytes)
     return _MaterializedSnapshot(tuple(outputs), parent_sha, len(conversations))
 
 
