@@ -188,12 +188,6 @@ def _path_to_root(by_id: dict[str, dict], root_id: str, leaf_id: str) -> list[st
 def _default_child(parent_id: str, siblings: list[str], by_id: dict[str, dict]) -> str:
     if len(siblings) == 1:
         return siblings[0]
-    hint = by_id[parent_id].get("children")
-    if isinstance(hint, list):
-        hinted = [entry.get("response_id") for entry in hint if isinstance(entry, dict)]
-        hinted = [rid for rid in hinted if rid in siblings]
-        if len(hinted) == len(siblings) and len(set(hinted)) == len(siblings):
-            return hinted[0]
     timed: list[tuple[float, str]] = []
     for rid in siblings:
         observed = _parse_mongo_time(by_id[rid].get("create_time"))

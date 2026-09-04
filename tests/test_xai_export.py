@@ -233,21 +233,34 @@ class XaiExportAdapterTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,"ambiguous default branch"):
                 materialize_export(self.write_export(root,[c]),root/"out")
 
-    def test_children_hint_stabilizes_undated_default_branch(self):
+    def test_children_hint_reordering_does_not_define_base_identity(self):
+        from session_search.xai_export import materialize_export
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            c = self.conversation(cid="conv-hint-reorder", leaf=None, responses=[
+                self.response("u", None, "human", "question", 1700000001000, children=[{"response_id":"z"},{"response_id":"a"}]),
+                self.response("z", "u", "assistant", "answer Z", 1700000002000),
+                self.response("a", "u", "assistant", "answer A", 1700000002000),
+            ], title="Hint reorder")
+            c["responses"][1]["response"]["create_time"] = None
+            c["responses"][2]["response"]["create_time"] = None
+            source = self.write_export(root, [c])
+            with self.assertRaisesRegex(ValueError, "ambiguous default branch"):
+                materialize_export(source, root / "out")
+
+    def test_children_hint_does_not_resolve_undated_default_branch_ambiguity(self):
         from session_search.xai_export import materialize_export
         with tempfile.TemporaryDirectory() as td:
             root=pathlib.Path(td)
-            responses=[
+            c=self.conversation(cid="conv-hint",leaf=None,responses=[
                 self.response("u",None,"human","question",1700000001000,children=[{"response_id":"z"},{"response_id":"a"}]),
-                self.response("z","u","assistant","old answer",1700000002000),
-                self.response("a","u","assistant","new answer",1700000003000),
-            ]
-            responses[1]["response"]["create_time"]=None
-            responses[2]["response"]["create_time"]=None
-            c=self.conversation(cid="undated-hinted",leaf=None,responses=responses)
-            artifacts=[normalize_artifact(p) for p in materialize_export(self.write_export(root,[c]),root/"out")]
-            base=next(a for a in artifacts if a.session_id=="undated-hinted")
-            self.assertIn("old answer",{m.text for m in base.messages if m.search_class=="dialogue"})
+                self.response("z","u","assistant","answer Z",1700000002000),
+                self.response("a","u","assistant","answer A",1700000003000),
+            ],title="Hinted")
+            c["responses"][1]["response"]["create_time"]=None
+            c["responses"][2]["response"]["create_time"]=None
+            with self.assertRaisesRegex(ValueError,"ambiguous default branch"):
+                materialize_export(self.write_export(root,[c]),root/"out")
 
     def test_off_path_subtree_is_topological_even_when_wrappers_are_reversed(self):
         from session_search.xai_export import materialize_export
