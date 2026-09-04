@@ -46,4 +46,6 @@ A complete pagination claim requires both:
 1. coverage evidence showing the exposed history boundary was reached; and
 2. membership evidence showing every included page belongs to the claimed conversation.
 
+This membership requirement is **not yet enforced by the ordinary Barn Doctor importer**. Legacy Barn Doctor normalization can derive `COMPLETE_EXPOSED_CONVERSATION` from pagination metadata even when one or more included message pages lack independently proven conversation membership. Until provenance-aware recovery in Issue #16 is implemented and verified, such a Barn Doctor `COMPLETE_EXPOSED_CONVERSATION` value records an observed pagination boundary only and **must not be used as evidence of absence** for historical claims.
+
 If a portable artifact exposes multiple stable conversation identities, the ordinary importer remains fail-closed with `BLOCKED_MIXED_SESSION_ARTIFACT`. Provenance-aware preprocessing is a separate adapter/recovery layer; see [Mixed capture artifact recovery](mixed-artifact-recovery.md) and Issue #16.

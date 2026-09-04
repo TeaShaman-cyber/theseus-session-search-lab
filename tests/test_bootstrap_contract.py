@@ -216,5 +216,13 @@ class BootstrapContract(unittest.TestCase):
             self.assertIn('conflicting duplicate message_id', imp.stderr)
 
 
+    def test_docs_do_not_treat_unverified_barn_membership_as_absence_authority(self):
+        text = (ROOT / 'docs' / 'capture-adapter-contract.md').read_text()
+        self.assertIn('not yet enforced by the ordinary Barn Doctor importer', text)
+        self.assertIn('must not be used as evidence of absence', text)
+        self.assertIn('Issue #16', text)
+
+
+
 if __name__ == '__main__':
     unittest.main()
