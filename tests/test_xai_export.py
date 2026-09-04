@@ -169,7 +169,7 @@ class XaiExportAdapterTest(unittest.TestCase):
             self.write_export(root,[b])
             second=normalize_artifact(materialize_export(source,root/"v2")[0])
             self.assertNotEqual(first.session_id,second.session_id)
-            self.assertEqual(first.session_id, "switch")
+            self.assertTrue(first.session_id.startswith("switch~branch-"))
             self.assertTrue(second.session_id.startswith("switch~branch-"))
 
     def test_missing_parent_timestamp_preserves_graph_order(self):
@@ -296,6 +296,25 @@ class XaiExportAdapterTest(unittest.TestCase):
             self.assertEqual(first.session_id,second.session_id)
             self.assertEqual(first.session_id,"linear-grow")
 
+
+    def test_explicit_active_leaf_bypasses_default_branch_inference_when_siblings_ambiguous(self):
+        from session_search.xai_export import materialize_export
+        with tempfile.TemporaryDirectory() as td:
+            root=pathlib.Path(td)
+            u=self.response("u",None,"human","q",1700000001000)
+            a=self.response("a","u","assistant","A",1700000002000)
+            b=self.response("b","u","assistant","B",1700000002000)
+            a["response"]["create_time"]=None
+            b["response"]["create_time"]=None
+            c=self.conversation(cid="conv-explicit-ambiguous",leaf="b",responses=[u,a,b])
+            outs=materialize_export(self.write_export(root,[c]),root/"out")
+            self.assertEqual(len(outs),1)
+            art=normalize_artifact(outs[0])
+            dialogue=[m.text for m in art.messages if m.search_class=="dialogue"]
+            trace=[m.text for m in art.messages if m.search_class=="trace"]
+            self.assertEqual(dialogue,["q","B"])
+            self.assertIn("A",trace)
+
     def test_empty_response_graph_with_active_leaf_is_blocked(self):
         from session_search.xai_export import materialize_export
         with tempfile.TemporaryDirectory() as td:
@@ -382,6 +401,8 @@ class XaiExportAdapterTest(unittest.TestCase):
             ])
             source=self.write_export(root,[first])
             child1=materialize_export(source,root/"v1")[0]
+            session_id=normalize_artifact(child1).session_id
+            self.assertTrue(session_id.startswith("order-grow~branch-"))
             self.assertEqual(ingest_artifact(child1,corpus)["status"],"INGESTED")
             second=self.conversation(cid="order-grow",leaf="c",responses=[
                 self.response("u",None,"human","question",1700000001000),
@@ -391,10 +412,11 @@ class XaiExportAdapterTest(unittest.TestCase):
             ])
             self.write_export(root,[second])
             child2=materialize_export(source,root/"v2")[0]
+            self.assertEqual(normalize_artifact(child2).session_id,session_id)
             self.assertEqual(ingest_artifact(child2,corpus)["status"],"INGESTED")
             conn=sqlite3.connect(corpus/"corpus.sqlite3")
             try:
-                rows=conn.execute("SELECT text,ordinal FROM messages WHERE session_id='order-grow' ORDER BY ordinal").fetchall()
+                rows=conn.execute("SELECT text,ordinal FROM messages WHERE session_id=? ORDER BY ordinal",(session_id,)).fetchall()
             finally:
                 conn.close()
             texts=[row[0] for row in rows]

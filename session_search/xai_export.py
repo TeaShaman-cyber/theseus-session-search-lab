@@ -282,6 +282,9 @@ def _conversation_variants(item: dict) -> list[dict]:
         for parent_id, child_id in zip(path_ids, path_ids[1:]):
             siblings = children[parent_id]
             if len(siblings) > 1:
+                if mode == "explicit-active":
+                    branch_choices.append([parent_id, child_id])
+                    continue
                 default_child = _default_child(parent_id, siblings, by_id)
                 if child_id != default_child:
                     branch_choices.append([parent_id, child_id])
