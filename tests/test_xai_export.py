@@ -218,6 +218,51 @@ class XaiExportAdapterTest(unittest.TestCase):
             self.assertEqual(first.session_id,continued.session_id)
             self.assertEqual(first.session_id, "grow-branch")
 
+    def test_undated_ambiguous_siblings_fail_closed_without_stable_provider_order(self):
+        from session_search.xai_export import materialize_export
+        with tempfile.TemporaryDirectory() as td:
+            root=pathlib.Path(td)
+            responses=[
+                self.response("u",None,"human","question",1700000001000),
+                self.response("z","u","assistant","old answer",1700000002000),
+                self.response("a","u","assistant","new answer",1700000003000),
+            ]
+            responses[1]["response"]["create_time"]=None
+            responses[2]["response"]["create_time"]=None
+            c=self.conversation(cid="undated-ambiguous",leaf=None,responses=responses)
+            with self.assertRaisesRegex(ValueError,"ambiguous default branch"):
+                materialize_export(self.write_export(root,[c]),root/"out")
+
+    def test_children_hint_stabilizes_undated_default_branch(self):
+        from session_search.xai_export import materialize_export
+        with tempfile.TemporaryDirectory() as td:
+            root=pathlib.Path(td)
+            responses=[
+                self.response("u",None,"human","question",1700000001000,children=[{"response_id":"z"},{"response_id":"a"}]),
+                self.response("z","u","assistant","old answer",1700000002000),
+                self.response("a","u","assistant","new answer",1700000003000),
+            ]
+            responses[1]["response"]["create_time"]=None
+            responses[2]["response"]["create_time"]=None
+            c=self.conversation(cid="undated-hinted",leaf=None,responses=responses)
+            artifacts=[normalize_artifact(p) for p in materialize_export(self.write_export(root,[c]),root/"out")]
+            base=next(a for a in artifacts if a.session_id=="undated-hinted")
+            self.assertIn("old answer",{m.text for m in base.messages if m.search_class=="dialogue"})
+
+    def test_off_path_subtree_is_topological_even_when_wrappers_are_reversed(self):
+        from session_search.xai_export import materialize_export
+        with tempfile.TemporaryDirectory() as td:
+            root=pathlib.Path(td)
+            c=self.conversation(cid="trace-topology",leaf="a",responses=[
+                self.response("u",None,"human","question",1700000001000),
+                self.response("a","u","assistant","selected",1700000002000),
+                self.response("c","b","assistant","trace child",1700000004000),
+                self.response("b","u","assistant","trace parent",1700000003000),
+            ])
+            artifact=normalize_artifact(materialize_export(self.write_export(root,[c]),root/"out")[0])
+            texts=[m.text for m in artifact.messages]
+            self.assertLess(texts.index("trace parent"),texts.index("trace child"))
+
     def test_linear_continuation_keeps_same_session_identity(self):
         from session_search.xai_export import materialize_export
         with tempfile.TemporaryDirectory() as td:

@@ -184,6 +184,37 @@ def _path_to_root(by_id: dict[str, dict], root_id: str, leaf_id: str) -> list[st
     return path
 
 
+
+def _default_child(parent_id: str, siblings: list[str], by_id: dict[str, dict]) -> str:
+    if len(siblings) == 1:
+        return siblings[0]
+    hint = by_id[parent_id].get("children")
+    if isinstance(hint, list):
+        hinted = [entry.get("response_id") for entry in hint if isinstance(entry, dict)]
+        hinted = [rid for rid in hinted if rid in siblings]
+        if len(hinted) == len(siblings) and len(set(hinted)) == len(siblings):
+            return hinted[0]
+    timed: list[tuple[float, str]] = []
+    for rid in siblings:
+        observed = _parse_mongo_time(by_id[rid].get("create_time"))
+        if observed is not None:
+            timed.append((observed, rid))
+    if len(timed) == len(siblings):
+        timed.sort()
+        if len(timed) == 1 or timed[0][0] < timed[1][0]:
+            return timed[0][1]
+    raise ValueError("BLOCKED_UNSUPPORTED_XAI_EXPORT: ambiguous default branch without stable provider ordering")
+
+
+def _topological_order(root_id: str, children: dict[str, list[str]]) -> list[str]:
+    ordered: list[str] = []
+    stack = [root_id]
+    while stack:
+        rid = stack.pop()
+        ordered.append(rid)
+        stack.extend(reversed(sorted(children[rid])))
+    return ordered
+
 def _mapped_role(sender: object, on_selected_path: bool) -> str:
     if not on_selected_path:
         return "unknown"
@@ -257,17 +288,15 @@ def _conversation_variants(item: dict) -> list[dict]:
         for parent_id, child_id in zip(path_ids, path_ids[1:]):
             siblings = children[parent_id]
             if len(siblings) > 1:
-                def branch_key(rid: str) -> tuple[bool, float, str]:
-                    observed = _parse_mongo_time(by_id[rid].get("create_time"))
-                    return (observed is None, observed if observed is not None else 0.0, rid)
-                default_child = min(siblings, key=branch_key)
+                default_child = _default_child(parent_id, siblings, by_id)
                 if child_id != default_child:
                     branch_choices.append([parent_id, child_id])
         session_id = source_session_id
         if branch_choices:
             branch_hash = hashlib.sha256(_stable_json_bytes(branch_choices)).hexdigest()[:12]
             session_id = f"{source_session_id}~branch-{branch_hash}"
-        ordered_ids = path_ids + [rid for rid in source_order if rid not in selected]
+        graph_order = _topological_order(root_id, children)
+        ordered_ids = path_ids + [rid for rid in graph_order if rid not in selected]
         messages = [_response_message(by_id[rid], rid in selected, order) for order, rid in enumerate(ordered_ids)]
         variants.append({
             "conversation_id": session_id,
