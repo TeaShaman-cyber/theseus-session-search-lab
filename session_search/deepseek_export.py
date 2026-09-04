@@ -29,8 +29,10 @@ def _sha256(data: bytes) -> str:
 
 
 def _parse_time(value: object) -> float | None:
-    if not isinstance(value, str) or not value:
+    if value is None or value == "":
         return None
+    if not isinstance(value, str):
+        raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: invalid timestamp type")
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as exc:
@@ -125,10 +127,12 @@ def _fragment_message(node: dict, fragment: dict, fragment_index: int, create_ti
     kind = str(fragment.get("type") or "")
     node_id = str(node.get("id") or "")
     message_id = _fragment_message_id(node_id, fragment_index)
-    if kind == "REQUEST":
-        role, search_content = "user", str(fragment.get("content") or "")
-    elif kind == "RESPONSE":
-        role, search_content = "assistant", str(fragment.get("content") or "")
+    if kind in {"REQUEST", "RESPONSE"}:
+        content = fragment.get("content")
+        if not isinstance(content, str):
+            raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: dialogue fragment content must be string")
+        role = "user" if kind == "REQUEST" else "assistant"
+        search_content = content
     elif kind == "FILE":
         role = "tool"
         files = fragment.get("files") or []
@@ -289,52 +293,59 @@ def _materialize_export_snapshot(source: pathlib.Path, output_dir: pathlib.Path)
     if not isinstance(conversations, list):
         raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: top level must be list")
     outputs: list[pathlib.Path] = []
-    pending: list[tuple[pathlib.Path, bytes]] = []
+    pending: list[tuple[pathlib.Path, pathlib.Path]] = []
     seen_source_ids: set[str] = set()
     seen_session_ids: set[str] = set()
-    for conversation in sorted(conversations, key=lambda item: str(item.get("id") if isinstance(item, dict) else "")):
-        if not isinstance(conversation, dict):
-            raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: conversation must be object")
-        source_session_id = conversation.get("id")
-        if not isinstance(source_session_id, str) or not source_session_id:
-            raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: conversation identity/title missing")
-        if source_session_id in seen_source_ids:
-            raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: duplicate conversation id")
-        seen_source_ids.add(source_session_id)
-        paths = _mapping_paths(conversation.get("mapping"))
-        branch_count = len(paths)
-        for leaf_id, nodes in paths:
-            payload = _conversation_payload(conversation, nodes, leaf_id, branch_count)
-            session_id = payload["conversation_id"]
-            if session_id in seen_session_ids:
-                raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: duplicate materialized session id")
-            seen_session_ids.add(session_id)
-            sanitized = _SAFE_ID.sub("_", session_id).strip("._") or "session"
-            id_hash = hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:12]
-            safe_id = f"{sanitized}-{id_hash}"
-            member = f"optional/conversation-deepseek-{safe_id}.bin"
-            payload_bytes = _stable_json_bytes(payload)
-            manifest = {
-                "schema": SCHEMA,
-                "source_adapter": ADAPTER,
-                "source_export_sha256": parent_sha,
-                "source_export_bytes": len(raw),
-                "source_conversation_id": source_session_id,
-                "session_id": session_id,
-                "branch_leaf_id": leaf_id,
-                "branch_count": branch_count,
-                "files": [{"name": member, "bytes": len(payload_bytes), "sha256": _sha256(payload_bytes)}],
-            }
-            archive_bytes = _portable_zip_bytes(member, payload_bytes, manifest)
-            archive_sha = _sha256(archive_bytes)
-            target = output_dir / f"deepseek-{safe_id}-{archive_sha[:16]}.zip"
-            pending.append((target, archive_bytes))
-            outputs.append(target)
+    staging_root = pathlib.Path(tempfile.mkdtemp(prefix="session-search-deepseek-stage-"))
+    try:
+        for conversation in sorted(conversations, key=lambda item: str(item.get("id") if isinstance(item, dict) else "")):
+            if not isinstance(conversation, dict):
+                raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: conversation must be object")
+            source_session_id = conversation.get("id")
+            if not isinstance(source_session_id, str) or not source_session_id:
+                raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: conversation identity/title missing")
+            if source_session_id in seen_source_ids:
+                raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: duplicate conversation id")
+            seen_source_ids.add(source_session_id)
+            paths = _mapping_paths(conversation.get("mapping"))
+            branch_count = len(paths)
+            for leaf_id, nodes in paths:
+                payload = _conversation_payload(conversation, nodes, leaf_id, branch_count)
+                session_id = payload["conversation_id"]
+                if session_id in seen_session_ids:
+                    raise ValueError("BLOCKED_UNSUPPORTED_DEEPSEEK_EXPORT: duplicate materialized session id")
+                seen_session_ids.add(session_id)
+                sanitized = _SAFE_ID.sub("_", session_id).strip("._") or "session"
+                id_hash = hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:12]
+                safe_id = f"{sanitized}-{id_hash}"
+                member = f"optional/conversation-deepseek-{safe_id}.bin"
+                payload_bytes = _stable_json_bytes(payload)
+                manifest = {
+                    "schema": SCHEMA,
+                    "source_adapter": ADAPTER,
+                    "source_export_sha256": parent_sha,
+                    "source_export_bytes": len(raw),
+                    "source_conversation_id": source_session_id,
+                    "session_id": session_id,
+                    "branch_leaf_id": leaf_id,
+                    "branch_count": branch_count,
+                    "files": [{"name": member, "bytes": len(payload_bytes), "sha256": _sha256(payload_bytes)}],
+                }
+                archive_bytes = _portable_zip_bytes(member, payload_bytes, manifest)
+                archive_sha = _sha256(archive_bytes)
+                target = output_dir / f"deepseek-{safe_id}-{archive_sha[:16]}.zip"
+                stage_path = staging_root / f"{len(pending):08d}.zip"
+                stage_path.write_bytes(archive_bytes)
+                pending.append((target, stage_path))
+                outputs.append(target)
 
-    output_dir.mkdir(parents=True, exist_ok=True)
-    for target, archive_bytes in pending:
-        _publish_content_addressed(target, archive_bytes)
-    return _MaterializedSnapshot(tuple(outputs), parent_sha, len(conversations))
+        output_dir.mkdir(parents=True, exist_ok=True)
+        for target, stage_path in pending:
+            _publish_content_addressed(target, stage_path.read_bytes())
+        return _MaterializedSnapshot(tuple(outputs), parent_sha, len(conversations))
+    finally:
+        import shutil
+        shutil.rmtree(staging_root, ignore_errors=True)
 
 
 def materialize_export(source: pathlib.Path, output_dir: pathlib.Path) -> list[pathlib.Path]:

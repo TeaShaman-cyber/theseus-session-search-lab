@@ -400,6 +400,43 @@ class DeepSeekExportAdapterTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,"message"):
                 materialize_export(source,root/"out")
 
+    def test_dialogue_fragment_requires_string_content(self):
+        from session_search.deepseek_export import materialize_export
+        with tempfile.TemporaryDirectory() as td:
+            root=pathlib.Path(td)
+            c=self._conversation("bad-dialogue-content","hello")
+            c["mapping"]["1"]["message"]["fragments"][0]["content"]=None
+            source=root/"conversations.json"; source.write_text(json.dumps([c]),encoding="utf-8")
+            with self.assertRaisesRegex(ValueError,"dialogue fragment content"):
+                materialize_export(source,root/"out")
+
+    def test_present_malformed_timestamp_type_is_rejected(self):
+        from session_search.deepseek_export import materialize_export
+        with tempfile.TemporaryDirectory() as td:
+            root=pathlib.Path(td)
+            c=self._conversation("bad-time-type","hello")
+            c["mapping"]["1"]["message"]["inserted_at"]={"bad":"type"}
+            source=root/"conversations.json"; source.write_text(json.dumps([c]),encoding="utf-8")
+            with self.assertRaisesRegex(ValueError,"timestamp type"):
+                materialize_export(source,root/"out")
+
+    def test_materialization_stages_archives_on_disk_until_validation_finishes(self):
+        from unittest import mock
+        from session_search.deepseek_export import materialize_export
+        with tempfile.TemporaryDirectory() as td:
+            root=pathlib.Path(td)
+            conversations=[self._conversation(f"stage-{i}",f"hello {i}") for i in range(3)]
+            source=root/"conversations.json"; source.write_text(json.dumps(conversations),encoding="utf-8")
+            seen=[]
+            real_publish=__import__('session_search.deepseek_export',fromlist=['_publish_content_addressed'])._publish_content_addressed
+            def wrapped(target,data):
+                seen.append((target, type(data).__name__))
+                return real_publish(target,data)
+            with mock.patch('session_search.deepseek_export._publish_content_addressed',side_effect=wrapped):
+                outputs=materialize_export(source,root/"out")
+            self.assertEqual(len(outputs),3)
+            self.assertEqual(len(seen),3)
+
     def test_timezone_naive_timestamp_is_rejected(self):
         from session_search.deepseek_export import materialize_export
         with tempfile.TemporaryDirectory() as td:
