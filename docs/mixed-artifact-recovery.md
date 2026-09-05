@@ -91,6 +91,19 @@ Any conflicting owner blocks materialization.
 
 A recovery tool must regenerate the manifest to match the derived members and must verify hashes before normal import. ZIP container metadata is not semantic authority. Some capture ZIPs carry timestamps that require tolerant container reconstruction; changing container timestamps is acceptable only when member bytes and the recovery receipt remain verifiable.
 
+## Implemented CLI
+
+Issue #16 now has a bounded preprocessing implementation:
+
+```bash
+python3 -m session_search.barn_recovery SOURCE.zip \
+  --output-dir ./recovered
+```
+
+Use `--session-id <provider-id>` only when multiple provenance-backed candidate sessions are intentionally present. The tool writes a derived portable ZIP plus a `.receipt.json`, then verifies the derived ZIP with the unchanged normal importer before returning success.
+
+The recovery implementation does not weaken `normalize_artifact()`, does not edit the source capture, and blocks unresolved, ambiguous, contradictory, or mismatched provenance.
+
 ## Scope
 
-Issue #16 tracks implementation and synthetic regression fixtures. Until that implementation exists, manual recovery is a diagnostic procedure only and must not be promoted to an automatic corpus-ingest path.
+This route is limited to Barn Doctor payload members whose request keys can be bound to provider conversation identities through captured network provenance. Other mixed-artifact formats still require their own adapter-specific recovery evidence and remain fail-closed.
