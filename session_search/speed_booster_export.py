@@ -109,7 +109,7 @@ def _session_id(obj: dict) -> str:
     first_time = _parse_time(first.get("create_time"))
     if first_time is None:
         raise ValueError("BLOCKED_UNSUPPORTED_SPEED_BOOSTER_EXPORT: first message timestamp missing")
-    digest = _sha256(_stable_json_bytes([title, first_time]))[:24]
+    digest = _sha256(_stable_json_bytes([title, first_time, first.get("role"), first.get("content")]))[:24]
     return f"speed-booster-v1:{digest}"
 
 
@@ -139,7 +139,7 @@ def _message(raw: dict, order: int) -> dict:
     }
 
 
-def materialize_export(source: pathlib.Path, output_dir: pathlib.Path) -> list[pathlib.Path]:
+def _materialize_export_snapshot(source: pathlib.Path, output_dir: pathlib.Path) -> tuple[list[pathlib.Path], str]:
     raw, obj = _load_export(pathlib.Path(source))
     parent_sha = _sha256(raw)
     session_id = _session_id(obj)
@@ -166,16 +166,20 @@ def materialize_export(source: pathlib.Path, output_dir: pathlib.Path) -> list[p
     archive = _portable_zip_bytes(member, payload_bytes, manifest)
     target = pathlib.Path(output_dir) / f"speed-booster-{safe}-{_sha256(archive)[:16]}.zip"
     _publish_content_addressed(target, archive)
-    return [target]
+    return [target], parent_sha
+
+
+def materialize_export(source: pathlib.Path, output_dir: pathlib.Path) -> list[pathlib.Path]:
+    artifacts, _source_sha = _materialize_export_snapshot(source, output_dir)
+    return artifacts
 
 
 def ingest_export(source: pathlib.Path, corpus_root: pathlib.Path) -> dict:
     from .corpus_store import ingest_many
 
     source = pathlib.Path(source)
-    source_sha = _sha256(source.read_bytes())
     with tempfile.TemporaryDirectory(prefix="session-search-speed-booster-") as td:
-        artifacts = materialize_export(source, pathlib.Path(td))
+        artifacts, source_sha = _materialize_export_snapshot(source, pathlib.Path(td))
         child_ids = {str(path): f"speed-booster-child-sha256:{_sha256(path.read_bytes())}" for path in artifacts}
         result = ingest_many(artifacts, pathlib.Path(corpus_root))
         for item in result.get("results", []):

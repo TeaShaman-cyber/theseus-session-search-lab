@@ -147,6 +147,61 @@ class SpeedBoosterExportAdapterTest(unittest.TestCase):
             self.assertEqual(len(hits), 1)
             self.assertEqual(hits[0]["session_coverage"], "PARTIAL_SESSION_SLICE")
 
+    def test_same_title_and_first_timestamp_with_different_first_message_content_do_not_merge(self):
+        from session_search.speed_booster_export import materialize_export
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            first_obj = self.export_object()
+            second_obj = self.export_object()
+            second_obj["messages"][0]["content"] = "different opening message"
+            first_source = root / "first.json"
+            second_source = root / "second.json"
+            first_source.write_text(json.dumps(first_obj, ensure_ascii=False), encoding="utf-8")
+            second_source.write_text(json.dumps(second_obj, ensure_ascii=False), encoding="utf-8")
+            first = normalize_artifact(materialize_export(first_source, root / "out1")[0])
+            second = normalize_artifact(materialize_export(second_source, root / "out2")[0])
+            self.assertNotEqual(first.session_id, second.session_id)
+
+    def test_direct_ingest_returns_hash_from_materialized_source_snapshot(self):
+        import hashlib
+        from unittest import mock
+        from session_search.speed_booster_export import ingest_export
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            source = root / "export.json"
+            original_obj = self.export_object()
+            replacement_obj = self.export_object()
+            replacement_obj["messages"][0]["content"] = "replacement snapshot content"
+            original = json.dumps(original_obj, ensure_ascii=False).encode("utf-8")
+            replacement = json.dumps(replacement_obj, ensure_ascii=False).encode("utf-8")
+            source.write_bytes(original)
+
+            original_read_bytes = pathlib.Path.read_bytes
+            source_reads = 0
+            child_manifest_sha = None
+
+            def racing_read_bytes(path):
+                nonlocal source_reads
+                if path == source:
+                    source_reads += 1
+                    return original if source_reads == 1 else replacement
+                return original_read_bytes(path)
+
+            def capture_ingest(children, corpus_root):
+                nonlocal child_manifest_sha
+                with zipfile.ZipFile(children[0]) as zf:
+                    child_manifest_sha = json.loads(zf.read("manifest.json"))["source_export_sha256"]
+                return {"status": "COMPLETE", "results": []}
+
+            with mock.patch.object(pathlib.Path, "read_bytes", autospec=True, side_effect=racing_read_bytes):
+                with mock.patch("session_search.corpus_store.ingest_many", side_effect=capture_ingest):
+                    result = ingest_export(source, root / "corpus")
+
+            self.assertEqual(source_reads, 1)
+            self.assertEqual(child_manifest_sha, hashlib.sha256(original).hexdigest())
+            self.assertEqual(result["source_export_sha256"], child_manifest_sha)
+
     def test_same_title_with_different_first_message_time_does_not_merge(self):
         from session_search.speed_booster_export import materialize_export
         with tempfile.TemporaryDirectory() as td:
@@ -206,7 +261,7 @@ class SpeedBoosterExportAdapterTest(unittest.TestCase):
         self.assertIn("Speed Booster Toolkit", text)
         self.assertIn("session_search.speed_booster_export", text)
         self.assertIn("PARTIAL_SESSION_SLICE", text)
-        self.assertIn("title + first message timestamp", text)
+        self.assertIn("title + first message timestamp + first-message role/content", text)
 
 
 if __name__ == "__main__":
