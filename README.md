@@ -128,6 +128,28 @@ python3 -m session_search.search "previous decision" --corpus /private/path/sess
 
 For xAI, `parent_response_id` is graph authority because official exports may omit or partially populate `children`. When `leaf_response_id` is present, that root-to-leaf path is indexed as normal dialogue and off-path alternatives are retained as `trace`. Without explicit active-leaf metadata, a unique leaf is unambiguous; multiple leaves materialize explicit branch variants rather than guessing. `human` maps to user dialogue, `assistant`/`ASSISTANT` map to assistant dialogue, and unrecognized sender values remain trace. Mongo-style millisecond timestamps are parsed deterministically; missing time remains unknown.
 
+
+### Speed Booster Toolkit ChatGPT export adapter
+
+Speed Booster Toolkit JSON exports can be transcoded into the same portable Session Search artifact contract without making the browser extension a runtime dependency. The observed export shape is one sequential chat slice with top-level `title`, `exported_at`, `created_at`, and `messages[]` records containing role, timestamp, model, text, and optional source/image metadata.
+
+Materialize one portable artifact:
+
+```bash
+python3 -m session_search.speed_booster_export chat-export.json --output-dir ./speed-booster-artifacts
+```
+
+Or ingest the export directly into a cumulative corpus:
+
+```bash
+python3 -m session_search.speed_booster_export chat-export.json --corpus /private/path/session-search-corpus
+python3 -m session_search.search "previous decision" --corpus /private/path/session-search-corpus
+```
+
+Because this format does not expose the authoritative ChatGPT conversation graph or pagination boundary, every imported export is conservatively marked `PARTIAL_SESSION_SLICE`. Adapter v1 derives a versioned synthetic session identity from `title + first message timestamp`; `exported_at` is provenance only, so a later export with an appended tail resolves to the same semantic session and stable per-message IDs deduplicate the unchanged prefix. Two exports with the same title but different first-message timestamps remain distinct. User/assistant roles remain dialogue, unsupported roles remain trace with their raw role preserved, and export/message metadata is retained as provenance rather than search authority.
+
+Public tests use synthetic fixtures only. Real extension exports, account-specific data, source file identifiers, and conversation text remain private.
+
 ### Legacy scratch projection
 
 The original one-artifact path remains available for debugging, portable reproduction, and scratch projections:
