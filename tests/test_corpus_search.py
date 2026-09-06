@@ -7,7 +7,7 @@ import unittest
 
 from session_search.corpus_store import ingest_artifact
 from session_search.importer import import_export
-from session_search.search import search, search_corpus
+from session_search.search import query_tokens, search, search_corpus
 from tests.test_bootstrap_contract import synthetic_export
 from tests.test_corpus_store import _message, _write_capture
 
@@ -37,6 +37,9 @@ def build_two_session_corpus(root: pathlib.Path, phrase: str) -> pathlib.Path:
 
 
 class CorpusSearchTest(unittest.TestCase):
+    def test_rerank_token_normalization_matches_unicode61_casefold_examples(self):
+        self.assertEqual(query_tokens("Σ ſ"), query_tokens("ς s"))
+
     def test_global_search_returns_hits_from_multiple_sessions_with_coverage(self):
         with tempfile.TemporaryDirectory() as td:
             corpus = build_two_session_corpus(pathlib.Path(td), "copper compass")
@@ -60,6 +63,205 @@ class CorpusSearchTest(unittest.TestCase):
             )
             self.assertTrue(rows)
             self.assertEqual({row["session_id"] for row in rows}, {"session-b"})
+
+    def test_recall_mode_expands_candidates_without_changing_strict_default(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus"
+            target = _write_capture(
+                root / "target.zip",
+                "session-target",
+                [
+                    _message("t1", "Could we add a small IDE layer?", 1.0, role="user"),
+                    _message("t2", "The dev kit uses ruff shellcheck and shfmt.", 2.0, role="assistant"),
+                ],
+                complete=True,
+                title="Dev Kit",
+            )
+            distractor = _write_capture(
+                root / "distractor.zip",
+                "session-distractor",
+                [_message("d1", "lightweight IDE reference output", 1.0, role="tool")],
+                complete=True,
+                title="Tool dump",
+            )
+            ingest_artifact(target, corpus)
+            ingest_artifact(distractor, corpus)
+
+            strict = search_corpus(corpus, "lightweight IDE", ["dialogue", "evidence"], 8)
+            recalled = search_corpus(
+                corpus, "lightweight IDE", ["dialogue", "evidence"], 8, recall=True
+            )
+
+            self.assertEqual([row["session_id"] for row in strict], ["session-distractor"])
+            self.assertIn("session-target", {row["session_id"] for row in recalled})
+
+    def test_recall_ranks_dialogue_session_ahead_of_single_evidence_dump(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus"
+            target = _write_capture(
+                root / "target.zip",
+                "session-target",
+                [
+                    _message("t1", "lightweight IDE layer for development", 1.0, role="user"),
+                    _message("t2", "IDE tooling with ruff", 2.0, role="assistant"),
+                ],
+                complete=True,
+                title="Dev Kit",
+            )
+            dump = _write_capture(
+                root / "dump.zip",
+                "session-dump",
+                [_message("d1", ("lightweight IDE " * 200).strip(), 1.0, role="tool")],
+                complete=True,
+                title="Large evidence dump",
+            )
+            ingest_artifact(target, corpus)
+            ingest_artifact(dump, corpus)
+
+            rows = search_corpus(
+                corpus, "lightweight IDE", ["dialogue", "evidence"], 8, recall=True
+            )
+
+            self.assertTrue(rows)
+            self.assertEqual(rows[0]["session_id"], "session-target")
+            self.assertEqual(rows[0]["search_class"], "dialogue")
+
+    def test_recall_output_keeps_session_diversity_when_one_session_has_many_hits(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus"
+            dominant = _write_capture(
+                root / "dominant.zip",
+                "session-dominant",
+                [
+                    _message(f"d{i}", f"lightweight IDE reference {i}", float(i), role="assistant")
+                    for i in range(1, 31)
+                ],
+                complete=True,
+                title="Dominant session",
+            )
+            target = _write_capture(
+                root / "target.zip",
+                "session-target",
+                [
+                    _message("t1", "IDE tooling with ruff", 1.0, role="user"),
+                    _message("t2", "IDE layer with shellcheck", 2.0, role="assistant"),
+                ],
+                complete=True,
+                title="Dev Kit",
+            )
+            ingest_artifact(dominant, corpus)
+            ingest_artifact(target, corpus)
+
+            rows = search_corpus(
+                corpus, "lightweight IDE", ["dialogue", "evidence"], 8, recall=True
+            )
+
+            self.assertEqual(rows[0]["session_id"], "session-dominant")
+            self.assertIn("session-target", {row["session_id"] for row in rows})
+
+    def test_recall_ranks_complete_lexical_coverage_before_dialogue_provenance(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus"
+            dialogue = _write_capture(
+                root / "dialogue.zip",
+                "session-dialogue",
+                [_message("d1", "architecture discussion", 1.0, role="assistant")],
+                complete=True,
+                title="Partial dialogue",
+            )
+            evidence = _write_capture(
+                root / "evidence.zip",
+                "session-evidence",
+                [_message("e1", "architecture decision", 1.0, role="tool")],
+                complete=True,
+                title="Complete evidence",
+            )
+            ingest_artifact(dialogue, corpus)
+            ingest_artifact(evidence, corpus)
+
+            rows = search_corpus(
+                corpus, "architecture decision", ["dialogue", "evidence"], 8, recall=True
+            )
+
+            self.assertTrue(rows)
+            self.assertEqual(rows[0]["session_id"], "session-evidence")
+
+    def test_recall_rerank_normalizes_diacritics_and_hyphen_like_fts5(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus"
+            target = _write_capture(
+                root / "target.zip",
+                "session-target",
+                [_message("t1", "cafe foo bar deployment", 1.0, role="assistant")],
+                complete=True,
+                title="Normalized target",
+            )
+            distractor = _write_capture(
+                root / "distractor.zip",
+                "session-distractor",
+                [_message("d1", "café unrelated", 1.0, role="assistant")],
+                complete=True,
+                title="Partial match",
+            )
+            ingest_artifact(target, corpus)
+            ingest_artifact(distractor, corpus)
+
+            rows = search_corpus(
+                corpus, "café foo-bar", ["dialogue", "evidence"], 8, recall=True
+            )
+
+            self.assertTrue(rows)
+            self.assertEqual(rows[0]["session_id"], "session-target")
+
+    def test_recall_rerank_casefolds_like_unicode61_for_sigma_and_long_s(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus"
+            target = _write_capture(
+                root / "target.zip",
+                "session-target",
+                [_message("t1", "ς ſ deployment", 1.0, role="assistant")],
+                complete=True,
+                title="Unicode fold target",
+            )
+            distractor = _write_capture(
+                root / "distractor.zip",
+                "session-distractor",
+                [_message("d1", "Σ unrelated", 1.0, role="assistant")],
+                complete=True,
+                title="Partial Unicode fold",
+            )
+            ingest_artifact(target, corpus)
+            ingest_artifact(distractor, corpus)
+
+            rows = search_corpus(
+                corpus, "Σ s deployment", ["dialogue", "evidence"], 8, recall=True
+            )
+
+            self.assertTrue(rows)
+            self.assertEqual(rows[0]["session_id"], "session-target")
+
+    def test_strict_search_preserves_unicode_tokens_that_casefold_expands(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus"
+            capture = _write_capture(
+                root / "unicode.zip",
+                "session-unicode",
+                [_message("u1", "Straße deployment note", 1.0, role="assistant")],
+                complete=True,
+                title="Unicode",
+            )
+            ingest_artifact(capture, corpus)
+
+            rows = search_corpus(corpus, "Straße", ["dialogue", "evidence"], 8)
+
+            self.assertEqual([row["session_id"] for row in rows], ["session-unicode"])
 
     def test_explicit_corpus_overrides_environment_default(self):
         with tempfile.TemporaryDirectory() as td:
@@ -87,6 +289,49 @@ class CorpusSearchTest(unittest.TestCase):
             rows = json.loads(result.stdout)
             self.assertTrue(rows)
             self.assertTrue(all("explicit phrase" in row["text"] for row in rows))
+
+    def test_cli_recall_flag_uses_corpus_recall_path(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus"
+            target = _write_capture(
+                root / "target.zip",
+                "session-target",
+                [_message("t1", "lightweight IDE layer", 1.0, role="assistant")],
+                complete=True,
+                title="Dev Kit",
+            )
+            distractor = _write_capture(
+                root / "distractor.zip",
+                "session-distractor",
+                [_message("d1", "lightweight IDE reference output", 1.0, role="tool")],
+                complete=True,
+                title="Tool dump",
+            )
+            ingest_artifact(target, corpus)
+            ingest_artifact(distractor, corpus)
+            env = os.environ.copy()
+            env["SESSION_SEARCH_CORPUS"] = str(corpus)
+
+            result = subprocess.run(
+                [
+                    "python3",
+                    "-m",
+                    "session_search.search",
+                    "lightweight IDE",
+                    "--recall",
+                    "--json",
+                ],
+                cwd=ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            rows = json.loads(result.stdout)
+            self.assertTrue(rows)
+            self.assertEqual(rows[0]["session_id"], "session-target")
 
     def test_environment_default_enables_no_path_cli(self):
         with tempfile.TemporaryDirectory() as td:
