@@ -101,7 +101,7 @@ class CorpusSearchTest(unittest.TestCase):
                 root / "target.zip",
                 "session-target",
                 [
-                    _message("t1", "IDE layer for development", 1.0, role="user"),
+                    _message("t1", "lightweight IDE layer for development", 1.0, role="user"),
                     _message("t2", "IDE tooling with ruff", 2.0, role="assistant"),
                 ],
                 complete=True,
@@ -134,7 +134,7 @@ class CorpusSearchTest(unittest.TestCase):
                 "session-dominant",
                 [
                     _message(f"d{i}", f"lightweight IDE reference {i}", float(i), role="assistant")
-                    for i in range(1, 11)
+                    for i in range(1, 31)
                 ],
                 complete=True,
                 title="Dominant session",
@@ -158,6 +158,79 @@ class CorpusSearchTest(unittest.TestCase):
 
             self.assertEqual(rows[0]["session_id"], "session-dominant")
             self.assertIn("session-target", {row["session_id"] for row in rows})
+
+    def test_recall_ranks_complete_lexical_coverage_before_dialogue_provenance(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus"
+            dialogue = _write_capture(
+                root / "dialogue.zip",
+                "session-dialogue",
+                [_message("d1", "architecture discussion", 1.0, role="assistant")],
+                complete=True,
+                title="Partial dialogue",
+            )
+            evidence = _write_capture(
+                root / "evidence.zip",
+                "session-evidence",
+                [_message("e1", "architecture decision", 1.0, role="tool")],
+                complete=True,
+                title="Complete evidence",
+            )
+            ingest_artifact(dialogue, corpus)
+            ingest_artifact(evidence, corpus)
+
+            rows = search_corpus(
+                corpus, "architecture decision", ["dialogue", "evidence"], 8, recall=True
+            )
+
+            self.assertTrue(rows)
+            self.assertEqual(rows[0]["session_id"], "session-evidence")
+
+    def test_recall_rerank_normalizes_diacritics_and_hyphen_like_fts5(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus"
+            target = _write_capture(
+                root / "target.zip",
+                "session-target",
+                [_message("t1", "cafe foo bar deployment", 1.0, role="assistant")],
+                complete=True,
+                title="Normalized target",
+            )
+            distractor = _write_capture(
+                root / "distractor.zip",
+                "session-distractor",
+                [_message("d1", "café unrelated", 1.0, role="assistant")],
+                complete=True,
+                title="Partial match",
+            )
+            ingest_artifact(target, corpus)
+            ingest_artifact(distractor, corpus)
+
+            rows = search_corpus(
+                corpus, "café foo-bar", ["dialogue", "evidence"], 8, recall=True
+            )
+
+            self.assertTrue(rows)
+            self.assertEqual(rows[0]["session_id"], "session-target")
+
+    def test_strict_search_preserves_unicode_tokens_that_casefold_expands(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus"
+            capture = _write_capture(
+                root / "unicode.zip",
+                "session-unicode",
+                [_message("u1", "Straße deployment note", 1.0, role="assistant")],
+                complete=True,
+                title="Unicode",
+            )
+            ingest_artifact(capture, corpus)
+
+            rows = search_corpus(corpus, "Straße", ["dialogue", "evidence"], 8)
+
+            self.assertEqual([row["session_id"] for row in rows], ["session-unicode"])
 
     def test_explicit_corpus_overrides_environment_default(self):
         with tempfile.TemporaryDirectory() as td:
@@ -193,7 +266,7 @@ class CorpusSearchTest(unittest.TestCase):
             target = _write_capture(
                 root / "target.zip",
                 "session-target",
-                [_message("t1", "small IDE layer", 1.0, role="assistant")],
+                [_message("t1", "lightweight IDE layer", 1.0, role="assistant")],
                 complete=True,
                 title="Dev Kit",
             )

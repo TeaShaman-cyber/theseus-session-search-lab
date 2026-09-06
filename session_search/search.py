@@ -5,16 +5,23 @@ import json
 import pathlib
 import re
 import sqlite3
+import unicodedata
 
 from .corpus_store import CorpusPaths, resolve_corpus_root
 
 
+def fts_tokens(text: str) -> list[str]:
+    return re.findall(r"[\w-]+", text, flags=re.UNICODE)
+
+
 def query_tokens(text: str) -> list[str]:
-    return re.findall(r"[\w-]+", text.casefold(), flags=re.UNICODE)
+    normalized = unicodedata.normalize("NFD", text.lower())
+    normalized = "".join(ch for ch in normalized if unicodedata.category(ch) != "Mn")
+    return re.findall(r"[^\W_]+", normalized, flags=re.UNICODE)
 
 
 def fts_query(text: str, *, operator: str = "AND") -> str:
-    tokens = query_tokens(text)
+    tokens = fts_tokens(text)
     if not tokens:
         raise ValueError("query contains no searchable tokens")
     if operator not in {"AND", "OR"}:
@@ -43,8 +50,8 @@ def rerank_recall_rows(rows: list[dict], query: str, limit: int) -> list[dict]:
     sessions = sorted(
         grouped.items(),
         key=lambda item: (
-            -(item[1]["dialogue_hits"] > 0),
             -len(item[1]["covered"]),
+            -(item[1]["dialogue_hits"] > 0),
             -item[1]["dialogue_hits"],
             item[1]["best_score"],
             item[0],
@@ -120,6 +127,42 @@ def search_corpus(
         if session_id is not None:
             where.append("m.session_id=?")
             params.append(session_id)
+        if recall:
+            per_session_limit = limit if session_id is not None else min(3, limit)
+            candidate_limit = limit * 3
+            sql = f"""
+                SELECT * FROM (
+                    SELECT
+                        m.session_id,
+                        s.title AS session_title,
+                        s.coverage_state AS session_coverage,
+                        m.ordinal,
+                        m.message_id,
+                        m.role,
+                        m.content_type,
+                        m.search_class,
+                        m.create_time,
+                        m.text,
+                        messages_fts.rank AS score,
+                        row_number() OVER (
+                            PARTITION BY m.session_id
+                            ORDER BY messages_fts.rank, m.ordinal
+                        ) AS session_rank
+                    FROM messages_fts
+                    JOIN messages m ON m.row_id=messages_fts.rowid
+                    JOIN sessions s ON s.session_id=m.session_id
+                    WHERE {' AND '.join(where)}
+                )
+                WHERE session_rank <= ?
+                ORDER BY score, session_id, ordinal
+                LIMIT ?
+            """
+            params.extend([per_session_limit, candidate_limit])
+            rows = [dict(row) for row in conn.execute(sql, params).fetchall()]
+            for row in rows:
+                row.pop("session_rank", None)
+            return rerank_recall_rows(rows, query, limit)
+
         sql = f"""
             SELECT
                 m.session_id,
@@ -140,12 +183,8 @@ def search_corpus(
             ORDER BY score, m.session_id, m.ordinal
             LIMIT ?
         """
-        candidate_limit = limit * 3 if recall else limit
-        params.append(candidate_limit)
-        rows = [dict(row) for row in conn.execute(sql, params).fetchall()]
-        if recall:
-            return rerank_recall_rows(rows, query, limit)
-        return rows
+        params.append(limit)
+        return [dict(row) for row in conn.execute(sql, params).fetchall()]
     finally:
         conn.close()
 
