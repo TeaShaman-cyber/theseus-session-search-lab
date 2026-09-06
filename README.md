@@ -62,6 +62,14 @@ Search all accepted sessions together:
 python3 -m session_search.search "previous decision"
 ```
 
+For continuity reconstruction where exact wording may differ, opt into broader lexical recall:
+
+```bash
+python3 -m session_search.search "lightweight IDE" --recall
+```
+
+`--recall` keeps strict search as the default. It broadens FTS candidate generation to token-OR matching, oversamples candidates, then reranks with session-level token coverage and session-diverse output so one large evidence dump cannot monopolize the result window. This is still lexical historical retrieval, not semantic memory, and a miss remains `UNKNOWN`.
+
 Each corpus search hit carries session identity, title, coverage state, message time, role, search class, and score so the assistant can distinguish relevance from evidence completeness. Restrict a query when needed:
 
 ```bash

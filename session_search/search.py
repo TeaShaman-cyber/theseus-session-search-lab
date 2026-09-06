@@ -9,11 +9,75 @@ import sqlite3
 from .corpus_store import CorpusPaths, resolve_corpus_root
 
 
-def fts_query(text: str) -> str:
-    tokens = re.findall(r"[\w-]+", text, flags=re.UNICODE)
+def query_tokens(text: str) -> list[str]:
+    return re.findall(r"[\w-]+", text.casefold(), flags=re.UNICODE)
+
+
+def fts_query(text: str, *, operator: str = "AND") -> str:
+    tokens = query_tokens(text)
     if not tokens:
         raise ValueError("query contains no searchable tokens")
-    return " AND ".join('"' + t.replace('"', '""') + '"' for t in tokens)
+    if operator not in {"AND", "OR"}:
+        raise ValueError("unsupported FTS operator")
+    return f" {operator} ".join('"' + t.replace('"', '""') + '"' for t in tokens)
+
+
+def rerank_recall_rows(rows: list[dict], query: str, limit: int) -> list[dict]:
+    query_set = set(query_tokens(query))
+    if not rows or not query_set:
+        return rows[:limit]
+
+    grouped: dict[str, dict] = {}
+    for row in rows:
+        overlap = query_set.intersection(query_tokens(row["text"]))
+        session = grouped.setdefault(
+            row["session_id"],
+            {"rows": [], "covered": set(), "dialogue_hits": 0, "best_score": float("inf")},
+        )
+        session["covered"].update(overlap)
+        if overlap and row["search_class"] == "dialogue":
+            session["dialogue_hits"] += 1
+        session["best_score"] = min(session["best_score"], row["score"])
+        session["rows"].append((row, len(overlap)))
+
+    sessions = sorted(
+        grouped.items(),
+        key=lambda item: (
+            -(item[1]["dialogue_hits"] > 0),
+            -len(item[1]["covered"]),
+            -item[1]["dialogue_hits"],
+            item[1]["best_score"],
+            item[0],
+        ),
+    )
+
+    ordered_sessions: list[list[dict]] = []
+    for _session_id, data in sessions:
+        session_rows = sorted(
+            data["rows"],
+            key=lambda item: (
+                item[0]["search_class"] != "dialogue",
+                -item[1],
+                item[0]["score"],
+                item[0]["ordinal"],
+            ),
+        )
+        ordered_sessions.append([row for row, _overlap in session_rows])
+
+    ranked: list[dict] = []
+    round_index = 0
+    while len(ranked) < limit:
+        added = False
+        for session_rows in ordered_sessions:
+            if round_index < len(session_rows):
+                ranked.append(session_rows[round_index])
+                added = True
+                if len(ranked) >= limit:
+                    break
+        if not added:
+            break
+        round_index += 1
+    return ranked
 
 
 def search(db: str, query: str, scopes: list[str], limit: int) -> list[dict]:
@@ -41,6 +105,7 @@ def search_corpus(
     scopes: list[str],
     limit: int,
     session_id: str | None = None,
+    recall: bool = False,
 ) -> list[dict]:
     paths = CorpusPaths.from_root(pathlib.Path(corpus_root))
     if not paths.db.exists():
@@ -50,7 +115,8 @@ def search_corpus(
     try:
         placeholders = ",".join("?" for _ in scopes)
         where = ["messages_fts MATCH ?", f"m.search_class IN ({placeholders})"]
-        params: list[object] = [fts_query(query), *scopes]
+        match_query = fts_query(query, operator="OR" if recall else "AND")
+        params: list[object] = [match_query, *scopes]
         if session_id is not None:
             where.append("m.session_id=?")
             params.append(session_id)
@@ -74,9 +140,12 @@ def search_corpus(
             ORDER BY score, m.session_id, m.ordinal
             LIMIT ?
         """
-        params.append(limit)
-        rows = conn.execute(sql, params).fetchall()
-        return [dict(row) for row in rows]
+        candidate_limit = limit * 3 if recall else limit
+        params.append(candidate_limit)
+        rows = [dict(row) for row in conn.execute(sql, params).fetchall()]
+        if recall:
+            return rerank_recall_rows(rows, query, limit)
+        return rows
     finally:
         conn.close()
 
@@ -90,6 +159,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--session")
     parser.add_argument("--scope", action="append", choices=["dialogue", "evidence", "trace"])
     parser.add_argument("--limit", type=int, default=8)
+    parser.add_argument("--recall", action="store_true", help="Use broader session-level lexical recall ranking.")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     scopes = args.scope or ["dialogue", "evidence"]
@@ -97,6 +167,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.db:
         if args.session:
             parser.error("--session requires corpus search")
+        if args.recall:
+            parser.error("--recall requires corpus search")
         rows = search(args.db, args.query, scopes, args.limit)
         corpus_mode = False
     else:
@@ -104,7 +176,14 @@ def main(argv: list[str] | None = None) -> int:
             corpus_root = resolve_corpus_root(args.corpus)
         except ValueError as exc:
             parser.error(str(exc))
-        rows = search_corpus(corpus_root, args.query, scopes, args.limit, session_id=args.session)
+        rows = search_corpus(
+            corpus_root,
+            args.query,
+            scopes,
+            args.limit,
+            session_id=args.session,
+            recall=args.recall,
+        )
         corpus_mode = True
 
     if args.json:
