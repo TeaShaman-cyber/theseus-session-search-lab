@@ -7,7 +7,7 @@ import unittest
 
 from session_search.corpus_store import ingest_artifact
 from session_search.importer import import_export
-from session_search.search import search, search_corpus
+from session_search.search import query_tokens, search, search_corpus
 from tests.test_bootstrap_contract import synthetic_export
 from tests.test_corpus_store import _message, _write_capture
 
@@ -37,6 +37,9 @@ def build_two_session_corpus(root: pathlib.Path, phrase: str) -> pathlib.Path:
 
 
 class CorpusSearchTest(unittest.TestCase):
+    def test_rerank_token_normalization_matches_unicode61_casefold_examples(self):
+        self.assertEqual(query_tokens("Σ ſ"), query_tokens("ς s"))
+
     def test_global_search_returns_hits_from_multiple_sessions_with_coverage(self):
         with tempfile.TemporaryDirectory() as td:
             corpus = build_two_session_corpus(pathlib.Path(td), "copper compass")
@@ -210,6 +213,34 @@ class CorpusSearchTest(unittest.TestCase):
 
             rows = search_corpus(
                 corpus, "café foo-bar", ["dialogue", "evidence"], 8, recall=True
+            )
+
+            self.assertTrue(rows)
+            self.assertEqual(rows[0]["session_id"], "session-target")
+
+    def test_recall_rerank_casefolds_like_unicode61_for_sigma_and_long_s(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus"
+            target = _write_capture(
+                root / "target.zip",
+                "session-target",
+                [_message("t1", "ς ſ deployment", 1.0, role="assistant")],
+                complete=True,
+                title="Unicode fold target",
+            )
+            distractor = _write_capture(
+                root / "distractor.zip",
+                "session-distractor",
+                [_message("d1", "Σ unrelated", 1.0, role="assistant")],
+                complete=True,
+                title="Partial Unicode fold",
+            )
+            ingest_artifact(target, corpus)
+            ingest_artifact(distractor, corpus)
+
+            rows = search_corpus(
+                corpus, "Σ s deployment", ["dialogue", "evidence"], 8, recall=True
             )
 
             self.assertTrue(rows)

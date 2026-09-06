@@ -15,7 +15,7 @@ def fts_tokens(text: str) -> list[str]:
 
 
 def query_tokens(text: str) -> list[str]:
-    normalized = unicodedata.normalize("NFD", text.lower())
+    normalized = unicodedata.normalize("NFD", text.casefold())
     normalized = "".join(ch for ch in normalized if unicodedata.category(ch) != "Mn")
     return re.findall(r"[^\W_]+", normalized, flags=re.UNICODE)
 
