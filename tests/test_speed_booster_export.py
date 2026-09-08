@@ -211,6 +211,39 @@ class SpeedBoosterExportAdapterTest(unittest.TestCase):
             self.assertEqual(messages, 2)
             self.assertEqual(verify_corpus(corpus)["status"], "VERIFIED")
 
+    def test_divergent_nonopening_unsupported_raw_role_fails_closed(self):
+        import sqlite3
+        from session_search.corpus_store import CorpusPaths, ingest_artifact, verify_corpus
+        from session_search.speed_booster_export import materialize_export
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            first_obj = self.export_object()
+            second_obj = self.export_object()
+            first_obj["messages"][1]["role"] = "tool-alpha"
+            second_obj["messages"][1]["role"] = "tool-beta"
+            second_obj["exported_at"] = "2026-09-06T11:00:00.000Z"
+            first_source = root / "first.json"
+            second_source = root / "second.json"
+            first_source.write_text(json.dumps(first_obj, ensure_ascii=False), encoding="utf-8")
+            second_source.write_text(json.dumps(second_obj, ensure_ascii=False), encoding="utf-8")
+            first_artifact = materialize_export(first_source, root / "out1")[0]
+            second_artifact = materialize_export(second_source, root / "out2")[0]
+            self.assertEqual(
+                normalize_artifact(first_artifact).session_id,
+                normalize_artifact(second_artifact).session_id,
+            )
+            corpus = root / "corpus"
+            self.assertEqual(ingest_artifact(first_artifact, corpus)["status"], "INGESTED")
+            with self.assertRaisesRegex(RuntimeError, "FAILED_CONFLICTING_DUPLICATE"):
+                ingest_artifact(second_artifact, corpus)
+            with sqlite3.connect(CorpusPaths.from_root(corpus).db) as conn:
+                artifacts = conn.execute("SELECT count(*) FROM artifacts").fetchone()[0]
+                messages = conn.execute("SELECT count(*) FROM messages").fetchone()[0]
+            self.assertEqual(artifacts, 1)
+            self.assertEqual(messages, 2)
+            self.assertEqual(verify_corpus(corpus)["status"], "VERIFIED")
+
     def test_direct_ingest_reuses_legacy_speed_booster_session_identity(self):
         import sqlite3
         from session_search.corpus_store import CorpusPaths, ingest_artifact, verify_corpus

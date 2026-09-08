@@ -526,6 +526,8 @@ def _upsert_messages(
                 raise RuntimeError("FAILED_CONFLICTING_DUPLICATE")
             if order_rows:
                 row = order_rows[0]
+                if row["message_id"] != message.message_id:
+                    raise RuntimeError("FAILED_CONFLICTING_DUPLICATE")
                 if row["canonical_message_sha256"] != message.canonical_message_sha256:
                     raise RuntimeError("FAILED_CONFLICTING_DUPLICATE")
         if row is None:
