@@ -7,7 +7,6 @@ import json
 import os
 import pathlib
 import re
-import sqlite3
 import tempfile
 import uuid
 import zipfile
@@ -179,9 +178,9 @@ def _materialize_export_snapshot(source: pathlib.Path, output_dir: pathlib.Path)
 
 
 def _existing_session_id_for_opening(obj: dict, corpus_root: pathlib.Path) -> str | None:
-    db = pathlib.Path(corpus_root) / "corpus.sqlite3"
-    if not db.exists():
-        return None
+    from .artifact import file_sha256, normalize_artifact
+    from .corpus_store import CorpusPaths, read_accepted_ledger
+
     first = obj["messages"][0]
     if not isinstance(first, dict):
         raise ValueError("BLOCKED_UNSUPPORTED_SPEED_BOOSTER_EXPORT: first message must be object")
@@ -193,24 +192,32 @@ def _existing_session_id_for_opening(obj: dict, corpus_root: pathlib.Path) -> st
         raise ValueError("BLOCKED_UNSUPPORTED_SPEED_BOOSTER_EXPORT: message content must be string")
     raw_role = first.get("role")
     role = raw_role if raw_role in {"user", "assistant"} else "unknown"
-    conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
-    try:
-        rows = conn.execute(
-            """
-            SELECT DISTINCT s.session_id
-            FROM sessions s
-            JOIN artifacts a ON a.session_id=s.session_id AND a.source_adapter=?
-            JOIN messages m ON m.session_id=s.session_id
-            WHERE m.ordinal=0 AND m.role=? AND m.create_time=? AND m.text=?
-            ORDER BY s.session_id
-            """,
-            (ADAPTER, role, first_time, content),
-        ).fetchall()
-    finally:
-        conn.close()
-    if len(rows) > 1:
+
+    paths = CorpusPaths.from_root(pathlib.Path(corpus_root))
+    if not paths.accepted_ledger.exists():
+        return None
+    matches: set[str] = set()
+    for sha, entry in read_accepted_ledger(paths).items():
+        if entry.get("source_adapter") != ADAPTER:
+            continue
+        blob = paths.artifacts_sha256 / f"{sha}.zip"
+        if (
+            not blob.exists()
+            or blob.stat().st_size != int(entry["size_bytes"])
+            or file_sha256(blob) != sha
+        ):
+            raise RuntimeError("RECONCILIATION_REQUIRED: accepted Speed Booster artifact invalid")
+        artifact = normalize_artifact(blob)
+        if artifact.session_id != entry["session_id"] or artifact.source_adapter != ADAPTER:
+            raise RuntimeError("RECONCILIATION_REQUIRED: accepted Speed Booster metadata mismatch")
+        if not artifact.messages:
+            continue
+        opening = artifact.messages[0]
+        if opening.role == role and opening.create_time == first_time and opening.text == content:
+            matches.add(artifact.session_id)
+    if len(matches) > 1:
         raise ValueError("BLOCKED_AMBIGUOUS_SPEED_BOOSTER_SESSION_ID")
-    return str(rows[0][0]) if rows else None
+    return next(iter(matches)) if matches else None
 
 
 def materialize_export(source: pathlib.Path, output_dir: pathlib.Path) -> list[pathlib.Path]:
