@@ -136,6 +136,36 @@ python3 -m session_search.search "previous decision" --corpus /private/path/sess
 
 For xAI, `parent_response_id` is graph authority because official exports may omit or partially populate `children`. When `leaf_response_id` is present, that root-to-leaf path is indexed as normal dialogue and off-path alternatives are retained as `trace`. Without explicit active-leaf metadata, a unique leaf is unambiguous; multiple leaves materialize explicit branch variants rather than guessing. `human` maps to user dialogue, `assistant`/`ASSISTANT` map to assistant dialogue, and unrecognized sender values remain trace. Mongo-style millisecond timestamps are parsed deterministically; missing time remains unknown.
 
+
+### Speed Booster Toolkit ChatGPT export adapter
+
+Speed Booster Toolkit JSON exports can be transcoded into the same portable Session Search artifact contract without making the browser extension a runtime dependency. The observed export shape is one sequential chat slice with top-level `title`, `exported_at`, `created_at`, and `messages[]` records containing role, timestamp, model, text, and optional source/image metadata.
+
+Materialize one portable artifact:
+
+```bash
+python3 -m session_search.speed_booster_export chat-export.json --output-dir ./speed-booster-artifacts
+```
+
+If that artifact will be ingested into an existing corpus that may already contain Speed Booster artifacts created by an older adapter revision, pass the corpus as identity context while materializing:
+
+```bash
+python3 -m session_search.speed_booster_export chat-export.json --output-dir ./speed-booster-artifacts --existing-corpus /private/path/session-search-corpus
+```
+
+Without that context, generic corpus ingest fails closed with `BLOCKED_SPEED_BOOSTER_LEGACY_IDENTITY_CONTEXT_REQUIRED` when accepted legacy evidence proves the artifact would otherwise create a duplicate semantic session. Re-materialize the source with `--existing-corpus` rather than editing the artifact or corpus state manually.
+
+Or ingest the export directly into a cumulative corpus:
+
+```bash
+python3 -m session_search.speed_booster_export chat-export.json --corpus /private/path/session-search-corpus
+python3 -m session_search.search "previous decision" --corpus /private/path/session-search-corpus
+```
+
+Because this format does not expose the authoritative ChatGPT conversation graph or pagination boundary, every imported export is conservatively marked `PARTIAL_SESSION_SLICE`. Adapter v1 derives a versioned synthetic session identity from `first message timestamp + first-message role/content`; `exported_at` is provenance only, so a later export with an appended tail resolves to the same semantic session and stable per-message IDs deduplicate the unchanged prefix. Exports that share title and first timestamp but differ in their opening message no longer collapse into one synthetic session. Direct corpus ingest reads the source once and reuses that same snapshot hash for the child manifest and returned provenance receipt. User/assistant roles remain dialogue, unsupported roles remain trace with their raw role preserved, and export/message metadata is retained as provenance rather than search authority.
+
+Public tests use synthetic fixtures only. Real extension exports, account-specific data, source file identifiers, and conversation text remain private.
+
 ### Legacy scratch projection
 
 The original one-artifact path remains available for debugging, portable reproduction, and scratch projections:

@@ -509,6 +509,27 @@ def _upsert_messages(
                 "SELECT * FROM messages WHERE session_id=? AND message_id=?",
                 (artifact.session_id, message.message_id),
             ).fetchone()
+        if row is None and artifact.source_adapter == "speed-booster-export" and message.provider_order is not None:
+            order_rows = conn.execute(
+                """
+                SELECT DISTINCT m.*
+                FROM messages m
+                JOIN message_sources ms ON ms.message_row_id=m.row_id
+                JOIN payload_pages p ON p.page_id=ms.page_id
+                JOIN artifacts a ON a.artifact_id=p.artifact_id
+                WHERE m.session_id=? AND m.provider_order=? AND a.source_adapter=?
+                ORDER BY m.row_id
+                """,
+                (artifact.session_id, message.provider_order, "speed-booster-export"),
+            ).fetchall()
+            if len(order_rows) > 1:
+                raise RuntimeError("FAILED_CONFLICTING_DUPLICATE")
+            if order_rows:
+                row = order_rows[0]
+                if row["message_id"] != message.message_id:
+                    raise RuntimeError("FAILED_CONFLICTING_DUPLICATE")
+                if row["canonical_message_sha256"] != message.canonical_message_sha256:
+                    raise RuntimeError("FAILED_CONFLICTING_DUPLICATE")
         if row is None:
             local_identity = _deterministic_local_identity(artifact, message)
             cur = conn.execute(
@@ -767,6 +788,10 @@ def ingest_artifact(source: pathlib.Path, corpus_root: pathlib.Path) -> dict:
     paths = CorpusPaths.from_root(pathlib.Path(corpus_root))
     with CorpusMutationLock(paths, "ingest"):
         artifact = normalize_artifact(source)
+        if artifact.source_adapter == "speed-booster-export":
+            from .speed_booster_export import validate_materialized_artifact_identity
+
+            validate_materialized_artifact_identity(source, paths.root)
         _copy_artifact_blob(paths, artifact)
         conn = _connect_corpus(paths)
         ledger_written = False
