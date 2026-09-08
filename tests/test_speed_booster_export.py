@@ -35,6 +35,44 @@ class SpeedBoosterExportAdapterTest(unittest.TestCase):
             ],
         }
 
+    @staticmethod
+    def _stable_bytes(obj):
+        return json.dumps(obj, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+    @classmethod
+    def _rewrite_session_id(cls, source_zip, target_zip, session_id):
+        import hashlib
+        with zipfile.ZipFile(source_zip) as zf:
+            manifest = json.loads(zf.read("manifest.json"))
+            member = manifest["files"][0]["name"]
+            payload = json.loads(zf.read(member))
+        payload["conversation_id"] = session_id
+        payload_bytes = cls._stable_bytes(payload)
+        manifest["session_id"] = session_id
+        manifest["files"][0]["bytes"] = len(payload_bytes)
+        manifest["files"][0]["sha256"] = hashlib.sha256(payload_bytes).hexdigest()
+        with zipfile.ZipFile(target_zip, "w") as zf:
+            zf.writestr(member, payload_bytes)
+            zf.writestr("manifest.json", cls._stable_bytes(manifest))
+
+    def _legacy_artifact(self, root, obj, name="legacy.zip"):
+        import hashlib
+        from datetime import datetime
+        from session_search.speed_booster_export import materialize_export
+
+        source = root / f"{name}.source.json"
+        source.write_text(json.dumps(obj, ensure_ascii=False), encoding="utf-8")
+        generated = materialize_export(source, root / f"{name}.generated")[0]
+        first = obj["messages"][0]
+        first_time = datetime.fromisoformat(first["create_time"].replace("Z", "+00:00")).timestamp()
+        digest = hashlib.sha256(self._stable_bytes([
+            obj["title"], first_time, first["role"], first["content"]
+        ])).hexdigest()[:24]
+        session_id = f"speed-booster-v1:{digest}"
+        target = root / name
+        self._rewrite_session_id(generated, target, session_id)
+        return target, session_id
+
     def test_minimal_export_materializes_partial_portable_artifact(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)
@@ -174,42 +212,14 @@ class SpeedBoosterExportAdapterTest(unittest.TestCase):
             self.assertEqual(verify_corpus(corpus)["status"], "VERIFIED")
 
     def test_direct_ingest_reuses_legacy_speed_booster_session_identity(self):
-        import hashlib
         import sqlite3
-        from datetime import datetime
         from session_search.corpus_store import CorpusPaths, ingest_artifact, verify_corpus
-        from session_search.speed_booster_export import ingest_export, materialize_export
-
-        def stable_bytes(obj):
-            return json.dumps(obj, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
-
-        def rewrite_session_id(source_zip, target_zip, session_id):
-            with zipfile.ZipFile(source_zip) as zf:
-                manifest = json.loads(zf.read("manifest.json"))
-                member = manifest["files"][0]["name"]
-                payload = json.loads(zf.read(member))
-            payload["conversation_id"] = session_id
-            payload_bytes = stable_bytes(payload)
-            manifest["session_id"] = session_id
-            manifest["files"][0]["bytes"] = len(payload_bytes)
-            manifest["files"][0]["sha256"] = hashlib.sha256(payload_bytes).hexdigest()
-            with zipfile.ZipFile(target_zip, "w") as zf:
-                zf.writestr(member, payload_bytes)
-                zf.writestr("manifest.json", stable_bytes(manifest))
+        from session_search.speed_booster_export import ingest_export
 
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)
             first_obj = self.export_object()
-            first_source = root / "first.json"
-            first_source.write_text(json.dumps(first_obj, ensure_ascii=False), encoding="utf-8")
-            generated = materialize_export(first_source, root / "generated")[0]
-            first_time = datetime.fromisoformat(first_obj["messages"][0]["create_time"].replace("Z", "+00:00")).timestamp()
-            legacy_digest = hashlib.sha256(stable_bytes([
-                first_obj["title"], first_time, first_obj["messages"][0]["role"], first_obj["messages"][0]["content"]
-            ])).hexdigest()[:24]
-            legacy_session_id = f"speed-booster-v1:{legacy_digest}"
-            legacy_artifact = root / "legacy.zip"
-            rewrite_session_id(generated, legacy_artifact, legacy_session_id)
+            legacy_artifact, legacy_session_id = self._legacy_artifact(root, first_obj)
 
             corpus = root / "corpus"
             self.assertEqual(ingest_artifact(legacy_artifact, corpus)["status"], "INGESTED")
@@ -234,6 +244,187 @@ class SpeedBoosterExportAdapterTest(unittest.TestCase):
                 messages = conn.execute("SELECT count(*) FROM messages").fetchone()[0]
             self.assertEqual(sessions, 1)
             self.assertEqual(messages, 3)
+            self.assertEqual(verify_corpus(corpus)["status"], "VERIFIED")
+
+    def test_legacy_resolver_compares_preserved_raw_opening_role(self):
+        import sqlite3
+        from session_search.corpus_store import CorpusPaths, ingest_artifact, verify_corpus
+        from session_search.speed_booster_export import ingest_export
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            legacy_obj = self.export_object()
+            legacy_obj["messages"][0]["role"] = "legacy-tool-role"
+            legacy_artifact, _legacy_session_id = self._legacy_artifact(root, legacy_obj)
+            corpus = root / "corpus"
+            self.assertEqual(ingest_artifact(legacy_artifact, corpus)["status"], "INGESTED")
+
+            new_obj = self.export_object()
+            new_obj["messages"][0]["role"] = "different-tool-role"
+            new_obj["title"] = "Renamed synthetic thread"
+            new_obj["exported_at"] = "2026-09-06T11:00:00.000Z"
+            new_source = root / "new.json"
+            new_source.write_text(json.dumps(new_obj, ensure_ascii=False), encoding="utf-8")
+            result = ingest_export(new_source, corpus)
+            self.assertEqual(result["status"], "COMPLETE")
+            with sqlite3.connect(CorpusPaths.from_root(corpus).db) as conn:
+                sessions = conn.execute("SELECT count(*) FROM sessions").fetchone()[0]
+            self.assertEqual(sessions, 2)
+            self.assertEqual(verify_corpus(corpus)["status"], "VERIFIED")
+
+    def test_speed_booster_order_guard_ignores_unrelated_adapter_evidence(self):
+        import hashlib
+        from session_search.corpus_store import ingest_artifact, verify_corpus
+        from session_search.speed_booster_export import materialize_export
+
+        def write_other_adapter(path, session_id):
+            payload = {
+                "conversation_id": session_id,
+                "title": "Other adapter evidence",
+                "page_info": {"has_previous_page": True, "has_next_page": False},
+                "messages": [{
+                    "id": "other-adapter-message",
+                    "author": {"role": "assistant"},
+                    "create_time": 1.5,
+                    "content": {"content_type": "text", "parts": ["unrelated adapter slot"]},
+                    "metadata": {"session_search_order": 1},
+                }],
+            }
+            data = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+            member = "optional/conversation-other-adapter.bin"
+            manifest = {
+                "schema": "theseus.session-search.synthetic-other.v1",
+                "source_adapter": "synthetic-other",
+                "files": [{"name": member, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}],
+            }
+            with zipfile.ZipFile(path, "w") as zf:
+                zf.writestr("manifest.json", json.dumps(manifest, sort_keys=True))
+                zf.writestr(member, data)
+            return path
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            source = root / "speed.json"
+            source.write_text(json.dumps(self.export_object(), ensure_ascii=False), encoding="utf-8")
+            speed_artifact = materialize_export(source, root / "speed-out")[0]
+            session_id = normalize_artifact(speed_artifact).session_id
+            other_artifact = write_other_adapter(root / "other.zip", session_id)
+            corpus = root / "corpus"
+            self.assertEqual(ingest_artifact(other_artifact, corpus)["status"], "INGESTED")
+            self.assertEqual(ingest_artifact(speed_artifact, corpus)["status"], "INGESTED")
+            self.assertEqual(verify_corpus(corpus)["status"], "VERIFIED")
+
+    def test_artifact_only_materialization_can_reuse_legacy_identity_with_corpus_context(self):
+        import sqlite3
+        from session_search.corpus_store import CorpusPaths, ingest_artifact, verify_corpus
+        from session_search.speed_booster_export import materialize_export
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            first_obj = self.export_object()
+            legacy_artifact, legacy_session_id = self._legacy_artifact(root, first_obj)
+            corpus = root / "corpus"
+            self.assertEqual(ingest_artifact(legacy_artifact, corpus)["status"], "INGESTED")
+
+            second_obj = self.export_object()
+            second_obj["title"] = "Renamed synthetic thread"
+            second_obj["exported_at"] = "2026-09-06T11:00:00.000Z"
+            second_obj["messages"].append({
+                "role": "user",
+                "create_time": "2026-09-02T12:00:02.000Z",
+                "model": None,
+                "content": "new tail via artifact-only route",
+                "sources": None,
+                "images": None,
+            })
+            second_source = root / "second.json"
+            second_source.write_text(json.dumps(second_obj, ensure_ascii=False), encoding="utf-8")
+            child = materialize_export(second_source, root / "out2", corpus_root=corpus)[0]
+            self.assertEqual(normalize_artifact(child).session_id, legacy_session_id)
+            self.assertEqual(ingest_artifact(child, corpus)["status"], "INGESTED")
+            with sqlite3.connect(CorpusPaths.from_root(corpus).db) as conn:
+                sessions = conn.execute("SELECT count(*) FROM sessions").fetchone()[0]
+                messages = conn.execute("SELECT count(*) FROM messages").fetchone()[0]
+            self.assertEqual(sessions, 1)
+            self.assertEqual(messages, 3)
+            self.assertEqual(verify_corpus(corpus)["status"], "VERIFIED")
+
+    def test_cli_output_dir_existing_corpus_preserves_legacy_identity(self):
+        from session_search.corpus_store import ingest_artifact
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            first_obj = self.export_object()
+            legacy_artifact, legacy_session_id = self._legacy_artifact(root, first_obj)
+            corpus = root / "corpus"
+            self.assertEqual(ingest_artifact(legacy_artifact, corpus)["status"], "INGESTED")
+
+            second_obj = self.export_object()
+            second_obj["title"] = "Renamed synthetic thread"
+            second_obj["exported_at"] = "2026-09-06T11:00:00.000Z"
+            second_obj["messages"].append({
+                "role": "user",
+                "create_time": "2026-09-02T12:00:02.000Z",
+                "model": None,
+                "content": "cli legacy tail",
+                "sources": None,
+                "images": None,
+            })
+            source = root / "second.json"
+            source.write_text(json.dumps(second_obj, ensure_ascii=False), encoding="utf-8")
+            out = root / "out"
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "session_search.speed_booster_export",
+                    str(source),
+                    "--output-dir",
+                    str(out),
+                    "--existing-corpus",
+                    str(corpus),
+                ],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+            result = json.loads(proc.stdout)
+            child = pathlib.Path(result["artifacts"][0])
+            self.assertEqual(normalize_artifact(child).session_id, legacy_session_id)
+
+    def test_artifact_without_legacy_context_fails_closed_before_duplicate_session(self):
+        import sqlite3
+        from session_search.corpus_store import CorpusPaths, ingest_artifact, verify_corpus
+        from session_search.speed_booster_export import materialize_export
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            first_obj = self.export_object()
+            legacy_artifact, _legacy_session_id = self._legacy_artifact(root, first_obj)
+            corpus = root / "corpus"
+            self.assertEqual(ingest_artifact(legacy_artifact, corpus)["status"], "INGESTED")
+
+            second_obj = self.export_object()
+            second_obj["title"] = "Renamed synthetic thread"
+            second_obj["exported_at"] = "2026-09-06T11:00:00.000Z"
+            second_obj["messages"].append({
+                "role": "user",
+                "create_time": "2026-09-02T12:00:02.000Z",
+                "model": None,
+                "content": "new tail without corpus context",
+                "sources": None,
+                "images": None,
+            })
+            second_source = root / "second.json"
+            second_source.write_text(json.dumps(second_obj, ensure_ascii=False), encoding="utf-8")
+            child = materialize_export(second_source, root / "out2")[0]
+            with self.assertRaisesRegex(RuntimeError, "BLOCKED_SPEED_BOOSTER_LEGACY_IDENTITY_CONTEXT_REQUIRED"):
+                ingest_artifact(child, corpus)
+            with sqlite3.connect(CorpusPaths.from_root(corpus).db) as conn:
+                sessions = conn.execute("SELECT count(*) FROM sessions").fetchone()[0]
+                messages = conn.execute("SELECT count(*) FROM messages").fetchone()[0]
+            self.assertEqual(sessions, 1)
+            self.assertEqual(messages, 2)
             self.assertEqual(verify_corpus(corpus)["status"], "VERIFIED")
 
     def test_export_and_message_metadata_survive_materialization(self):
@@ -393,6 +584,8 @@ class SpeedBoosterExportAdapterTest(unittest.TestCase):
         self.assertIn("session_search.speed_booster_export", text)
         self.assertIn("PARTIAL_SESSION_SLICE", text)
         self.assertIn("first message timestamp + first-message role/content", text)
+        self.assertIn("--existing-corpus", text)
+        self.assertIn("BLOCKED_SPEED_BOOSTER_LEGACY_IDENTITY_CONTEXT_REQUIRED", text)
 
 
 if __name__ == "__main__":

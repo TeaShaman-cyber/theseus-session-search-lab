@@ -139,6 +139,14 @@ Materialize one portable artifact:
 python3 -m session_search.speed_booster_export chat-export.json --output-dir ./speed-booster-artifacts
 ```
 
+If that artifact will be ingested into an existing corpus that may already contain Speed Booster artifacts created by an older adapter revision, pass the corpus as identity context while materializing:
+
+```bash
+python3 -m session_search.speed_booster_export chat-export.json --output-dir ./speed-booster-artifacts --existing-corpus /private/path/session-search-corpus
+```
+
+Without that context, generic corpus ingest fails closed with `BLOCKED_SPEED_BOOSTER_LEGACY_IDENTITY_CONTEXT_REQUIRED` when accepted legacy evidence proves the artifact would otherwise create a duplicate semantic session. Re-materialize the source with `--existing-corpus` rather than editing the artifact or corpus state manually.
+
 Or ingest the export directly into a cumulative corpus:
 
 ```bash

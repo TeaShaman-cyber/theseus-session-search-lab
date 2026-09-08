@@ -511,8 +511,16 @@ def _upsert_messages(
             ).fetchone()
         if row is None and artifact.source_adapter == "speed-booster-export" and message.provider_order is not None:
             order_rows = conn.execute(
-                "SELECT * FROM messages WHERE session_id=? AND provider_order=? ORDER BY row_id",
-                (artifact.session_id, message.provider_order),
+                """
+                SELECT DISTINCT m.*
+                FROM messages m
+                JOIN message_sources ms ON ms.message_row_id=m.row_id
+                JOIN payload_pages p ON p.page_id=ms.page_id
+                JOIN artifacts a ON a.artifact_id=p.artifact_id
+                WHERE m.session_id=? AND m.provider_order=? AND a.source_adapter=?
+                ORDER BY m.row_id
+                """,
+                (artifact.session_id, message.provider_order, "speed-booster-export"),
             ).fetchall()
             if len(order_rows) > 1:
                 raise RuntimeError("FAILED_CONFLICTING_DUPLICATE")
@@ -778,6 +786,10 @@ def ingest_artifact(source: pathlib.Path, corpus_root: pathlib.Path) -> dict:
     paths = CorpusPaths.from_root(pathlib.Path(corpus_root))
     with CorpusMutationLock(paths, "ingest"):
         artifact = normalize_artifact(source)
+        if artifact.source_adapter == "speed-booster-export":
+            from .speed_booster_export import validate_materialized_artifact_identity
+
+            validate_materialized_artifact_identity(source, paths.root)
         _copy_artifact_blob(paths, artifact)
         conn = _connect_corpus(paths)
         ledger_written = False
