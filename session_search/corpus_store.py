@@ -509,6 +509,17 @@ def _upsert_messages(
                 "SELECT * FROM messages WHERE session_id=? AND message_id=?",
                 (artifact.session_id, message.message_id),
             ).fetchone()
+        if row is None and artifact.source_adapter == "speed-booster-export" and message.provider_order is not None:
+            order_rows = conn.execute(
+                "SELECT * FROM messages WHERE session_id=? AND provider_order=? ORDER BY row_id",
+                (artifact.session_id, message.provider_order),
+            ).fetchall()
+            if len(order_rows) > 1:
+                raise RuntimeError("FAILED_CONFLICTING_DUPLICATE")
+            if order_rows:
+                row = order_rows[0]
+                if row["canonical_message_sha256"] != message.canonical_message_sha256:
+                    raise RuntimeError("FAILED_CONFLICTING_DUPLICATE")
         if row is None:
             local_identity = _deterministic_local_identity(artifact, message)
             cur = conn.execute(

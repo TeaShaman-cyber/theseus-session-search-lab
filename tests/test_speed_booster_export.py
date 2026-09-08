@@ -105,6 +105,137 @@ class SpeedBoosterExportAdapterTest(unittest.TestCase):
             self.assertEqual(messages, 3)
             self.assertEqual(verify_corpus(corpus)["status"], "VERIFIED")
 
+    def test_reexport_after_title_rename_keeps_session_identity_and_appends_tail(self):
+        import sqlite3
+        from session_search.corpus_store import CorpusPaths, ingest_artifact, verify_corpus
+        from session_search.speed_booster_export import materialize_export
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            first_obj = self.export_object()
+            second_obj = self.export_object()
+            second_obj["title"] = "Renamed synthetic thread"
+            second_obj["exported_at"] = "2026-09-06T11:00:00.000Z"
+            second_obj["messages"].append({
+                "role": "user",
+                "create_time": "2026-09-02T12:00:02.000Z",
+                "model": None,
+                "content": "new tail after rename",
+                "sources": None,
+                "images": None,
+            })
+            first_source = root / "first.json"
+            second_source = root / "second.json"
+            first_source.write_text(json.dumps(first_obj, ensure_ascii=False), encoding="utf-8")
+            second_source.write_text(json.dumps(second_obj, ensure_ascii=False), encoding="utf-8")
+            first_artifact = materialize_export(first_source, root / "out1")[0]
+            second_artifact = materialize_export(second_source, root / "out2")[0]
+            first = normalize_artifact(first_artifact)
+            second = normalize_artifact(second_artifact)
+            self.assertEqual(first.session_id, second.session_id)
+            corpus = root / "corpus"
+            self.assertEqual(ingest_artifact(first_artifact, corpus)["status"], "INGESTED")
+            self.assertEqual(ingest_artifact(second_artifact, corpus)["status"], "INGESTED")
+            with sqlite3.connect(CorpusPaths.from_root(corpus).db) as conn:
+                sessions = conn.execute("SELECT count(*) FROM sessions").fetchone()[0]
+                messages = conn.execute("SELECT count(*) FROM messages").fetchone()[0]
+            self.assertEqual(sessions, 1)
+            self.assertEqual(messages, 3)
+            self.assertEqual(verify_corpus(corpus)["status"], "VERIFIED")
+
+    def test_divergent_reexport_with_same_opening_fails_closed(self):
+        import sqlite3
+        from session_search.corpus_store import CorpusPaths, ingest_artifact, verify_corpus
+        from session_search.speed_booster_export import materialize_export
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            first_obj = self.export_object()
+            second_obj = self.export_object()
+            second_obj["exported_at"] = "2026-09-06T11:00:00.000Z"
+            second_obj["messages"][1]["content"] = "divergent second message"
+            first_source = root / "first.json"
+            second_source = root / "second.json"
+            first_source.write_text(json.dumps(first_obj, ensure_ascii=False), encoding="utf-8")
+            second_source.write_text(json.dumps(second_obj, ensure_ascii=False), encoding="utf-8")
+            first_artifact = materialize_export(first_source, root / "out1")[0]
+            second_artifact = materialize_export(second_source, root / "out2")[0]
+            self.assertEqual(
+                normalize_artifact(first_artifact).session_id,
+                normalize_artifact(second_artifact).session_id,
+            )
+            corpus = root / "corpus"
+            self.assertEqual(ingest_artifact(first_artifact, corpus)["status"], "INGESTED")
+            with self.assertRaisesRegex(RuntimeError, "FAILED_CONFLICTING_DUPLICATE"):
+                ingest_artifact(second_artifact, corpus)
+            with sqlite3.connect(CorpusPaths.from_root(corpus).db) as conn:
+                artifacts = conn.execute("SELECT count(*) FROM artifacts").fetchone()[0]
+                messages = conn.execute("SELECT count(*) FROM messages").fetchone()[0]
+            self.assertEqual(artifacts, 1)
+            self.assertEqual(messages, 2)
+            self.assertEqual(verify_corpus(corpus)["status"], "VERIFIED")
+
+    def test_direct_ingest_reuses_legacy_speed_booster_session_identity(self):
+        import hashlib
+        import sqlite3
+        from datetime import datetime
+        from session_search.corpus_store import CorpusPaths, ingest_artifact, verify_corpus
+        from session_search.speed_booster_export import ingest_export, materialize_export
+
+        def stable_bytes(obj):
+            return json.dumps(obj, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+        def rewrite_session_id(source_zip, target_zip, session_id):
+            with zipfile.ZipFile(source_zip) as zf:
+                manifest = json.loads(zf.read("manifest.json"))
+                member = manifest["files"][0]["name"]
+                payload = json.loads(zf.read(member))
+            payload["conversation_id"] = session_id
+            payload_bytes = stable_bytes(payload)
+            manifest["session_id"] = session_id
+            manifest["files"][0]["bytes"] = len(payload_bytes)
+            manifest["files"][0]["sha256"] = hashlib.sha256(payload_bytes).hexdigest()
+            with zipfile.ZipFile(target_zip, "w") as zf:
+                zf.writestr(member, payload_bytes)
+                zf.writestr("manifest.json", stable_bytes(manifest))
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            first_obj = self.export_object()
+            first_source = root / "first.json"
+            first_source.write_text(json.dumps(first_obj, ensure_ascii=False), encoding="utf-8")
+            generated = materialize_export(first_source, root / "generated")[0]
+            first_time = datetime.fromisoformat(first_obj["messages"][0]["create_time"].replace("Z", "+00:00")).timestamp()
+            legacy_digest = hashlib.sha256(stable_bytes([
+                first_obj["title"], first_time, first_obj["messages"][0]["role"], first_obj["messages"][0]["content"]
+            ])).hexdigest()[:24]
+            legacy_session_id = f"speed-booster-v1:{legacy_digest}"
+            legacy_artifact = root / "legacy.zip"
+            rewrite_session_id(generated, legacy_artifact, legacy_session_id)
+
+            corpus = root / "corpus"
+            self.assertEqual(ingest_artifact(legacy_artifact, corpus)["status"], "INGESTED")
+
+            second_obj = self.export_object()
+            second_obj["title"] = "Renamed synthetic thread"
+            second_obj["exported_at"] = "2026-09-06T11:00:00.000Z"
+            second_obj["messages"].append({
+                "role": "user",
+                "create_time": "2026-09-02T12:00:02.000Z",
+                "model": None,
+                "content": "new tail after legacy identity",
+                "sources": None,
+                "images": None,
+            })
+            second_source = root / "second.json"
+            second_source.write_text(json.dumps(second_obj, ensure_ascii=False), encoding="utf-8")
+            result = ingest_export(second_source, corpus)
+            self.assertEqual(result["status"], "COMPLETE")
+            with sqlite3.connect(CorpusPaths.from_root(corpus).db) as conn:
+                sessions = conn.execute("SELECT count(*) FROM sessions").fetchone()[0]
+                messages = conn.execute("SELECT count(*) FROM messages").fetchone()[0]
+            self.assertEqual(sessions, 1)
+            self.assertEqual(messages, 3)
+            self.assertEqual(verify_corpus(corpus)["status"], "VERIFIED")
+
     def test_export_and_message_metadata_survive_materialization(self):
         from session_search.speed_booster_export import materialize_export
         with tempfile.TemporaryDirectory() as td:
@@ -261,7 +392,7 @@ class SpeedBoosterExportAdapterTest(unittest.TestCase):
         self.assertIn("Speed Booster Toolkit", text)
         self.assertIn("session_search.speed_booster_export", text)
         self.assertIn("PARTIAL_SESSION_SLICE", text)
-        self.assertIn("title + first message timestamp + first-message role/content", text)
+        self.assertIn("first message timestamp + first-message role/content", text)
 
 
 if __name__ == "__main__":

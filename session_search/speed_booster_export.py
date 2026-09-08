@@ -7,6 +7,7 @@ import json
 import os
 import pathlib
 import re
+import sqlite3
 import tempfile
 import uuid
 import zipfile
@@ -102,14 +103,13 @@ def _load_export(source: pathlib.Path) -> tuple[bytes, dict]:
 
 
 def _session_id(obj: dict) -> str:
-    title = obj["title"]
     first = obj["messages"][0]
     if not isinstance(first, dict):
         raise ValueError("BLOCKED_UNSUPPORTED_SPEED_BOOSTER_EXPORT: first message must be object")
     first_time = _parse_time(first.get("create_time"))
     if first_time is None:
         raise ValueError("BLOCKED_UNSUPPORTED_SPEED_BOOSTER_EXPORT: first message timestamp missing")
-    digest = _sha256(_stable_json_bytes([title, first_time, first.get("role"), first.get("content")]))[:24]
+    digest = _sha256(_stable_json_bytes([first_time, first.get("role"), first.get("content")]))[:24]
     return f"speed-booster-v1:{digest}"
 
 
@@ -139,10 +139,14 @@ def _message(raw: dict, order: int) -> dict:
     }
 
 
-def _materialize_export_snapshot(source: pathlib.Path, output_dir: pathlib.Path) -> tuple[list[pathlib.Path], str]:
-    raw, obj = _load_export(pathlib.Path(source))
+def _materialize_loaded_export(
+    raw: bytes,
+    obj: dict,
+    output_dir: pathlib.Path,
+    session_id: str | None = None,
+) -> tuple[list[pathlib.Path], str]:
     parent_sha = _sha256(raw)
-    session_id = _session_id(obj)
+    session_id = session_id or _session_id(obj)
     messages = [_message(item, order) for order, item in enumerate(obj["messages"])]
     payload = {
         "conversation_id": session_id,
@@ -169,6 +173,46 @@ def _materialize_export_snapshot(source: pathlib.Path, output_dir: pathlib.Path)
     return [target], parent_sha
 
 
+def _materialize_export_snapshot(source: pathlib.Path, output_dir: pathlib.Path) -> tuple[list[pathlib.Path], str]:
+    raw, obj = _load_export(pathlib.Path(source))
+    return _materialize_loaded_export(raw, obj, output_dir)
+
+
+def _existing_session_id_for_opening(obj: dict, corpus_root: pathlib.Path) -> str | None:
+    db = pathlib.Path(corpus_root) / "corpus.sqlite3"
+    if not db.exists():
+        return None
+    first = obj["messages"][0]
+    if not isinstance(first, dict):
+        raise ValueError("BLOCKED_UNSUPPORTED_SPEED_BOOSTER_EXPORT: first message must be object")
+    first_time = _parse_time(first.get("create_time"))
+    if first_time is None:
+        raise ValueError("BLOCKED_UNSUPPORTED_SPEED_BOOSTER_EXPORT: first message timestamp missing")
+    content = first.get("content")
+    if not isinstance(content, str):
+        raise ValueError("BLOCKED_UNSUPPORTED_SPEED_BOOSTER_EXPORT: message content must be string")
+    raw_role = first.get("role")
+    role = raw_role if raw_role in {"user", "assistant"} else "unknown"
+    conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    try:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT s.session_id
+            FROM sessions s
+            JOIN artifacts a ON a.session_id=s.session_id AND a.source_adapter=?
+            JOIN messages m ON m.session_id=s.session_id
+            WHERE m.ordinal=0 AND m.role=? AND m.create_time=? AND m.text=?
+            ORDER BY s.session_id
+            """,
+            (ADAPTER, role, first_time, content),
+        ).fetchall()
+    finally:
+        conn.close()
+    if len(rows) > 1:
+        raise ValueError("BLOCKED_AMBIGUOUS_SPEED_BOOSTER_SESSION_ID")
+    return str(rows[0][0]) if rows else None
+
+
 def materialize_export(source: pathlib.Path, output_dir: pathlib.Path) -> list[pathlib.Path]:
     artifacts, _source_sha = _materialize_export_snapshot(source, output_dir)
     return artifacts
@@ -178,10 +222,13 @@ def ingest_export(source: pathlib.Path, corpus_root: pathlib.Path) -> dict:
     from .corpus_store import ingest_many
 
     source = pathlib.Path(source)
+    corpus_root = pathlib.Path(corpus_root)
+    raw, obj = _load_export(source)
+    session_id = _existing_session_id_for_opening(obj, corpus_root) or _session_id(obj)
     with tempfile.TemporaryDirectory(prefix="session-search-speed-booster-") as td:
-        artifacts, source_sha = _materialize_export_snapshot(source, pathlib.Path(td))
+        artifacts, source_sha = _materialize_loaded_export(raw, obj, pathlib.Path(td), session_id=session_id)
         child_ids = {str(path): f"speed-booster-child-sha256:{_sha256(path.read_bytes())}" for path in artifacts}
-        result = ingest_many(artifacts, pathlib.Path(corpus_root))
+        result = ingest_many(artifacts, corpus_root)
         for item in result.get("results", []):
             source_value = item.get("source")
             if source_value in child_ids:
