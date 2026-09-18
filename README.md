@@ -240,7 +240,17 @@ The Wiki now contains `Home`, `Terminology`, `Architecture`, `Capture-Adapters`,
 
 ## Verification
 
+Canonical development QA:
+
 ```bash
-python3 scripts/verify_repo.py
-python3 -m unittest discover -s tests -v
+./tools/dev/check
 ```
+
+The gate composes the existing repository verifier, full unit/regression suite, Python syntax check, and patch hygiene. Live/private corpus verification remains explicit:
+
+```bash
+python3 -m session_search.corpus verify --corpus <corpus-root>
+python3 -m session_search.corpus rebuild --corpus <corpus-root>
+```
+
+See [QA and verification](docs/qa.md) for the claim boundary of each check.

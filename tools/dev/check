@@ -1,0 +1,27 @@
+#!/bin/sh
+set -eu
+
+ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || {
+    printf '%s\n' 'dev-check: not inside a Git worktree' >&2
+    exit 2
+}
+cd "$ROOT"
+
+CACHE=${THESEUS_SESSION_SEARCH_DEV_CACHE:-/tmp/theseus-session-search-dev}
+export PYTHONPYCACHEPREFIX="$CACHE/pycache"
+mkdir -p "$PYTHONPYCACHEPREFIX"
+
+printf '%s\n' '== repository contract =='
+python3 scripts/verify_repo.py
+
+printf '%s\n' '== unit and regression tests =='
+PYTHONPATH="$ROOT" python3 -m unittest discover -s tests -p 'test_*.py'
+
+printf '%s\n' '== python syntax =='
+python3 -m compileall -q session_search scripts tests
+
+printf '%s\n' '== whitespace =='
+git diff --check
+git diff --cached --check
+
+printf '%s\n' 'DEV_CHECK_PASS'

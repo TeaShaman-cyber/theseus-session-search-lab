@@ -350,6 +350,242 @@ class CorpusIngestTest(unittest.TestCase):
 
 
 class CorpusVerifyRebuildTest(unittest.TestCase):
+    def test_verify_rejects_projection_drift_not_derived_from_accepted_artifact(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus"
+            capture = _write_capture(
+                root / "a.zip",
+                "session-a",
+                [_message("m1", "alpha", 1.0)],
+                complete=True,
+            )
+            ingest_artifact(capture, corpus)
+            self.assertEqual(verify_corpus(corpus)["status"], "VERIFIED")
+
+            db = CorpusPaths.from_root(corpus).db
+            with sqlite3.connect(db) as conn:
+                row_id = conn.execute(
+                    "SELECT row_id FROM messages WHERE message_id='m1'"
+                ).fetchone()[0]
+                conn.execute(
+                    "UPDATE messages SET text='drifted projection text' WHERE row_id=?",
+                    (row_id,),
+                )
+                conn.execute(
+                    "INSERT INTO messages_fts(messages_fts,rowid,text) VALUES('delete',?,?)",
+                    (row_id, "alpha"),
+                )
+                conn.execute(
+                    "INSERT INTO messages_fts(rowid,text) VALUES (?,?)",
+                    (row_id, "drifted projection text"),
+                )
+                conn.commit()
+
+            result = verify_corpus(corpus)
+            self.assertEqual(result["status"], "RECONCILIATION_REQUIRED")
+            self.assertIn("derive", result["reason"])
+
+    def test_verify_rejects_fts_only_drift_not_derived_from_accepted_artifact(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus"
+            capture = _write_capture(
+                root / "a.zip",
+                "session-a",
+                [_message("m1", "alpha", 1.0)],
+                complete=True,
+            )
+            ingest_artifact(capture, corpus)
+
+            db = CorpusPaths.from_root(corpus).db
+            with sqlite3.connect(db) as conn:
+                row_id = conn.execute(
+                    "SELECT row_id FROM messages WHERE message_id='m1'"
+                ).fetchone()[0]
+                conn.execute(
+                    "INSERT INTO messages_fts(messages_fts,rowid,text) VALUES('delete',?,?)",
+                    (row_id, "alpha"),
+                )
+                conn.execute(
+                    "INSERT INTO messages_fts(rowid,text) VALUES (?,?)",
+                    (row_id, "different searchable term"),
+                )
+                conn.commit()
+
+            result = verify_corpus(corpus)
+            self.assertEqual(result["status"], "RECONCILIATION_REQUIRED")
+            self.assertIn("derive", result["reason"])
+
+    def test_verify_rejects_row_specific_fts_posting_swap(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus"
+            capture = _write_capture(
+                root / "a.zip",
+                "session-a",
+                [_message("m1", "alpha", 1.0), _message("m2", "beta", 2.0)],
+                complete=True,
+            )
+            ingest_artifact(capture, corpus)
+            db = CorpusPaths.from_root(corpus).db
+            with sqlite3.connect(db) as conn:
+                rows = dict(conn.execute("SELECT message_id,row_id FROM messages"))
+                conn.execute(
+                    "INSERT INTO messages_fts(messages_fts,rowid,text) VALUES('delete',?,?)",
+                    (rows["m1"], "alpha"),
+                )
+                conn.execute(
+                    "INSERT INTO messages_fts(messages_fts,rowid,text) VALUES('delete',?,?)",
+                    (rows["m2"], "beta"),
+                )
+                conn.execute(
+                    "INSERT INTO messages_fts(rowid,text) VALUES (?,?)",
+                    (rows["m1"], "beta"),
+                )
+                conn.execute(
+                    "INSERT INTO messages_fts(rowid,text) VALUES (?,?)",
+                    (rows["m2"], "alpha"),
+                )
+                conn.commit()
+
+            result = verify_corpus(corpus)
+            self.assertEqual(result["status"], "RECONCILIATION_REQUIRED")
+            self.assertIn("derive", result["reason"])
+
+    def test_verify_rejects_provider_order_drift(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus"
+            capture = _write_capture(
+                root / "a.zip",
+                "session-a",
+                [_message("m1", "alpha", 1.0)],
+                complete=True,
+            )
+            ingest_artifact(capture, corpus)
+            db = CorpusPaths.from_root(corpus).db
+            with sqlite3.connect(db) as conn:
+                conn.execute("UPDATE messages SET provider_order=17 WHERE message_id='m1'")
+                conn.commit()
+
+            result = verify_corpus(corpus)
+            self.assertEqual(result["status"], "RECONCILIATION_REQUIRED")
+            self.assertIn("derive", result["reason"])
+
+    def test_rebuild_repairs_projection_rejected_by_derivation_check(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus"
+            capture = _write_capture(
+                root / "a.zip",
+                "session-a",
+                [_message("m1", "alpha", 1.0)],
+                complete=True,
+            )
+            ingest_artifact(capture, corpus)
+            db = CorpusPaths.from_root(corpus).db
+            with sqlite3.connect(db) as conn:
+                row_id = conn.execute(
+                    "SELECT row_id FROM messages WHERE message_id='m1'"
+                ).fetchone()[0]
+                conn.execute("UPDATE messages SET text='drifted' WHERE row_id=?", (row_id,))
+                conn.execute(
+                    "INSERT INTO messages_fts(messages_fts,rowid,text) VALUES('delete',?,?)",
+                    (row_id, "alpha"),
+                )
+                conn.execute(
+                    "INSERT INTO messages_fts(rowid,text) VALUES (?,?)",
+                    (row_id, "drifted"),
+                )
+                conn.commit()
+            self.assertEqual(verify_corpus(corpus)["status"], "RECONCILIATION_REQUIRED")
+
+            result = rebuild_corpus(corpus)
+            self.assertEqual(result["status"], "REBUILT")
+            self.assertEqual(verify_corpus(corpus)["status"], "VERIFIED")
+            self.assertEqual(
+                _db_scalar(corpus, "SELECT text FROM messages WHERE message_id='m1'"),
+                "alpha",
+            )
+
+    def test_verify_rejects_fts_rank_configuration_drift(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus"
+            capture = _write_capture(
+                root / "a.zip",
+                "session-a",
+                [_message("m1", "alpha beta", 1.0), _message("m2", "alpha", 2.0)],
+                complete=True,
+            )
+            ingest_artifact(capture, corpus)
+            db = CorpusPaths.from_root(corpus).db
+            with sqlite3.connect(db) as conn:
+                conn.execute(
+                    "INSERT INTO messages_fts(messages_fts,rank) VALUES('rank','bm25(0.0)')"
+                )
+                conn.commit()
+
+            result = verify_corpus(corpus)
+            self.assertEqual(result["status"], "RECONCILIATION_REQUIRED")
+            self.assertIn("derive", result["reason"])
+
+    def test_verify_rejects_fts_docsize_drift(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus"
+            capture = _write_capture(
+                root / "a.zip",
+                "session-a",
+                [_message("m1", "alpha alpha alpha beta", 1.0), _message("m2", "alpha", 2.0)],
+                complete=True,
+            )
+            ingest_artifact(capture, corpus)
+            db = CorpusPaths.from_root(corpus).db
+            with sqlite3.connect(db) as conn:
+                row_id, size_blob = conn.execute(
+                    "SELECT id,sz FROM messages_fts_docsize ORDER BY id LIMIT 1"
+                ).fetchone()
+                conn.execute(
+                    "UPDATE messages_fts_docsize SET sz=? WHERE id=?",
+                    (sqlite3.Binary(b"\\x01" * max(1, len(size_blob))), row_id),
+                )
+                conn.commit()
+
+            result = verify_corpus(corpus)
+            self.assertEqual(result["status"], "RECONCILIATION_REQUIRED")
+            self.assertIn("derive", result["reason"])
+
+    def test_verify_rejects_fts_table_definition_drift(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus"
+            capture = _write_capture(
+                root / "a.zip",
+                "session-a",
+                [_message("m1", "alpha", 1.0), _message("m2", "beta", 2.0)],
+                complete=True,
+            )
+            ingest_artifact(capture, corpus)
+            db = CorpusPaths.from_root(corpus).db
+            with sqlite3.connect(db) as conn:
+                rows = conn.execute(
+                    "SELECT row_id,text FROM messages ORDER BY row_id"
+                ).fetchall()
+                conn.execute("DROP TABLE messages_fts")
+                conn.execute(
+                    "CREATE VIRTUAL TABLE messages_fts USING fts5(text, content='', tokenize='porter')"
+                )
+                conn.executemany(
+                    "INSERT INTO messages_fts(rowid,text) VALUES (?,?)", rows
+                )
+                conn.commit()
+
+            result = verify_corpus(corpus)
+            self.assertEqual(result["status"], "RECONCILIATION_REQUIRED")
+            self.assertIn("derive", result["reason"])
+
     def test_verify_detects_tampered_accepted_artifact(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)
