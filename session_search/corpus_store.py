@@ -976,10 +976,83 @@ def _verify_projection(paths: CorpusPaths, db_path: pathlib.Path) -> dict:
         conn.close()
 
 
+def _load_accepted_normalized_artifacts(
+    paths: CorpusPaths,
+) -> list[tuple[dict, NormalizedArtifact]]:
+    ledger = read_accepted_ledger(paths)
+    normalized: list[tuple[dict, NormalizedArtifact]] = []
+    for sha, entry in sorted(ledger.items(), key=lambda item: item[0]):
+        blob = _artifact_blob_path(paths, sha)
+        if (
+            not blob.exists()
+            or blob.stat().st_size != int(entry["size_bytes"])
+            or file_sha256(blob) != sha
+        ):
+            raise RuntimeError(f"FAILED_INTEGRITY: accepted artifact {sha} invalid")
+        artifact = normalize_artifact(blob)
+        if artifact.artifact_sha256 != sha:
+            raise RuntimeError("FAILED_INTEGRITY: normalized artifact hash mismatch")
+        if (
+            artifact.session_id != entry["session_id"]
+            or artifact.coverage_state != entry["coverage_state"]
+        ):
+            raise RuntimeError("RECONCILIATION_REQUIRED: accepted ledger metadata mismatch")
+        normalized.append((entry, artifact))
+    return normalized
+
+
+def _build_projection_from_accepted_artifacts(
+    paths: CorpusPaths,
+    target: pathlib.Path,
+) -> dict:
+    if target.exists():
+        target.unlink()
+    conn = sqlite3.connect(target)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys=ON")
+    try:
+        init_corpus_db(conn)
+        conn.execute("BEGIN")
+        for entry, artifact in _load_accepted_normalized_artifacts(paths):
+            apply_normalized_artifact_to_projection(conn, artifact, str(entry["accepted_at"]))
+            assert_transaction_invariants(conn, artifact)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        conn.close()
+        if target.exists():
+            target.unlink()
+        raise
+    else:
+        conn.close()
+    return _verify_projection(paths, target)
+
+
 def verify_corpus(corpus_root: pathlib.Path) -> dict:
     paths = CorpusPaths.from_root(pathlib.Path(corpus_root))
     paths.ensure_layout()
-    return _verify_projection(paths, paths.db)
+    current = _verify_projection(paths, paths.db)
+    if current.get("status") != "VERIFIED":
+        return current
+
+    candidate = paths.staging / f"verify-derived-{uuid.uuid4().hex}.sqlite3"
+    try:
+        derived = _build_projection_from_accepted_artifacts(paths, candidate)
+        if derived.get("status") != "VERIFIED":
+            return {
+                "status": "RECONCILIATION_REQUIRED",
+                "reason": "artifact-derived verification projection failed",
+                "derived": derived,
+            }
+        if semantic_snapshot(paths.root) != semantic_snapshot(paths.root, candidate):
+            return {
+                "status": "RECONCILIATION_REQUIRED",
+                "reason": "current projection does not derive from accepted artifacts",
+            }
+        return current
+    finally:
+        if candidate.exists():
+            candidate.unlink()
 
 
 def semantic_snapshot(corpus_root: pathlib.Path, db_path: pathlib.Path | None = None) -> dict:
@@ -1030,6 +1103,16 @@ def semantic_snapshot(corpus_root: pathlib.Path, db_path: pathlib.Path | None = 
             ORDER BY m.session_id,m.local_identity,a.sha256,p.member_name,ms.page_position
             """
         ).fetchall()]
+        conn.execute(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS temp.messages_fts_vocab "
+            "USING fts5vocab(main, messages_fts, 'row')"
+        )
+        fts_vocab = [
+            tuple(row)
+            for row in conn.execute(
+                "SELECT term, doc, cnt FROM temp.messages_fts_vocab ORDER BY term"
+            ).fetchall()
+        ]
         return {
             "sessions": sessions,
             "artifacts": artifacts,
@@ -1037,6 +1120,7 @@ def semantic_snapshot(corpus_root: pathlib.Path, db_path: pathlib.Path | None = 
             "messages": messages,
             "sources": sources,
             "fts_rows": int(conn.execute("SELECT count(*) FROM messages_fts").fetchone()[0]),
+            "fts_vocab": fts_vocab,
         }
     finally:
         conn.close()
@@ -1066,45 +1150,11 @@ def _write_rebuild_receipt(paths: CorpusPaths, result: dict) -> pathlib.Path:
 def rebuild_corpus(corpus_root: pathlib.Path) -> dict:
     paths = CorpusPaths.from_root(pathlib.Path(corpus_root))
     with CorpusMutationLock(paths, "rebuild"):
-        ledger = read_accepted_ledger(paths)
-        normalized: list[tuple[dict, NormalizedArtifact]] = []
-        for sha, entry in sorted(ledger.items(), key=lambda item: item[0]):
-            blob = _artifact_blob_path(paths, sha)
-            if not blob.exists() or blob.stat().st_size != int(entry["size_bytes"]) or file_sha256(blob) != sha:
-                raise RuntimeError(f"FAILED_INTEGRITY: accepted artifact {sha} invalid")
-            artifact = normalize_artifact(blob)
-            if artifact.artifact_sha256 != sha:
-                raise RuntimeError("FAILED_INTEGRITY: normalized artifact hash mismatch")
-            if artifact.session_id != entry["session_id"] or artifact.coverage_state != entry["coverage_state"]:
-                raise RuntimeError("RECONCILIATION_REQUIRED: accepted ledger metadata mismatch")
-            normalized.append((entry, artifact))
-
         old_verify = _verify_projection(paths, paths.db)
         old_snapshot = semantic_snapshot(paths.root) if old_verify.get("status") == "VERIFIED" else None
 
         new_db = paths.root / "corpus.sqlite3.new"
-        if new_db.exists():
-            new_db.unlink()
-        conn = sqlite3.connect(new_db)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys=ON")
-        try:
-            init_corpus_db(conn)
-            conn.execute("BEGIN")
-            for entry, artifact in normalized:
-                apply_normalized_artifact_to_projection(conn, artifact, str(entry["accepted_at"]))
-                assert_transaction_invariants(conn, artifact)
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            conn.close()
-            if new_db.exists():
-                new_db.unlink()
-            raise
-        else:
-            conn.close()
-
-        new_verify = _verify_projection(paths, new_db)
+        new_verify = _build_projection_from_accepted_artifacts(paths, new_db)
         if new_verify.get("status") != "VERIFIED":
             raise RuntimeError(f"REBUILD_VERIFY_FAILED: {new_verify}")
         new_snapshot = semantic_snapshot(paths.root, new_db)

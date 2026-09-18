@@ -8,6 +8,8 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 REQUIRED = [
     'README.md',
+    'docs/qa.md',
+    'tools/dev/check',
     'session_search/importer.py',
     'session_search/search.py',
     'docs/architecture.md',
@@ -36,6 +38,10 @@ for marker in [
 ]:
     if marker not in readme:
         raise SystemExit(f'VERIFY FAIL README marker: {marker}')
+
+workflow = (ROOT/'.github/workflows/docs-check.yml').read_text()
+if 'run: ./tools/dev/check' not in workflow:
+    raise SystemExit('VERIFY FAIL CI does not call canonical tools/dev/check')
 
 json.loads((ROOT/'receipts/001-development-prototype.public.json').read_text())
 json.loads((ROOT/'receipts/001-wiki-bootstrap.json').read_text())
