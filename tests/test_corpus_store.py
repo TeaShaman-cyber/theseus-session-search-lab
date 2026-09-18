@@ -509,6 +509,28 @@ class CorpusVerifyRebuildTest(unittest.TestCase):
                 "alpha",
             )
 
+    def test_verify_rejects_fts_rank_configuration_drift(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus"
+            capture = _write_capture(
+                root / "a.zip",
+                "session-a",
+                [_message("m1", "alpha beta", 1.0), _message("m2", "alpha", 2.0)],
+                complete=True,
+            )
+            ingest_artifact(capture, corpus)
+            db = CorpusPaths.from_root(corpus).db
+            with sqlite3.connect(db) as conn:
+                conn.execute(
+                    "INSERT INTO messages_fts(messages_fts,rank) VALUES('rank','bm25(0.0)')"
+                )
+                conn.commit()
+
+            result = verify_corpus(corpus)
+            self.assertEqual(result["status"], "RECONCILIATION_REQUIRED")
+            self.assertIn("derive", result["reason"])
+
     def test_verify_detects_tampered_accepted_artifact(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)

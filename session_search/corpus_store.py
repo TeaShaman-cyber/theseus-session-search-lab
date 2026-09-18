@@ -1118,6 +1118,12 @@ def semantic_snapshot(corpus_root: pathlib.Path, db_path: pathlib.Path | None = 
                 """
             ).fetchall()
         ]
+        fts_config = [
+            tuple(row)
+            for row in conn.execute(
+                "SELECT k, v FROM messages_fts_config ORDER BY k"
+            ).fetchall()
+        ]
         return {
             "sessions": sessions,
             "artifacts": artifacts,
@@ -1126,6 +1132,7 @@ def semantic_snapshot(corpus_root: pathlib.Path, db_path: pathlib.Path | None = 
             "sources": sources,
             "fts_rows": int(conn.execute("SELECT count(*) FROM messages_fts").fetchone()[0]),
             "fts_vocab": fts_vocab,
+            "fts_config": fts_config,
         }
     finally:
         conn.close()
