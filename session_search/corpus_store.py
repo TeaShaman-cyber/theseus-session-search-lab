@@ -1088,7 +1088,7 @@ def semantic_snapshot(corpus_root: pathlib.Path, db_path: pathlib.Path | None = 
         messages = [tuple(row) for row in conn.execute(
             """
             SELECT session_id,ordinal,message_id,local_identity,canonical_message_sha256,
-                   role,content_type,search_class,create_time,text
+                   role,content_type,search_class,create_time,provider_order,text
             FROM messages ORDER BY session_id,ordinal,local_identity
             """
         ).fetchall()]
@@ -1105,12 +1105,17 @@ def semantic_snapshot(corpus_root: pathlib.Path, db_path: pathlib.Path | None = 
         ).fetchall()]
         conn.execute(
             "CREATE VIRTUAL TABLE IF NOT EXISTS temp.messages_fts_vocab "
-            "USING fts5vocab(main, messages_fts, 'row')"
+            "USING fts5vocab(main, messages_fts, 'instance')"
         )
         fts_vocab = [
             tuple(row)
             for row in conn.execute(
-                "SELECT term, doc, cnt FROM temp.messages_fts_vocab ORDER BY term"
+                """
+                SELECT m.session_id,m.local_identity,v.term,v.col,v.offset
+                FROM temp.messages_fts_vocab v
+                JOIN messages m ON m.row_id=v.doc
+                ORDER BY m.session_id,m.local_identity,v.term,v.col,v.offset
+                """
             ).fetchall()
         ]
         return {
@@ -1150,7 +1155,7 @@ def _write_rebuild_receipt(paths: CorpusPaths, result: dict) -> pathlib.Path:
 def rebuild_corpus(corpus_root: pathlib.Path) -> dict:
     paths = CorpusPaths.from_root(pathlib.Path(corpus_root))
     with CorpusMutationLock(paths, "rebuild"):
-        old_verify = _verify_projection(paths, paths.db)
+        old_verify = verify_corpus(paths.root)
         old_snapshot = semantic_snapshot(paths.root) if old_verify.get("status") == "VERIFIED" else None
 
         new_db = paths.root / "corpus.sqlite3.new"
@@ -1166,7 +1171,7 @@ def rebuild_corpus(corpus_root: pathlib.Path) -> dict:
             result = {"status": "REBUILD_SWAP_BLOCKED", **new_verify}
             _write_rebuild_receipt(paths, result)
             return result
-        final_verify = _verify_projection(paths, paths.db)
+        final_verify = verify_corpus(paths.root)
         if final_verify.get("status") != "VERIFIED":
             raise RuntimeError(f"REBUILD_POSTCONDITION_FAILED: {final_verify}")
         result = {"status": "REBUILT", **{k: v for k, v in final_verify.items() if k != "status"}}
