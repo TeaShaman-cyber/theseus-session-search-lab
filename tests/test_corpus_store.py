@@ -531,6 +531,61 @@ class CorpusVerifyRebuildTest(unittest.TestCase):
             self.assertEqual(result["status"], "RECONCILIATION_REQUIRED")
             self.assertIn("derive", result["reason"])
 
+    def test_verify_rejects_fts_docsize_drift(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus"
+            capture = _write_capture(
+                root / "a.zip",
+                "session-a",
+                [_message("m1", "alpha alpha alpha beta", 1.0), _message("m2", "alpha", 2.0)],
+                complete=True,
+            )
+            ingest_artifact(capture, corpus)
+            db = CorpusPaths.from_root(corpus).db
+            with sqlite3.connect(db) as conn:
+                row_id, size_blob = conn.execute(
+                    "SELECT id,sz FROM messages_fts_docsize ORDER BY id LIMIT 1"
+                ).fetchone()
+                conn.execute(
+                    "UPDATE messages_fts_docsize SET sz=? WHERE id=?",
+                    (sqlite3.Binary(b"\\x01" * max(1, len(size_blob))), row_id),
+                )
+                conn.commit()
+
+            result = verify_corpus(corpus)
+            self.assertEqual(result["status"], "RECONCILIATION_REQUIRED")
+            self.assertIn("derive", result["reason"])
+
+    def test_verify_rejects_fts_table_definition_drift(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus"
+            capture = _write_capture(
+                root / "a.zip",
+                "session-a",
+                [_message("m1", "alpha", 1.0), _message("m2", "beta", 2.0)],
+                complete=True,
+            )
+            ingest_artifact(capture, corpus)
+            db = CorpusPaths.from_root(corpus).db
+            with sqlite3.connect(db) as conn:
+                rows = conn.execute(
+                    "SELECT row_id,text FROM messages ORDER BY row_id"
+                ).fetchall()
+                conn.execute("DROP TABLE messages_fts")
+                conn.execute(
+                    "CREATE VIRTUAL TABLE messages_fts USING fts5(text, content='', tokenize='porter')"
+                )
+                conn.executemany(
+                    "INSERT INTO messages_fts(rowid,text) VALUES (?,?)", rows
+                )
+                conn.commit()
+
+            result = verify_corpus(corpus)
+            self.assertEqual(result["status"], "RECONCILIATION_REQUIRED")
+            self.assertIn("derive", result["reason"])
+
     def test_verify_detects_tampered_accepted_artifact(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)

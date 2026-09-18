@@ -1124,6 +1124,21 @@ def semantic_snapshot(corpus_root: pathlib.Path, db_path: pathlib.Path | None = 
                 "SELECT k, v FROM messages_fts_config ORDER BY k"
             ).fetchall()
         ]
+        fts_docsize = [
+            tuple(row)
+            for row in conn.execute(
+                """
+                SELECT m.session_id,m.local_identity,hex(d.sz)
+                FROM messages_fts_docsize d
+                JOIN messages m ON m.row_id=d.id
+                ORDER BY m.session_id,m.local_identity
+                """
+            ).fetchall()
+        ]
+        fts_definition_row = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='messages_fts'"
+        ).fetchone()
+        fts_definition = None if fts_definition_row is None else str(fts_definition_row[0])
         return {
             "sessions": sessions,
             "artifacts": artifacts,
@@ -1133,6 +1148,8 @@ def semantic_snapshot(corpus_root: pathlib.Path, db_path: pathlib.Path | None = 
             "fts_rows": int(conn.execute("SELECT count(*) FROM messages_fts").fetchone()[0]),
             "fts_vocab": fts_vocab,
             "fts_config": fts_config,
+            "fts_docsize": fts_docsize,
+            "fts_definition": fts_definition,
         }
     finally:
         conn.close()
