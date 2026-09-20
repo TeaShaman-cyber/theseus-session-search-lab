@@ -1135,6 +1135,10 @@ def semantic_snapshot(corpus_root: pathlib.Path, db_path: pathlib.Path | None = 
                 """
             ).fetchall()
         ]
+        fts_global_stats_row = conn.execute(
+            "SELECT id,hex(block) FROM messages_fts_data WHERE id=1"
+        ).fetchone()
+        fts_global_stats = None if fts_global_stats_row is None else tuple(fts_global_stats_row)
         fts_definition_row = conn.execute(
             "SELECT sql FROM sqlite_master WHERE type='table' AND name='messages_fts'"
         ).fetchone()
@@ -1149,6 +1153,7 @@ def semantic_snapshot(corpus_root: pathlib.Path, db_path: pathlib.Path | None = 
             "fts_vocab": fts_vocab,
             "fts_config": fts_config,
             "fts_docsize": fts_docsize,
+            "fts_global_stats": fts_global_stats,
             "fts_definition": fts_definition,
         }
     finally:

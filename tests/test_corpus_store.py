@@ -557,6 +557,34 @@ class CorpusVerifyRebuildTest(unittest.TestCase):
             self.assertEqual(result["status"], "RECONCILIATION_REQUIRED")
             self.assertIn("derive", result["reason"])
 
+    def test_verify_rejects_fts_global_stats_drift(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus"
+            capture = _write_capture(
+                root / "a.zip",
+                "session-a",
+                [_message("m1", "alpha alpha alpha beta", 1.0), _message("m2", "alpha", 2.0)],
+                complete=True,
+            )
+            ingest_artifact(capture, corpus)
+            db = CorpusPaths.from_root(corpus).db
+            with sqlite3.connect(db) as conn:
+                row_id, block = conn.execute(
+                    "SELECT id,block FROM messages_fts_data WHERE id=1"
+                ).fetchone()
+                mutated = bytearray(block)
+                mutated[-1] = (mutated[-1] + 1) % 256
+                conn.execute(
+                    "UPDATE messages_fts_data SET block=? WHERE id=?",
+                    (sqlite3.Binary(bytes(mutated)), row_id),
+                )
+                conn.commit()
+
+            result = verify_corpus(corpus)
+            self.assertEqual(result["status"], "RECONCILIATION_REQUIRED")
+            self.assertIn("derive", result["reason"])
+
     def test_verify_rejects_fts_table_definition_drift(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)
