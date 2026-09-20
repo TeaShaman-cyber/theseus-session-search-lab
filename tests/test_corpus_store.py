@@ -509,6 +509,39 @@ class CorpusVerifyRebuildTest(unittest.TestCase):
                 "alpha",
             )
 
+    def test_rebuild_repairs_unreadable_fts_layout(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus"
+            capture = _write_capture(
+                root / "a.zip",
+                "session-a",
+                [_message("m1", "alpha beta", 1.0), _message("m2", "alpha", 2.0)],
+                complete=True,
+            )
+            ingest_artifact(capture, corpus)
+            db = CorpusPaths.from_root(corpus).db
+            with sqlite3.connect(db) as conn:
+                rows = conn.execute(
+                    "SELECT row_id,text FROM messages ORDER BY row_id"
+                ).fetchall()
+                conn.execute("DROP TABLE messages_fts")
+                conn.execute(
+                    "CREATE VIRTUAL TABLE messages_fts USING fts5(text, content='', columnsize=0)"
+                )
+                conn.executemany(
+                    "INSERT INTO messages_fts(rowid,text) VALUES (?,?)", rows
+                )
+                conn.commit()
+
+            verify = verify_corpus(corpus)
+            self.assertEqual(verify["status"], "RECONCILIATION_REQUIRED")
+            self.assertIn("projection", verify["reason"])
+
+            rebuilt = rebuild_corpus(corpus)
+            self.assertEqual(rebuilt["status"], "REBUILT")
+            self.assertEqual(verify_corpus(corpus)["status"], "VERIFIED")
+
     def test_verify_rejects_fts_rank_configuration_drift(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)

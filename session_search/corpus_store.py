@@ -972,6 +972,11 @@ def _verify_projection(paths: CorpusPaths, db_path: pathlib.Path) -> dict:
             "message_sources": int(conn.execute("SELECT count(*) FROM message_sources").fetchone()[0]),
             "fts_rows": fts_rows,
         }
+    except sqlite3.Error as exc:
+        return {
+            "status": "RECONCILIATION_REQUIRED",
+            "reason": f"projection unreadable: {exc}",
+        }
     finally:
         conn.close()
 
