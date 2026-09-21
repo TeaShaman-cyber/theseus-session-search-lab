@@ -108,6 +108,14 @@ class PortableRuntimeBuildTest(unittest.TestCase):
             self.assertNotEqual(proc.returncode, 0)
             self.assertIn("portable-runtime.md", proc.stderr)
 
+    def test_hosted_consumer_is_independent_of_repository_checkout(self):
+        workflow = (ROOT / ".github" / "workflows" / "portable-runtime.yml").read_text()
+        consumer = workflow.split("  consume-runtime:", 1)[1]
+        self.assertNotIn("actions/checkout@", consumer)
+        self.assertIn("actions/download-artifact@", consumer)
+        self.assertIn("PORTABLE_RUNTIME_CONSUMER_ACCEPTANCE_PASS", consumer)
+
+
 
 if __name__ == "__main__":
     unittest.main()
