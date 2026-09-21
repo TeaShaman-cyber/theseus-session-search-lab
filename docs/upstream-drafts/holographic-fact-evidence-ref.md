@@ -116,14 +116,23 @@ upstream feature proposal: DEFER
 
 This is not a claim that provenance is unimportant. It is a claim that the currently evidenced problem does not yet justify a safe generic interface.
 
-## What would make the candidate viable again?
+## What would make the candidate worth investigating again?
 
-Re-open this proposal only if at least one of these becomes true upstream:
+The following are **signals for renewed investigation**, not individually sufficient gates:
 
-1. **Native same-scope source primitive exists.** Holographic/Hermes exposes a source identity whose visibility and dereference permissions are enforced within the same profile/runtime boundary.
-2. **Repeated multi-evidence demand appears.** Real workflows show that the same fact commonly needs multiple independent evidence links, justifying a small normalized relation rather than a scalar field.
-3. **Fact revisions become first-class.** The provider gains revision/version semantics that can bind evidence to the assertion version it actually supports.
-4. **Maintainers explicitly want provenance lifecycle semantics.** Then duplicate, update, deletion, redaction/export, and permission behavior can be designed as one coherent contract rather than accumulated piecemeal.
+1. **Native same-scope source primitive appears.** Holographic/Hermes exposes a source identity whose visibility and dereference permissions are enforced within the same profile/runtime boundary.
+2. **Repeated multi-evidence demand appears.** Real workflows show that the same fact commonly needs multiple independent evidence links.
+3. **Fact revisions become first-class.** The provider gains revision/version semantics that could bind evidence to the assertion version it actually supports.
+4. **Maintainers explicitly request provenance lifecycle semantics.** Duplicate, update, deletion, redaction/export, and permission behavior become an upstream product requirement rather than a speculative convenience.
+
+Do **not** call the candidate viable again because any one signal appears. Re-opening an implementation proposal requires all applicable gates together:
+
+- **demonstrated demand:** a real upstream workflow needs provenance beyond current trust metadata;
+- **scope safety:** source identity visibility and dereference permissions are enforced in the same authority boundary as the fact;
+- **lifecycle correctness:** duplicate evidence and content-changing updates have an explicit non-lossy rule, with evidence bound to the assertion version it supports;
+- **bounded design:** the resulting interface is still smaller and safer than introducing a generic provenance subsystem.
+
+A native source primitive without demand proves capability, not need. Multi-evidence demand without scope safety remains unsafe. First-class revisions without visibility and duplicate/update rules remain incomplete. These gates therefore compose; they do not substitute for one another.
 
 ## If maintainers already have a native same-scope primitive
 
@@ -185,8 +194,9 @@ Accepted P2 findings:
 1. **"Define a non-lossy duplicate evidence policy."**
 2. **"Prevent content updates from retaining stale evidence."**
 3. **"Do not equate fact visibility with source visibility."**
+4. **"Require combined gates before calling the candidate viable."**
 
-Disposition: all three are structurally valid. Rather than add three new mechanisms to rescue a one-column proposal, the generic `evidence_ref` feature is deferred until upstream exposes a scope-safe primitive or evidence justifies a fuller lifecycle model.
+Disposition: all four are structurally valid. Rather than add mechanisms to rescue a one-column proposal, the generic `evidence_ref` feature is deferred. Individual future signals trigger investigation only; a renewed implementation proposal requires demonstrated demand together with scope-safe visibility/dereference and a non-lossy provenance lifecycle contract.
 
 ## Possible future maintainer question
 
