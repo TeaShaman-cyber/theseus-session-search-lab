@@ -8,6 +8,7 @@ import sys
 from .corpus_store import (
     CorpusPaths,
     ingest_many,
+    corpus_status,
     read_lock_status,
     rebuild_corpus,
     resolve_corpus_root,
@@ -34,6 +35,9 @@ def main(argv: list[str] | None = None) -> int:
     rebuild = sub.add_parser("rebuild", help="rebuild projection from accepted artifact membership")
     _add_common_corpus_args(rebuild)
 
+    status = sub.add_parser("status", help="report observed corpus watermarks without claiming live-provider completeness")
+    _add_common_corpus_args(status)
+
     lock_status = sub.add_parser("lock-status", help="inspect corpus mutation lock without modifying it")
     _add_common_corpus_args(lock_status)
 
@@ -49,6 +53,9 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "rebuild":
             result = rebuild_corpus(root)
             exit_code = 0 if result.get("status") == "REBUILT" else 1
+        elif args.command == "status":
+            result = corpus_status(root)
+            exit_code = 0
         elif args.command == "lock-status":
             result = read_lock_status(CorpusPaths.from_root(root))
             exit_code = 0
@@ -64,6 +71,14 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "ingest":
         for row in result["results"]:
             print(f"{row.get('status')} {row.get('source')}")
+    elif args.command == "status":
+        print(
+            "CORPUS_STATUS "
+            f"projection={result.get('projection_status')} "
+            f"currentness={result.get('currentness')} "
+            f"latest_accepted_at={result.get('latest_accepted_at')} "
+            f"latest_observed_message_time={result.get('latest_observed_message_time')}"
+        )
     else:
         print(result.get("status") or ("LOCKED" if result.get("locked") else "UNLOCKED"))
     return exit_code

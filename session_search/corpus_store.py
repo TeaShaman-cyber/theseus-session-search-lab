@@ -861,6 +861,73 @@ def ingest_many(
 
 
 
+def corpus_status(corpus_root: pathlib.Path) -> dict:
+    paths = CorpusPaths.from_root(pathlib.Path(corpus_root))
+    paths.ensure_layout()
+    ledger = read_accepted_ledger(paths)
+    accepted_entries = list(ledger.values())
+    source_adapters: dict[str, int] = {}
+    for entry in accepted_entries:
+        adapter = str(entry.get("source_adapter") or "unknown")
+        source_adapters[adapter] = source_adapters.get(adapter, 0) + 1
+    accepted_times = [str(entry["accepted_at"]) for entry in accepted_entries if entry.get("accepted_at")]
+    base = {
+        "status": "OBSERVED",
+        "currentness": "UNKNOWN_WITHOUT_SOURCE_WATERMARK",
+        "accepted_artifacts": len(accepted_entries),
+        "source_adapters": dict(sorted(source_adapters.items())),
+        "latest_accepted_at": max(accepted_times) if accepted_times else None,
+        "latest_observed_message_time": None,
+        "coverage_states": {},
+    }
+
+    if not paths.db.exists() and not accepted_entries:
+        return {
+            **base,
+            "projection_status": "UNINITIALIZED",
+            "sessions": 0,
+            "messages": 0,
+        }
+
+    verification = verify_corpus(paths.root)
+    base["projection_status"] = str(verification.get("status") or "UNKNOWN")
+    if verification.get("status") != "VERIFIED":
+        return {
+            **base,
+            "sessions": None,
+            "messages": None,
+        }
+
+    conn = _open_existing_projection(paths.db)
+    if conn is None:
+        return {
+            **base,
+            "projection_status": "RECONCILIATION_REQUIRED",
+            "sessions": None,
+            "messages": None,
+        }
+    try:
+        coverage_states = {
+            str(row[0]): int(row[1])
+            for row in conn.execute(
+                "SELECT coverage_state,count(*) FROM sessions GROUP BY coverage_state ORDER BY coverage_state"
+            ).fetchall()
+        }
+        latest_observed = conn.execute(
+            "SELECT max(observed_max_time) FROM artifacts WHERE observed_max_time IS NOT NULL"
+        ).fetchone()[0]
+        return {
+            **base,
+            "projection_status": "VERIFIED",
+            "sessions": int(verification.get("sessions", 0)),
+            "messages": int(verification.get("messages", 0)),
+            "coverage_states": coverage_states,
+            "latest_observed_message_time": None if latest_observed is None else float(latest_observed),
+        }
+    finally:
+        conn.close()
+
+
 def read_lock_status(paths: CorpusPaths) -> dict:
     if not paths.mutation_lock.exists():
         return {"locked": False}
