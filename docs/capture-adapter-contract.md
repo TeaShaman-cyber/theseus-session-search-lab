@@ -11,6 +11,33 @@ A capture adapter turns a session-history source into an artifact the importer c
 5. Coverage metadata when the source can be partial or paginated.
 6. No claim that a missing message means the event never happened unless coverage is independently complete.
 
+
+## Portable authority matrix
+
+The portable boundary is provider-neutral and representation-agnostic. A ZIP, JSON document, SQLite database, Markdown file, or transport channel does not become authoritative merely because of its format.
+
+| Layer | Responsibility | Authority boundary |
+| --- | --- | --- |
+| **Source capture bytes + content hash** | Evidence of the exact bytes presented to an adapter/importer | Authoritative for that captured artifact only; not proof of complete platform history |
+| **Versioned schema + adapter interpretation** | Defines how provider/source bytes map to stable session identity, message identity, ordering, coverage, roles, and provenance | Authoritative only for the normalization semantics encoded by that schema/adapter version |
+| **Capture manifest / transformation receipt** | Integrity, source provenance, coverage observations, recovery/member selection | Authoritative only for claims explicitly verified by that capture/recovery operation |
+| **Accepted-artifact ledger** | Durable corpus membership | Authoritative for which immutable artifacts belong to the corpus |
+| **Normalized corpus state** | Regeneratable accepted state derived from ledger members + immutable artifacts | Derived state; never historical source authority by itself |
+| **Retrieval projection** | FTS/ranking/search convenience | Disposable projection; never authority for whether an event happened |
+| **Transport/storage channel** | Byte delivery | Carrier only; successful delivery does not imply parse, acceptance, persistence, or refresh |
+
+The stable non-equivalences are:
+
+```text
+capture_present != complete_history
+transport_success != artifact_accepted
+artifact_accepted != projection_verified
+search_miss != historical_absence
+message_id_overlap != session_identity
+```
+
+A portable artifact therefore needs enough evidence for the adapter to establish integrity, versioned interpretation, stable session identity, ordering, coverage, and source provenance. Acceptance into a corpus is a separate operation with its own durable ledger/receipt. Deterministic rebuild and search projections consume accepted artifacts; they do not upgrade the historical authority of those artifacts.
+
 ## Initial Barn Doctor adapter observation
 
 The first development prototype observed `barn-doctor-export:v1` from Barn Doctor `0.2.3`. Its manifest can contain member byte counts and SHA-256 digests, and its optional conversation payload can be direct UTF-8 JSON.
@@ -46,6 +73,6 @@ A complete pagination claim requires both:
 1. coverage evidence showing the exposed history boundary was reached; and
 2. membership evidence showing every included page belongs to the claimed conversation.
 
-This membership requirement is **not yet enforced by the ordinary Barn Doctor importer**. Legacy Barn Doctor normalization can derive `COMPLETE_EXPOSED_CONVERSATION` from pagination metadata even when one or more included message pages lack independently proven conversation membership. Until provenance-aware recovery in Issue #16 is implemented and verified, such a Barn Doctor `COMPLETE_EXPOSED_CONVERSATION` value records an observed pagination boundary only and **must not be used as evidence of absence** for historical claims.
+The ordinary Barn Doctor importer still does not retroactively prove membership for legacy pages that lack independently captured request/session provenance. Provenance-aware Barn recovery is implemented by the separate recovery path from Issue #16 and can materialize a derived single-session artifact when request provenance proves ownership. That recovery capability does not strengthen already accepted legacy evidence by itself. A legacy Barn Doctor `COMPLETE_EXPOSED_CONVERSATION` value without proven page membership records an observed pagination boundary only and **must not be used as evidence of absence** for historical claims.
 
 If a portable artifact exposes multiple stable conversation identities, the ordinary importer remains fail-closed with `BLOCKED_MIXED_SESSION_ARTIFACT`. Provenance-aware preprocessing is a separate adapter/recovery layer; see [Mixed capture artifact recovery](mixed-artifact-recovery.md) and Issue #16.
