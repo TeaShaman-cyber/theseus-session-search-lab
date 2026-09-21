@@ -82,6 +82,14 @@ Verify durable membership, immutable artifact bytes, relational/FTS invariants, 
 python3 -m session_search.corpus verify
 ```
 
+Inspect the observed corpus watermark without pretending the archive is current with any live provider:
+
+```bash
+python3 -m session_search.corpus status --json
+```
+
+`status` reports the latest accepted artifact time, latest observed message time, coverage-state counts, source-adapter counts, and projection verification state. Without an external authoritative source watermark it reports `currentness=UNKNOWN_WITHOUT_SOURCE_WATERMARK`. Session coverage, corpus freshness, and live-provider completeness are separate claims.
+
 Rebuild the disposable SQLite/FTS projection only from accepted-ledger artifacts:
 
 ```bash

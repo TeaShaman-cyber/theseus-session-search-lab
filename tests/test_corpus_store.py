@@ -17,6 +17,7 @@ from session_search.corpus_store import (
     read_accepted_ledger,
     read_lock_status,
     rebuild_corpus,
+    corpus_status,
     semantic_snapshot,
     verify_corpus,
     resolve_corpus_root,
@@ -739,6 +740,87 @@ class CorpusVerifyRebuildTest(unittest.TestCase):
                 self.assertEqual(status["operation"], "ingest")
                 self.assertTrue(paths.mutation_lock.exists())
             self.assertFalse(paths.mutation_lock.exists())
+
+
+class CorpusStatusTest(unittest.TestCase):
+    def _write_deepseek_source(self, root: pathlib.Path) -> pathlib.Path:
+        source = root / "deepseek.json"
+        source.write_text(json.dumps([
+            {
+                "id": "deep-session",
+                "title": "Deep session",
+                "mapping": {
+                    "root": {"id": "root", "parent": None, "children": ["u1"], "message": None},
+                    "u1": {
+                        "id": "u1",
+                        "parent": "root",
+                        "children": [],
+                        "message": {
+                            "inserted_at": "2026-09-20T12:00:00+00:00",
+                            "model": "deepseek-chat",
+                            "fragments": [{"type": "REQUEST", "content": "deep watermark"}],
+                        },
+                    },
+                },
+            }
+        ]), encoding="utf-8")
+        return source
+
+    def test_status_reports_observed_watermarks_without_claiming_live_currentness(self):
+        from session_search.deepseek_export import materialize_export
+        from session_search.artifact import normalize_artifact
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus"
+            barn = _write_capture(
+                root / "barn.zip",
+                "barn-session",
+                [_message("m1", "barn watermark", 100.0)],
+                complete=False,
+            )
+            deep = materialize_export(self._write_deepseek_source(root), root / "deep-out")[0]
+            expected_latest = max(
+                m.create_time
+                for artifact in (normalize_artifact(barn), normalize_artifact(deep))
+                for m in artifact.messages
+                if m.create_time is not None
+            )
+            ingest_artifact(barn, corpus)
+            ingest_artifact(deep, corpus)
+
+            status = corpus_status(corpus)
+            self.assertEqual(status["status"], "OBSERVED")
+            self.assertEqual(status["projection_status"], "VERIFIED")
+            self.assertEqual(status["currentness"], "UNKNOWN_WITHOUT_SOURCE_WATERMARK")
+            self.assertEqual(status["accepted_artifacts"], 2)
+            self.assertEqual(status["sessions"], 2)
+            self.assertEqual(status["messages"], 2)
+            self.assertEqual(status["coverage_states"], {
+                "COMPLETE_EXPOSED_CONVERSATION": 1,
+                "PARTIAL_SESSION_SLICE": 1,
+            })
+            self.assertEqual(status["source_adapters"], {
+                "barn-doctor": 1,
+                "deepseek-export": 1,
+            })
+            self.assertIsNotNone(status["latest_accepted_at"])
+            self.assertEqual(status["latest_observed_message_time"], expected_latest)
+
+    def test_status_empty_uninitialized_corpus_is_observed_but_currentness_unknown(self):
+        with tempfile.TemporaryDirectory() as td:
+            corpus = pathlib.Path(td) / "empty"
+            status = corpus_status(corpus)
+            self.assertEqual(status["status"], "OBSERVED")
+            self.assertEqual(status["projection_status"], "UNINITIALIZED")
+            self.assertEqual(status["currentness"], "UNKNOWN_WITHOUT_SOURCE_WATERMARK")
+            self.assertEqual(status["accepted_artifacts"], 0)
+            self.assertEqual(status["sessions"], 0)
+            self.assertEqual(status["messages"], 0)
+            self.assertEqual(status["coverage_states"], {})
+            self.assertEqual(status["source_adapters"], {})
+            self.assertIsNone(status["latest_accepted_at"])
+            self.assertIsNone(status["latest_observed_message_time"])
 
 
 if __name__ == "__main__":
