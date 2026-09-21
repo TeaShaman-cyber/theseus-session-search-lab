@@ -9,6 +9,10 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 REQUIRED = [
     'README.md',
     'docs/qa.md',
+    'docs/portable-runtime.md',
+    'scripts/build_portable_runtime.py',
+    'tests/test_portable_runtime.py',
+    '.github/workflows/portable-runtime.yml',
     'tools/dev/check',
     'session_search/importer.py',
     'session_search/search.py',
@@ -42,6 +46,18 @@ for marker in [
 workflow = (ROOT/'.github/workflows/docs-check.yml').read_text()
 if 'run: ./tools/dev/check' not in workflow:
     raise SystemExit('VERIFY FAIL CI does not call canonical tools/dev/check')
+
+portable_workflow = (ROOT/'.github/workflows/portable-runtime.yml').read_text()
+if 'scripts/build_portable_runtime.py' not in portable_workflow:
+    raise SystemExit('VERIFY FAIL portable workflow does not call canonical runtime builder')
+consumer_marker = '  consume-runtime:'
+if consumer_marker not in portable_workflow:
+    raise SystemExit('VERIFY FAIL portable workflow missing independent consumer job')
+consumer_section = portable_workflow.split(consumer_marker, 1)[1]
+if 'actions/checkout@' in consumer_section:
+    raise SystemExit('VERIFY FAIL portable consumer must not checkout repository')
+if 'PORTABLE_RUNTIME_CONSUMER_ACCEPTANCE_PASS' not in consumer_section:
+    raise SystemExit('VERIFY FAIL portable consumer acceptance postcondition missing')
 
 json.loads((ROOT/'receipts/001-development-prototype.public.json').read_text())
 json.loads((ROOT/'receipts/001-wiki-bootstrap.json').read_text())

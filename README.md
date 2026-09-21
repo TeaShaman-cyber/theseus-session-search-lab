@@ -19,6 +19,8 @@ replaceable capture adapter
 
 The first development prototype used Barn Doctor, Google Drive, and MarcoPolo. **MarcoPolo is not a runtime dependency.** Barn Doctor and Google Drive are current adapter choices, not architectural requirements.
 
+A deterministic standalone Python runtime can be built with `python3 scripts/build_portable_runtime.py ...`; its contract is documented in [Portable runtime](docs/portable-runtime.md). Hosted acceptance builds the ZIP in one GitHub Actions job and consumes it in a fresh job that does not checkout this repository.
+
 ## Research rules
 
 - Search miss over incomplete capture means `UNKNOWN`, not absence.
