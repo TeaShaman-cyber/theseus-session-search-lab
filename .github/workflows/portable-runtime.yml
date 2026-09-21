@@ -1,0 +1,190 @@
+name: Portable runtime acceptance
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'session_search/**'
+      - 'scripts/build_portable_runtime.py'
+      - 'docs/portable-runtime.md'
+      - 'tests/test_portable_runtime.py'
+      - '.github/workflows/portable-runtime.yml'
+      - 'scripts/verify_repo.py'
+  push:
+    branches: [main]
+    paths:
+      - 'session_search/**'
+      - 'scripts/build_portable_runtime.py'
+      - 'docs/portable-runtime.md'
+      - 'tests/test_portable_runtime.py'
+      - '.github/workflows/portable-runtime.yml'
+      - 'scripts/verify_repo.py'
+permissions:
+  contents: read
+jobs:
+  produce-runtime:
+    runs-on: ubuntu-24.04
+    outputs:
+      source_sha: ${{ steps.source.outputs.source_sha }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.11'
+      - id: source
+        name: Bind exact clean source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain)"
+          source_sha=$(git rev-parse HEAD)
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "source_sha=$source_sha"
+      - name: Build deterministic runtime artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/build_portable_runtime.py \
+            --source-root . \
+            --source-repo "$GITHUB_REPOSITORY" \
+            --source-revision "${{ steps.source.outputs.source_sha }}" \
+            --out-dir _out
+      - name: Verify producer artifact receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, pathlib, zipfile
+          out = pathlib.Path('_out')
+          runtime = out / 'session-search-runtime.zip'
+          receipt = json.loads((out / 'session-search-runtime.receipt.json').read_text())
+          assert receipt['schema'] == 'theseus.session-search-portable-runtime-receipt.v1'
+          assert hashlib.sha256(runtime.read_bytes()).hexdigest() == receipt['artifact']['sha256']
+          with zipfile.ZipFile(runtime) as zf:
+              manifest_raw = zf.read('runtime-manifest.json')
+              manifest = json.loads(manifest_raw)
+              assert hashlib.sha256(manifest_raw).hexdigest() == receipt['manifest_sha256']
+              assert manifest['source'] == receipt['source']
+              for item in manifest['members']:
+                  assert hashlib.sha256(zf.read(item['path'])).hexdigest() == item['sha256']
+          print('PORTABLE_RUNTIME_PRODUCER_VERIFY_PASS')
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: session-search-portable-runtime-${{ steps.source.outputs.source_sha }}
+          path: |
+            _out/session-search-runtime.zip
+            _out/session-search-runtime.receipt.json
+          if-no-files-found: error
+          retention-days: 14
+
+  consume-runtime:
+    needs: produce-runtime
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: session-search-portable-runtime-${{ needs.produce-runtime.outputs.source_sha }}
+          path: downloaded
+      - name: Verify and extract runtime without repository checkout
+        env:
+          SOURCE_SHA: ${{ needs.produce-runtime.outputs.source_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, zipfile
+          downloaded = pathlib.Path('downloaded')
+          runtime = downloaded / 'session-search-runtime.zip'
+          receipt = json.loads((downloaded / 'session-search-runtime.receipt.json').read_text())
+          assert receipt['source']['revision'] == os.environ['SOURCE_SHA']
+          assert hashlib.sha256(runtime.read_bytes()).hexdigest() == receipt['artifact']['sha256']
+          with zipfile.ZipFile(runtime) as zf:
+              names = zf.namelist()
+              assert names == sorted(names)
+              manifest_raw = zf.read('runtime-manifest.json')
+              assert hashlib.sha256(manifest_raw).hexdigest() == receipt['manifest_sha256']
+              manifest = json.loads(manifest_raw)
+              assert manifest['schema'] == 'theseus.session-search-portable-runtime.v1'
+              assert manifest['source'] == receipt['source']
+              assert manifest['dependencies'] == {'python': 'stdlib-only'}
+              for item in manifest['members']:
+                  assert len(zf.read(item['path'])) == item['size_bytes']
+                  assert hashlib.sha256(zf.read(item['path'])).hexdigest() == item['sha256']
+              zf.extractall('runtime')
+          print('PORTABLE_RUNTIME_INDEPENDENT_VERIFY_PASS')
+          PY
+      - name: Create synthetic portable capture
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, zipfile
+          payload = {
+              'conversation_id': 'portable-runtime-smoke',
+              'title': 'Portable runtime smoke',
+              'page_info': {'has_previous_page': False, 'has_next_page': False},
+              'messages': [{
+                  'id': 'm1',
+                  'author': {'role': 'user'},
+                  'create_time': 1770000000.0,
+                  'content': {'content_type': 'text', 'parts': ['portable-runtime-canary']},
+              }],
+          }
+          raw = json.dumps(payload, sort_keys=True).encode()
+          member = 'optional/conversation-1.bin'
+          manifest = {'schema': 'barn-doctor-export:v1', 'files': [{'name': member, 'bytes': len(raw), 'sha256': hashlib.sha256(raw).hexdigest()}]}
+          with zipfile.ZipFile('synthetic-capture.zip', 'w') as zf:
+              zf.writestr('manifest.json', json.dumps(manifest, sort_keys=True))
+              zf.writestr(member, raw)
+          PY
+      - name: Run packaged ingest verify status search acceptance
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ needs.produce-runtime.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          cd runtime
+          python3 -m session_search.corpus ingest ../synthetic-capture.zip --corpus ../corpus --json > ../ingest.json
+          python3 -m session_search.corpus verify --corpus ../corpus --json > ../verify.json
+          python3 -m session_search.corpus status --corpus ../corpus --json > ../status.json
+          python3 -m session_search.search portable-runtime-canary --corpus ../corpus --json > ../search.json
+          cd ..
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib
+          runtime = pathlib.Path('downloaded/session-search-runtime.zip')
+          ingest = json.loads(pathlib.Path('ingest.json').read_text())
+          verify = json.loads(pathlib.Path('verify.json').read_text())
+          status = json.loads(pathlib.Path('status.json').read_text())
+          search = json.loads(pathlib.Path('search.json').read_text())
+          assert ingest['status'] == 'COMPLETE'
+          assert verify['status'] == 'VERIFIED'
+          assert status['projection_status'] == 'VERIFIED'
+          assert status['currentness'] == 'UNKNOWN_WITHOUT_SOURCE_WATERMARK'
+          assert len(search) == 1 and search[0]['text'] == 'portable-runtime-canary'
+          receipt = {
+              'schema': 'theseus.session-search-portable-runtime-consumer-receipt.v1',
+              'source_revision': os.environ['SOURCE_SHA'],
+              'runtime_sha256': hashlib.sha256(runtime.read_bytes()).hexdigest(),
+              'postconditions': {
+                  'ingest': 'COMPLETE',
+                  'verify': 'VERIFIED',
+                  'projection': 'VERIFIED',
+                  'currentness': 'UNKNOWN_WITHOUT_SOURCE_WATERMARK',
+                  'search_canary': 'PASS',
+              },
+          }
+          pathlib.Path('consumer-receipt.json').write_text(json.dumps(receipt, indent=2, sort_keys=True) + '\n')
+          print(json.dumps(receipt, sort_keys=True))
+          print('PORTABLE_RUNTIME_CONSUMER_ACCEPTANCE_PASS')
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: session-search-portable-runtime-consumer-receipt-${{ needs.produce-runtime.outputs.source_sha }}
+          path: consumer-receipt.json
+          if-no-files-found: error
+          retention-days: 14
