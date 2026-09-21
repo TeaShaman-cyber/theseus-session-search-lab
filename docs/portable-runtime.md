@@ -25,7 +25,7 @@ python3 -m session_search.corpus status --corpus ./corpus --json
 python3 -m session_search.search "previous decision" --corpus ./corpus --json
 ```
 
-The runtime also contains the xAI/Grok, Speed Booster, Barn Doctor portable-artifact ingest, and Barn provenance-recovery entrypoints already present in the source revision. Transport/acquisition remains outside the core runtime contract.
+The runtime also contains the xAI/Grok, Speed Booster, Barn Doctor portable-artifact ingest, Barn provenance-recovery, and one-shot source-agnostic inbox handoff entrypoints already present in the source revision. Transport/acquisition remains outside the core runtime contract.
 
 ## Authority boundary
 
