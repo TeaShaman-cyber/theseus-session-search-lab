@@ -22,6 +22,7 @@ ENTRYPOINTS = [
     "python3 -m session_search.xai_export",
     "python3 -m session_search.speed_booster_export",
     "python3 -m session_search.barn_recovery",
+    "python3 -m session_search.handoff",
 ]
 
 

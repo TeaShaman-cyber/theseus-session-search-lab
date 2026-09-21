@@ -58,6 +58,14 @@ Then ingest one or more verified portable captures without database surgery:
 python3 -m session_search.corpus ingest capture-a.zip capture-b.zip
 ```
 
+For a transport-neutral automated handoff, point the one-shot inbox command at a directory of portable ZIP artifacts:
+
+```bash
+python3 -m session_search.handoff --inbox /path/to/inbox --corpus /private/path/session-search-corpus --json
+```
+
+The handoff scans top-level ZIPs in deterministic filename order, delegates all corpus semantics to the existing idempotent ingest primitive, leaves source files untouched, and writes a private durable handoff receipt for every attempted file including `INGESTED`, `ALREADY_INGESTED`, and `FAILED`. A scheduler, Drive adapter, browser helper, or provider integration may invoke this seam; none becomes core authority.
+
 Search all accepted sessions together:
 
 ```bash
