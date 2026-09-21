@@ -216,11 +216,26 @@ class BootstrapContract(unittest.TestCase):
             self.assertIn('conflicting duplicate message_id', imp.stderr)
 
 
-    def test_docs_do_not_treat_unverified_barn_membership_as_absence_authority(self):
+    def test_docs_keep_legacy_barn_membership_non_authoritative_after_recovery_exists(self):
         text = (ROOT / 'docs' / 'capture-adapter-contract.md').read_text()
-        self.assertIn('not yet enforced by the ordinary Barn Doctor importer', text)
+        self.assertIn('provenance-aware barn recovery is implemented', text.lower())
+        self.assertIn('does not retroactively prove membership', text)
         self.assertIn('must not be used as evidence of absence', text)
-        self.assertIn('Issue #16', text)
+
+    def test_docs_define_portable_authority_matrix_and_non_equivalences(self):
+        text = (ROOT / 'docs' / 'capture-adapter-contract.md').read_text()
+        for marker in [
+            'Source capture bytes + content hash',
+            'Versioned schema + adapter interpretation',
+            'Accepted-artifact ledger',
+            'Retrieval projection',
+            'capture_present != complete_history',
+            'transport_success != artifact_accepted',
+            'artifact_accepted != projection_verified',
+            'search_miss != historical_absence',
+            'message_id_overlap != session_identity',
+        ]:
+            self.assertIn(marker, text)
 
 
 
