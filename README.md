@@ -146,6 +146,24 @@ python3 -m session_search.search "previous decision" --corpus /private/path/sess
 
 The adapter treats the DeepSeek `parent`/`children` graph as ordering authority, maps `REQUEST` to user dialogue and `RESPONSE` to assistant dialogue, preserves explicit empty fragment collections as trace placeholders, preserves missing timestamps as unknown rather than inventing epoch values, and blocks missing/malformed fragment collections or inconsistent graph shapes instead of guessing. Fragment identities use an unambiguous tuple encoding, and direct corpus ingest reuses the same source snapshot hash that produced the child artifacts. Public tests use synthetic exports only; real export bytes, conversation text, and account-specific identifiers remain private.
 
+### Official ChatGPT account export adapter
+
+Official ChatGPT account-export ZIPs can be transcoded into portable Session Search artifacts without flattening provider branches. The adapter accepts either `conversations.json` or numbered `conversations-NNN.json` shards, reconstructs child edges from each node's authoritative `parent` link, validates a single rooted acyclic graph, and materializes one root-to-leaf artifact for every observable terminal branch.
+
+```bash
+python3 -m session_search.chatgpt_export chatgpt-export.zip --output-dir ./chatgpt-artifacts
+```
+
+Or ingest directly into the cumulative corpus:
+
+```bash
+python3 -m session_search.chatgpt_export chatgpt-export.zip --corpus /private/path/session-search-corpus
+```
+
+Branch identity is independent of `current_node`: at each fork the earliest uniquely timestamped child defines the stable base branch, while other choices receive a deterministic `~branch-<hash>` suffix. `current_node` is validated as an observed terminal node and recorded as provenance only. Ambiguous sibling ordering, broken parents, cycles, disconnected graphs, duplicate identities, and malformed mappings fail closed. Account exports are conservatively reported as `PARTIAL_SESSION_SLICE` because a downloaded snapshot is not proof of complete authoritative platform history.
+
+Plain user/assistant text is indexed as dialogue. `thoughts` and `reasoning_recap` remain hidden evidence under the existing normalization contract. For `multimodal_text`, textual parts and audio transcriptions are projected into searchable dialogue while the full provider multimodal payload and message metadata are retained in a non-dialogue trace record. Child artifacts bind the parent ZIP SHA-256 and use immutable content-addressed names. Public regression tests use synthetic fixtures only; private export bytes, text, IDs, URLs, and source digests are never committed.
+
 ### Official xAI/Grok export adapter
 
 Official xAI data-export ZIPs can be transcoded into the same portable Session Search artifact contract without a provider-specific database or search path. The adapter reads the single `prod-grok-backend.json` payload from the official ZIP, binds every child artifact to the parent ZIP SHA-256, and uses content-addressed immutable child names.

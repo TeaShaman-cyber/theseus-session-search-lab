@@ -111,7 +111,7 @@ class ChatGPTExportAdapterTest(unittest.TestCase):
                     "m-u",
                     "user",
                     "multimodal_text",
-                    ["caption", {"asset_pointer": "file-synthetic"}],
+                    ["caption", {"content_type": "audio_transcription", "text": "spoken words"}, {"content_type": "image_asset_pointer", "asset_pointer": "file-synthetic"}],
                     10.0,
                 ),
             ),
@@ -126,9 +126,21 @@ class ChatGPTExportAdapterTest(unittest.TestCase):
                 )[0]
             )
             by_type = {m.content_type: m for m in artifact.messages}
-            self.assertEqual([m.text for m in artifact.messages if m.search_class == "dialogue"], ["caption", "answer"])
+            self.assertEqual([m.text for m in artifact.messages if m.search_class == "dialogue"], ["caption\nspoken words", "answer"])
             self.assertIn("chatgpt_multimodal_trace", by_type)
             self.assertEqual(by_type["chatgpt_multimodal_trace"].search_class, "trace")
+
+    def test_legacy_single_conversations_json_is_supported(self):
+        from session_search.chatgpt_export import materialize_export
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            source = root / "chatgpt-export.zip"
+            with zipfile.ZipFile(source, "w") as zf:
+                zf.writestr("conversations.json", json.dumps([self.conversation(cid="legacy")]))
+            artifacts = materialize_export(source, root / "out")
+            self.assertEqual(len(artifacts), 2)
+            self.assertEqual({normalize_artifact(path).coverage_state for path in artifacts}, {"PARTIAL_SESSION_SLICE"})
 
     def test_thoughts_are_preserved_as_hidden_evidence_not_dialogue(self):
         from session_search.chatgpt_export import materialize_export
@@ -212,6 +224,7 @@ class ChatGPTExportAdapterTest(unittest.TestCase):
                 manifest, _ = self.payload(path)
                 self.assertEqual(manifest["source_export_sha256"], parent_sha)
                 self.assertEqual(manifest["snapshot_scope"], "SNAPSHOT_EXPOSED_BRANCHES")
+                self.assertEqual(normalize_artifact(path).coverage_state, "PARTIAL_SESSION_SLICE")
 
             second = materialize_export(source, root / "out")
             self.assertEqual([path.name for path in second], first_names)
@@ -237,6 +250,7 @@ class ChatGPTExportAdapterTest(unittest.TestCase):
             self.assertEqual(first["branch_count"], 2)
             self.assertEqual(first["snapshot_scope"], "SNAPSHOT_EXPOSED_BRANCHES")
             self.assertEqual({item["status"] for item in first["results"]}, {"INGESTED"})
+            self.assertEqual({item["coverage_state"] for item in first["results"]}, {"PARTIAL_SESSION_SLICE"})
             self.assertEqual(verify_corpus(corpus)["status"], "VERIFIED")
 
             second = ingest_export(source, corpus)

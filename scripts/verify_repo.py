@@ -16,6 +16,8 @@ REQUIRED = [
     'tools/dev/check',
     'session_search/importer.py',
     'session_search/search.py',
+    'session_search/chatgpt_export.py',
+    'tests/test_chatgpt_export.py',
     'docs/architecture.md',
     'docs/capture-adapter-contract.md',
     'docs/research-lifecycle.md',

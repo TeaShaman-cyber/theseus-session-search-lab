@@ -19,6 +19,8 @@ SNAPSHOT_SCOPE = "SNAPSHOT_EXPOSED_BRANCHES"
 _FIXED_ZIP_TIME = (1980, 1, 1, 0, 0, 0)
 _SAFE_ID = re.compile(r"[^A-Za-z0-9._~-]+")
 _CONVERSATIONS_MEMBER = re.compile(r"^conversations-(\d+)\.json$")
+_SINGLE_CONVERSATIONS_MEMBER = "conversations.json"
+_SINGLE_CONVERSATIONS_MEMBER = "conversations.json"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -48,15 +50,25 @@ def _file_sha256(path: pathlib.Path) -> str:
 
 def _conversation_members(zf: zipfile.ZipFile) -> list[str]:
     found: list[tuple[int, str]] = []
+    direct: list[str] = []
     for raw_name in zf.namelist():
         p = pathlib.PurePosixPath(raw_name)
         if p.is_absolute() or ".." in p.parts:
             raise ValueError("BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: unsafe ZIP member")
+        if p.name == _SINGLE_CONVERSATIONS_MEMBER:
+            direct.append(raw_name)
+            continue
         match = _CONVERSATIONS_MEMBER.fullmatch(p.name)
         if match:
             found.append((int(match.group(1)), raw_name))
+    if direct and found:
+        raise ValueError("BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: ambiguous conversations members")
+    if len(direct) > 1:
+        raise ValueError("BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: duplicate conversations member")
+    if direct:
+        return direct
     if not found:
-        raise ValueError("BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: conversations-NNN.json members missing")
+        raise ValueError("BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: conversations JSON members missing")
     found.sort()
     indexes = [index for index, _ in found]
     if len(indexes) != len(set(indexes)):
@@ -85,7 +97,7 @@ def _iter_member_conversations(zf: zipfile.ZipFile, member: str) -> tuple[str, I
     def streaming() -> Iterator[dict]:
         try:
             with zf.open(member) as fh:
-                for item in ijson.items(fh, "item"):
+                for item in ijson.items(fh, "item", use_float=True):
                     if not isinstance(item, dict):
                         raise ValueError("BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: conversation must be object")
                     yield item
@@ -261,8 +273,10 @@ def _multimodal_parts(content: dict) -> tuple[list[object], list[object]]:
     for part in parts:
         if isinstance(part, (str, int, float)) and not isinstance(part, bool):
             text_parts.append(part)
-        else:
-            trace_parts.append(part)
+            continue
+        if isinstance(part, dict) and part.get("content_type") == "audio_transcription" and isinstance(part.get("text"), str):
+            text_parts.append(part["text"])
+        trace_parts.append(part)
     return text_parts, trace_parts
 
 
@@ -309,7 +323,7 @@ def _convert_node_messages(node_id: str, node: dict, order: int) -> tuple[list[d
                 "id": trace_id,
                 "author": {"role": "unknown"},
                 "create_time": created,
-                "content": {"content_type": "chatgpt_multimodal_trace", "parts": trace_parts},
+                "content": {"content_type": "chatgpt_multimodal_trace", "parts": trace_parts, "source_content": content},
                 "metadata": {**base_metadata, "chatgpt_projection": "multimodal-trace", "chatgpt_source_message_id": message_id, "session_search_order": order},
             })
             order += 1
@@ -349,7 +363,7 @@ def _conversation_variants(conversation: dict) -> list[dict]:
             "conversation_id": session_id,
             "title": title,
             "messages": messages,
-            "page_info": {"has_previous_page": False, "has_next_page": False},
+            "page_info": {"has_previous_page": True, "has_next_page": False},
             "chatgpt_source_conversation_id": source_id,
             "chatgpt_selected_leaf_id": leaf_id,
             "chatgpt_current_node_id": current_node,
@@ -409,63 +423,70 @@ def _materialize_export_snapshot(source: pathlib.Path, output_dir: pathlib.Path)
     parent_sha = _file_sha256(source)
     source_size = source.stat().st_size
     outputs: list[pathlib.Path] = []
-    pending: list[tuple[pathlib.Path, bytes]] = []
+    pending: list[tuple[pathlib.Path, pathlib.Path]] = []
     seen_source_ids: set[str] = set()
     seen_session_ids: set[str] = set()
     conversation_count = 0
     branch_count = 0
     parser_modes: set[str] = set()
 
+    staging_root = pathlib.Path(tempfile.mkdtemp(prefix="session-search-chatgpt-stage-"))
     try:
-        zf = zipfile.ZipFile(source)
-    except Exception as exc:
-        raise ValueError("BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: invalid ZIP") from exc
-    with zf:
-        members = _conversation_members(zf)
-        for member in members:
-            parser_mode, conversations = _iter_member_conversations(zf, member)
-            parser_modes.add(parser_mode)
-            for conversation in conversations:
-                conversation_count += 1
-                source_id = _source_conversation_id(conversation)
-                if source_id in seen_source_ids:
-                    raise ValueError("BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: duplicate conversation id")
-                seen_source_ids.add(source_id)
-                variants = _conversation_variants(conversation)
-                branch_count += len(variants)
-                for payload in variants:
-                    session_id = payload["conversation_id"]
-                    if session_id in seen_session_ids:
-                        raise ValueError("BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: duplicate materialized session id")
-                    seen_session_ids.add(session_id)
-                    sanitized = _SAFE_ID.sub("_", session_id).strip("._") or "session"
-                    id_hash = hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:12]
-                    safe_id = f"{sanitized}-{id_hash}"
-                    child_member = f"optional/conversation-chatgpt-{safe_id}.bin"
-                    payload_bytes = _stable_json_bytes(payload)
-                    manifest = {
-                        "schema": SCHEMA,
-                        "source_adapter": ADAPTER,
-                        "source_export_sha256": parent_sha,
-                        "source_export_bytes": source_size,
-                        "source_conversations_member": pathlib.PurePosixPath(member).name,
-                        "source_conversation_id": source_id,
-                        "session_id": session_id,
-                        "branch_leaf_id": payload["chatgpt_selected_leaf_id"],
-                        "branch_count": payload["chatgpt_branch_count"],
-                        "selected_is_current": payload["chatgpt_selected_is_current"],
-                        "snapshot_scope": SNAPSHOT_SCOPE,
-                        "files": [{"name": child_member, "bytes": len(payload_bytes), "sha256": _sha256(payload_bytes)}],
-                    }
-                    archive_bytes = _portable_zip_bytes(child_member, payload_bytes, manifest)
-                    archive_sha = _sha256(archive_bytes)
-                    target = output_dir / f"chatgpt-{safe_id}-{archive_sha[:16]}.zip"
-                    pending.append((target, archive_bytes))
-                    outputs.append(target)
+        try:
+            zf = zipfile.ZipFile(source)
+        except Exception as exc:
+            raise ValueError("BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: invalid ZIP") from exc
+        with zf:
+            members = _conversation_members(zf)
+            for member in members:
+                parser_mode, conversations = _iter_member_conversations(zf, member)
+                parser_modes.add(parser_mode)
+                for conversation in conversations:
+                    conversation_count += 1
+                    source_id = _source_conversation_id(conversation)
+                    if source_id in seen_source_ids:
+                        raise ValueError("BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: duplicate conversation id")
+                    seen_source_ids.add(source_id)
+                    variants = _conversation_variants(conversation)
+                    branch_count += len(variants)
+                    for payload in variants:
+                        session_id = payload["conversation_id"]
+                        if session_id in seen_session_ids:
+                            raise ValueError("BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: duplicate materialized session id")
+                        seen_session_ids.add(session_id)
+                        sanitized = _SAFE_ID.sub("_", session_id).strip("._") or "session"
+                        id_hash = hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:12]
+                        safe_id = f"{sanitized}-{id_hash}"
+                        child_member = f"optional/conversation-chatgpt-{safe_id}.bin"
+                        payload_bytes = _stable_json_bytes(payload)
+                        manifest = {
+                            "schema": SCHEMA,
+                            "source_adapter": ADAPTER,
+                            "source_export_sha256": parent_sha,
+                            "source_export_bytes": source_size,
+                            "source_conversations_member": pathlib.PurePosixPath(member).name,
+                            "source_conversation_id": source_id,
+                            "session_id": session_id,
+                            "branch_leaf_id": payload["chatgpt_selected_leaf_id"],
+                            "branch_count": payload["chatgpt_branch_count"],
+                            "selected_is_current": payload["chatgpt_selected_is_current"],
+                            "snapshot_scope": SNAPSHOT_SCOPE,
+                            "files": [{"name": child_member, "bytes": len(payload_bytes), "sha256": _sha256(payload_bytes)}],
+                        }
+                        archive_bytes = _portable_zip_bytes(child_member, payload_bytes, manifest)
+                        archive_sha = _sha256(archive_bytes)
+                        target = output_dir / f"chatgpt-{safe_id}-{archive_sha[:16]}.zip"
+                        stage_path = staging_root / f"{len(pending):08d}.zip"
+                        stage_path.write_bytes(archive_bytes)
+                        pending.append((target, stage_path))
+                        outputs.append(target)
 
-    output_dir.mkdir(parents=True, exist_ok=True)
-    for target, archive_bytes in pending:
-        _publish_content_addressed(target, archive_bytes)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        for target, stage_path in pending:
+            _publish_content_addressed(target, stage_path.read_bytes())
+    finally:
+        import shutil
+        shutil.rmtree(staging_root, ignore_errors=True)
     parser_mode = "+".join(sorted(parser_modes)) or "UNKNOWN"
     return _MaterializedSnapshot(tuple(outputs), parent_sha, conversation_count, branch_count, parser_mode)
 
