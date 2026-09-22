@@ -8,6 +8,7 @@ import pathlib
 import shutil
 import socket
 import sqlite3
+import tempfile
 import uuid
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
@@ -1245,7 +1246,8 @@ def verify_corpus(corpus_root: pathlib.Path) -> dict:
     if current.get("status") != "VERIFIED":
         return current
 
-    candidate = paths.staging / f"verify-derived-{uuid.uuid4().hex}.sqlite3"
+    verify_root = pathlib.Path(tempfile.mkdtemp(prefix="session-search-verify-"))
+    candidate = verify_root / "derived.sqlite3"
     try:
         derived = _build_projection_from_accepted_artifacts(paths, candidate)
         if derived.get("status") != "VERIFIED":
@@ -1263,8 +1265,7 @@ def verify_corpus(corpus_root: pathlib.Path) -> dict:
             }
         return current
     finally:
-        if candidate.exists():
-            candidate.unlink()
+        shutil.rmtree(verify_root, ignore_errors=True)
 
 
 def semantic_snapshot(corpus_root: pathlib.Path, db_path: pathlib.Path | None = None) -> dict:
