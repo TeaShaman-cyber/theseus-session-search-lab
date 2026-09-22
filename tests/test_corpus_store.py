@@ -242,13 +242,51 @@ class CorpusIngestTest(unittest.TestCase):
             corpus = root / "corpus"
             a = _write_capture(root / "a.zip", "session-a", [_message("m1", "alpha", 1.0)])
             b = _write_capture(root / "b.zip", "session-b", [_message("m2", "beta", 2.0)])
-            with mock.patch("session_search.corpus_store._full_sqlite_integrity") as per_artifact_integrity:
+            with (
+                mock.patch("session_search.corpus_store._full_sqlite_integrity") as per_artifact_integrity,
+                mock.patch("session_search.corpus_store._assert_global_transaction_invariants") as global_invariants,
+                mock.patch("session_search.corpus_store._corpus_postcondition_counts") as corpus_counts,
+            ):
                 result = ingest_many([a, b], corpus)
             self.assertEqual(per_artifact_integrity.call_count, 0)
+            self.assertEqual(global_invariants.call_count, 0)
+            self.assertEqual(corpus_counts.call_count, 0)
             self.assertEqual(result["status"], "COMPLETE")
             self.assertEqual(result["batch_verification"]["status"], "VERIFIED")
             self.assertEqual({row["sqlite_integrity"] for row in result["results"]}, {"DEFERRED_BATCH"})
+            self.assertEqual({row["corpus_counts"] for row in result["results"]}, {"DEFERRED_BATCH"})
+            self.assertEqual(result["batch_verification"]["messages"], 2)
+            paths = CorpusPaths.from_root(corpus)
+            receipts = [json.loads(path.read_text()) for path in paths.ingest_receipts.glob("*.json")]
+            self.assertEqual(len(receipts), 2)
+            self.assertEqual(
+                {receipt["postconditions"]["corpus_counts"] for receipt in receipts},
+                {"DEFERRED_BATCH"},
+            )
             self.assertEqual(verify_corpus(corpus)["status"], "VERIFIED")
+
+    def test_single_ingest_keeps_global_checks_and_detailed_counts(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus"
+            capture = _write_capture(root / "a.zip", "session-a", [_message("m1", "alpha", 1.0)])
+            with (
+                mock.patch(
+                    "session_search.corpus_store._assert_global_transaction_invariants",
+                    wraps=__import__("session_search.corpus_store", fromlist=["_assert_global_transaction_invariants"])._assert_global_transaction_invariants,
+                ) as global_invariants,
+                mock.patch(
+                    "session_search.corpus_store._corpus_postcondition_counts",
+                    wraps=__import__("session_search.corpus_store", fromlist=["_corpus_postcondition_counts"])._corpus_postcondition_counts,
+                ) as corpus_counts,
+            ):
+                result = ingest_artifact(capture, corpus)
+            self.assertEqual(global_invariants.call_count, 1)
+            self.assertEqual(corpus_counts.call_count, 1)
+            self.assertEqual(result["sqlite_integrity"], "ok")
+            self.assertEqual(result["sessions"], 1)
+            self.assertEqual(result["messages"], 1)
+            self.assertNotIn("corpus_counts", result)
 
     def test_same_artifact_sha_is_verified_noop(self):
         with tempfile.TemporaryDirectory() as td:

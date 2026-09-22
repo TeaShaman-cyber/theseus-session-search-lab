@@ -715,12 +715,9 @@ def apply_normalized_artifact_to_projection(
     return {"artifact_id": artifact_id, **delta}
 
 
-def assert_transaction_invariants(conn: sqlite3.Connection, artifact: NormalizedArtifact) -> None:
+def _assert_global_transaction_invariants(conn: sqlite3.Connection) -> None:
     if conn.execute("PRAGMA foreign_key_check").fetchall():
         raise RuntimeError("FAILED_TRANSACTION: foreign key invariant")
-    row = conn.execute("SELECT count(*) FROM artifacts WHERE sha256=?", (artifact.artifact_sha256,)).fetchone()
-    if int(row[0]) != 1:
-        raise RuntimeError("FAILED_TRANSACTION: artifact registry invariant")
     duplicates = conn.execute(
         """
         SELECT session_id,message_id,count(*)
@@ -732,7 +729,36 @@ def assert_transaction_invariants(conn: sqlite3.Connection, artifact: Normalized
         raise RuntimeError("FAILED_TRANSACTION: identified message uniqueness invariant")
 
 
-def verify_ingest_postconditions(paths: CorpusPaths, sha256: str, *, check_sqlite_integrity: bool = True) -> dict:
+def assert_transaction_invariants(
+    conn: sqlite3.Connection,
+    artifact: NormalizedArtifact,
+    *,
+    check_global: bool = True,
+) -> None:
+    row = conn.execute("SELECT count(*) FROM artifacts WHERE sha256=?", (artifact.artifact_sha256,)).fetchone()
+    if int(row[0]) != 1:
+        raise RuntimeError("FAILED_TRANSACTION: artifact registry invariant")
+    if check_global:
+        _assert_global_transaction_invariants(conn)
+
+
+def _corpus_postcondition_counts(conn: sqlite3.Connection) -> dict:
+    return {
+        "sessions": int(conn.execute("SELECT count(*) FROM sessions").fetchone()[0]),
+        "artifacts": int(conn.execute("SELECT count(*) FROM artifacts").fetchone()[0]),
+        "messages": int(conn.execute("SELECT count(*) FROM messages").fetchone()[0]),
+        "payload_pages": int(conn.execute("SELECT count(*) FROM payload_pages").fetchone()[0]),
+        "message_sources": int(conn.execute("SELECT count(*) FROM message_sources").fetchone()[0]),
+    }
+
+
+def verify_ingest_postconditions(
+    paths: CorpusPaths,
+    sha256: str,
+    *,
+    check_sqlite_integrity: bool = True,
+    include_corpus_counts: bool = True,
+) -> dict:
     ledger = _read_one_accepted_entry(paths, sha256)
     if ledger is None:
         raise RuntimeError("RECONCILIATION_REQUIRED: accepted ledger missing")
@@ -749,14 +775,12 @@ def verify_ingest_postconditions(paths: CorpusPaths, sha256: str, *, check_sqlit
         integrity = _full_sqlite_integrity(conn) if check_sqlite_integrity else "DEFERRED_BATCH"
         if check_sqlite_integrity and integrity != "ok":
             raise RuntimeError("RECONCILIATION_REQUIRED: sqlite integrity failure")
-        return {
-            "sqlite_integrity": integrity,
-            "sessions": int(conn.execute("SELECT count(*) FROM sessions").fetchone()[0]),
-            "artifacts": int(conn.execute("SELECT count(*) FROM artifacts").fetchone()[0]),
-            "messages": int(conn.execute("SELECT count(*) FROM messages").fetchone()[0]),
-            "payload_pages": int(conn.execute("SELECT count(*) FROM payload_pages").fetchone()[0]),
-            "message_sources": int(conn.execute("SELECT count(*) FROM message_sources").fetchone()[0]),
-        }
+        result = {"sqlite_integrity": integrity}
+        if include_corpus_counts:
+            result.update(_corpus_postcondition_counts(conn))
+        else:
+            result["corpus_counts"] = "DEFERRED_BATCH"
+        return result
     finally:
         conn.close()
 
@@ -813,7 +837,7 @@ def ingest_artifact(source: pathlib.Path, corpus_root: pathlib.Path, *, _defer_b
             entry = _accepted_entry_for_artifact(artifact, accepted_at)
             conn.execute("BEGIN IMMEDIATE")
             delta = apply_normalized_artifact_to_projection(conn, artifact, accepted_at)
-            assert_transaction_invariants(conn, artifact)
+            assert_transaction_invariants(conn, artifact, check_global=not _defer_batch_verify)
             ledger_path = write_accepted_entry(paths, entry)
             observed = json.loads(ledger_path.read_text())
             if observed != entry:
@@ -833,7 +857,12 @@ def ingest_artifact(source: pathlib.Path, corpus_root: pathlib.Path, *, _defer_b
         else:
             conn.close()
 
-        postconditions = verify_ingest_postconditions(paths, artifact.artifact_sha256, check_sqlite_integrity=not _defer_batch_verify)
+        postconditions = verify_ingest_postconditions(
+            paths,
+            artifact.artifact_sha256,
+            check_sqlite_integrity=not _defer_batch_verify,
+            include_corpus_counts=not _defer_batch_verify,
+        )
         write_ingest_receipt(
             paths,
             artifact_sha256=artifact.artifact_sha256,
@@ -1104,7 +1133,7 @@ def _build_projection_from_accepted_artifacts(
         conn.execute("BEGIN")
         for entry, artifact in _load_accepted_normalized_artifacts(paths):
             apply_normalized_artifact_to_projection(conn, artifact, str(entry["accepted_at"]))
-            assert_transaction_invariants(conn, artifact)
+            assert_transaction_invariants(conn, artifact, check_global=False)
         conn.commit()
     except Exception:
         conn.rollback()
