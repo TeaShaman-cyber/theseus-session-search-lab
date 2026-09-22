@@ -20,7 +20,6 @@ _FIXED_ZIP_TIME = (1980, 1, 1, 0, 0, 0)
 _SAFE_ID = re.compile(r"[^A-Za-z0-9._~-]+")
 _CONVERSATIONS_MEMBER = re.compile(r"^conversations-(\d+)\.json$")
 _SINGLE_CONVERSATIONS_MEMBER = "conversations.json"
-_SINGLE_CONVERSATIONS_MEMBER = "conversations.json"
 
 
 @dataclasses.dataclass(frozen=True)
