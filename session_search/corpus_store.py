@@ -1116,6 +1116,128 @@ def _build_projection_from_accepted_artifacts(
     return _verify_projection(paths, target)
 
 
+_SEMANTIC_STREAM_QUERIES = (
+    (
+        "sessions",
+        """
+        SELECT session_id,title,coverage_state,coverage_reason,first_message_time,last_message_time,
+               first_accepted_at,last_accepted_at,title_source_time,title_source_artifact_sha256
+        FROM sessions ORDER BY session_id
+        """,
+    ),
+    (
+        "artifacts",
+        """
+        SELECT sha256,size_bytes,source_schema,source_adapter,observed_title,accepted_at,
+               coverage_state,session_id,ledger_sha256,observed_min_time,observed_max_time,
+               observed_message_count
+        FROM artifacts ORDER BY sha256
+        """,
+    ),
+    (
+        "pages",
+        """
+        SELECT a.sha256,p.session_id,p.capture_sequence,p.member_name,p.start_cursor,p.end_cursor,
+               p.has_previous_page,p.has_next_page,p.message_count,p.min_create_time,p.max_create_time
+        FROM payload_pages p JOIN artifacts a ON a.artifact_id=p.artifact_id
+        ORDER BY a.sha256,p.capture_sequence,p.member_name
+        """,
+    ),
+    (
+        "messages",
+        """
+        SELECT session_id,ordinal,message_id,local_identity,canonical_message_sha256,
+               role,content_type,search_class,create_time,provider_order,text
+        FROM messages ORDER BY session_id,ordinal,local_identity
+        """,
+    ),
+    (
+        "sources",
+        """
+        SELECT m.session_id,m.local_identity,a.sha256,p.member_name,ms.page_position,
+               ms.source_message_id,ms.source_object_sha256
+        FROM message_sources ms
+        JOIN messages m ON m.row_id=ms.message_row_id
+        JOIN payload_pages p ON p.page_id=ms.page_id
+        JOIN artifacts a ON a.artifact_id=p.artifact_id
+        ORDER BY m.session_id,m.local_identity,a.sha256,p.member_name,ms.page_position
+        """,
+    ),
+    (
+        "fts_vocab",
+        """
+        SELECT m.session_id,m.local_identity,v.term,v.col,v.offset
+        FROM temp.messages_fts_vocab v
+        JOIN messages m ON m.row_id=v.doc
+        ORDER BY m.session_id,m.local_identity,v.term,v.col,v.offset
+        """,
+    ),
+    (
+        "fts_config",
+        "SELECT k, v FROM messages_fts_config ORDER BY k",
+    ),
+    (
+        "fts_docsize",
+        """
+        SELECT m.session_id,m.local_identity,hex(d.sz)
+        FROM messages_fts_docsize d
+        JOIN messages m ON m.row_id=d.id
+        ORDER BY m.session_id,m.local_identity
+        """,
+    ),
+)
+
+
+def _semantic_projection_equal(left_db: pathlib.Path, right_db: pathlib.Path) -> tuple[bool, str | None]:
+    left = _open_existing_projection(pathlib.Path(left_db))
+    right = _open_existing_projection(pathlib.Path(right_db))
+    if left is None or right is None:
+        if left is not None:
+            left.close()
+        if right is not None:
+            right.close()
+        return False, "projection_missing"
+    try:
+        for conn in (left, right):
+            conn.execute(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS temp.messages_fts_vocab "
+                "USING fts5vocab(main, messages_fts, 'instance')"
+            )
+        for label, sql in _SEMANTIC_STREAM_QUERIES:
+            left_cursor = left.execute(sql)
+            right_cursor = right.execute(sql)
+            row_index = 0
+            while True:
+                left_row = left_cursor.fetchone()
+                right_row = right_cursor.fetchone()
+                if left_row is None or right_row is None:
+                    if left_row is None and right_row is None:
+                        break
+                    return False, f"{label}:length:{row_index}"
+                if tuple(left_row) != tuple(right_row):
+                    return False, f"{label}:row:{row_index}"
+                row_index += 1
+
+        scalar_queries = (
+            ("fts_rows", "SELECT count(*) FROM messages_fts"),
+            ("fts_global_stats", "SELECT id,hex(block) FROM messages_fts_data WHERE id=1"),
+            ("fts_definition", "SELECT sql FROM sqlite_master WHERE type='table' AND name='messages_fts'"),
+        )
+        for label, sql in scalar_queries:
+            left_row = left.execute(sql).fetchone()
+            right_row = right.execute(sql).fetchone()
+            left_value = None if left_row is None else tuple(left_row)
+            right_value = None if right_row is None else tuple(right_row)
+            if left_value != right_value:
+                return False, label
+        return True, None
+    except sqlite3.Error as exc:
+        return False, f"sqlite:{exc}"
+    finally:
+        left.close()
+        right.close()
+
+
 def verify_corpus(corpus_root: pathlib.Path) -> dict:
     paths = CorpusPaths.from_root(pathlib.Path(corpus_root))
     paths.ensure_layout()
@@ -1132,10 +1254,12 @@ def verify_corpus(corpus_root: pathlib.Path) -> dict:
                 "reason": "artifact-derived verification projection failed",
                 "derived": derived,
             }
-        if semantic_snapshot(paths.root) != semantic_snapshot(paths.root, candidate):
+        equivalent, component = _semantic_projection_equal(paths.db, candidate)
+        if not equivalent:
             return {
                 "status": "RECONCILIATION_REQUIRED",
                 "reason": "current projection does not derive from accepted artifacts",
+                "component": component,
             }
         return current
     finally:
@@ -1273,15 +1397,16 @@ def rebuild_corpus(corpus_root: pathlib.Path) -> dict:
     paths = CorpusPaths.from_root(pathlib.Path(corpus_root))
     with CorpusMutationLock(paths, "rebuild"):
         old_verify = verify_corpus(paths.root)
-        old_snapshot = semantic_snapshot(paths.root) if old_verify.get("status") == "VERIFIED" else None
+        compare_old_projection = old_verify.get("status") == "VERIFIED"
 
         new_db = paths.root / "corpus.sqlite3.new"
         new_verify = _build_projection_from_accepted_artifacts(paths, new_db)
         if new_verify.get("status") != "VERIFIED":
             raise RuntimeError(f"REBUILD_VERIFY_FAILED: {new_verify}")
-        new_snapshot = semantic_snapshot(paths.root, new_db)
-        if old_snapshot is not None and new_snapshot != old_snapshot:
-            raise RuntimeError("REBUILD_EQUIVALENCE_MISMATCH")
+        if compare_old_projection:
+            equivalent, component = _semantic_projection_equal(paths.db, new_db)
+            if not equivalent:
+                raise RuntimeError(f"REBUILD_EQUIVALENCE_MISMATCH: {component}")
         try:
             os.replace(new_db, paths.db)
         except OSError:

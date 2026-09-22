@@ -401,6 +401,7 @@ class CorpusVerifyRebuildTest(unittest.TestCase):
             result = verify_corpus(corpus)
             self.assertEqual(result["status"], "RECONCILIATION_REQUIRED")
             self.assertIn("derive", result["reason"])
+            self.assertTrue(str(result.get("component")).startswith("messages:row:"))
 
     def test_verify_rejects_fts_only_drift_not_derived_from_accepted_artifact(self):
         with tempfile.TemporaryDirectory() as td:
@@ -756,6 +757,47 @@ class CorpusVerifyRebuildTest(unittest.TestCase):
                 self.assertTrue(paths.mutation_lock.exists())
             self.assertFalse(paths.mutation_lock.exists())
 
+
+    def test_verify_large_rowset_does_not_materialize_semantic_snapshot(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus"
+            messages = [
+                _message(f"m{i}", f"token-{i} shared-term", float(i + 1))
+                for i in range(1500)
+            ]
+            capture = _write_capture(
+                root / "large.zip",
+                "session-large",
+                messages,
+                complete=True,
+            )
+            ingest_artifact(capture, corpus)
+            with mock.patch(
+                "session_search.corpus_store.semantic_snapshot",
+                side_effect=AssertionError("verify must stream, not snapshot"),
+            ):
+                result = verify_corpus(corpus)
+            self.assertEqual(result["status"], "VERIFIED")
+            self.assertEqual(result["messages"], 1500)
+
+    def test_rebuild_equivalence_does_not_materialize_semantic_snapshot(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus"
+            capture = _write_capture(
+                root / "a.zip",
+                "session-a",
+                [_message("m1", "alpha beta", 1.0), _message("m2", "gamma", 2.0)],
+                complete=True,
+            )
+            ingest_artifact(capture, corpus)
+            with mock.patch(
+                "session_search.corpus_store.semantic_snapshot",
+                side_effect=AssertionError("rebuild must stream, not snapshot"),
+            ):
+                result = rebuild_corpus(corpus)
+            self.assertEqual(result["status"], "REBUILT")
 
 class CorpusStatusTest(unittest.TestCase):
     def _write_deepseek_source(self, root: pathlib.Path) -> pathlib.Path:
