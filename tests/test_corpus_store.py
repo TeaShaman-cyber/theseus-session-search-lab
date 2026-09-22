@@ -14,6 +14,7 @@ from session_search.corpus_store import (
     accepted_entry_path,
     init_corpus_db,
     ingest_artifact,
+    ingest_many,
     read_accepted_ledger,
     read_lock_status,
     rebuild_corpus,
@@ -234,6 +235,20 @@ class CorpusIngestTest(unittest.TestCase):
             self.assertEqual(ingest_artifact(b, corpus)["status"], "INGESTED")
             self.assertEqual(_db_scalar(corpus, "SELECT count(*) FROM sessions"), 2)
             self.assertEqual(_db_scalar(corpus, "SELECT count(*) FROM messages WHERE message_id='m1'"), 2)
+
+    def test_ingest_many_defers_per_artifact_integrity_and_verifies_once_at_batch_end(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus"
+            a = _write_capture(root / "a.zip", "session-a", [_message("m1", "alpha", 1.0)])
+            b = _write_capture(root / "b.zip", "session-b", [_message("m2", "beta", 2.0)])
+            with mock.patch("session_search.corpus_store._full_sqlite_integrity") as per_artifact_integrity:
+                result = ingest_many([a, b], corpus)
+            self.assertEqual(per_artifact_integrity.call_count, 0)
+            self.assertEqual(result["status"], "COMPLETE")
+            self.assertEqual(result["batch_verification"]["status"], "VERIFIED")
+            self.assertEqual({row["sqlite_integrity"] for row in result["results"]}, {"DEFERRED_BATCH"})
+            self.assertEqual(verify_corpus(corpus)["status"], "VERIFIED")
 
     def test_same_artifact_sha_is_verified_noop(self):
         with tempfile.TemporaryDirectory() as td:

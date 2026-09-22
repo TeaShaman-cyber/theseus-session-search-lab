@@ -379,12 +379,18 @@ def _membership_state(conn: sqlite3.Connection, paths: CorpusPaths, sha256: str)
     return ledger, db_row
 
 
+def _full_sqlite_integrity(conn: sqlite3.Connection) -> str:
+    return str(conn.execute("PRAGMA integrity_check").fetchone()[0])
+
+
 def _verify_existing_membership(
     conn: sqlite3.Connection,
     paths: CorpusPaths,
     artifact: NormalizedArtifact,
     ledger: dict,
     db_row: sqlite3.Row,
+    *,
+    check_sqlite_integrity: bool = True,
 ) -> dict:
     blob = _artifact_blob_path(paths, artifact.artifact_sha256)
     if not blob.exists() or blob.stat().st_size != artifact.size_bytes or file_sha256(blob) != artifact.artifact_sha256:
@@ -395,7 +401,7 @@ def _verify_existing_membership(
         raise RuntimeError("RECONCILIATION_REQUIRED: projection metadata mismatch")
     if db_row["ledger_sha256"] != accepted_entry_digest(ledger):
         raise RuntimeError("RECONCILIATION_REQUIRED: projection ledger digest mismatch")
-    if conn.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+    if check_sqlite_integrity and _full_sqlite_integrity(conn) != "ok":
         raise RuntimeError("RECONCILIATION_REQUIRED: sqlite integrity failure")
     return {
         "status": "ALREADY_INGESTED",
@@ -725,7 +731,7 @@ def assert_transaction_invariants(conn: sqlite3.Connection, artifact: Normalized
         raise RuntimeError("FAILED_TRANSACTION: identified message uniqueness invariant")
 
 
-def verify_ingest_postconditions(paths: CorpusPaths, sha256: str) -> dict:
+def verify_ingest_postconditions(paths: CorpusPaths, sha256: str, *, check_sqlite_integrity: bool = True) -> dict:
     ledger = _read_one_accepted_entry(paths, sha256)
     if ledger is None:
         raise RuntimeError("RECONCILIATION_REQUIRED: accepted ledger missing")
@@ -739,8 +745,8 @@ def verify_ingest_postconditions(paths: CorpusPaths, sha256: str) -> dict:
             raise RuntimeError("RECONCILIATION_REQUIRED: projection artifact missing")
         if row["ledger_sha256"] != accepted_entry_digest(ledger):
             raise RuntimeError("RECONCILIATION_REQUIRED: ledger digest mismatch")
-        integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
-        if integrity != "ok":
+        integrity = _full_sqlite_integrity(conn) if check_sqlite_integrity else "DEFERRED_BATCH"
+        if check_sqlite_integrity and integrity != "ok":
             raise RuntimeError("RECONCILIATION_REQUIRED: sqlite integrity failure")
         return {
             "sqlite_integrity": integrity,
@@ -783,7 +789,7 @@ def write_ingest_receipt(
             temp.unlink()
 
 
-def ingest_artifact(source: pathlib.Path, corpus_root: pathlib.Path) -> dict:
+def ingest_artifact(source: pathlib.Path, corpus_root: pathlib.Path, *, _defer_batch_verify: bool = False) -> dict:
     source = pathlib.Path(source)
     paths = CorpusPaths.from_root(pathlib.Path(corpus_root))
     with CorpusMutationLock(paths, "ingest"):
@@ -800,7 +806,7 @@ def ingest_artifact(source: pathlib.Path, corpus_root: pathlib.Path) -> dict:
             if ledger is not None or db_row is not None:
                 if ledger is None or db_row is None:
                     raise RuntimeError("RECONCILIATION_REQUIRED: ledger/projection membership disagreement")
-                return _verify_existing_membership(conn, paths, artifact, ledger, db_row)
+                return _verify_existing_membership(conn, paths, artifact, ledger, db_row, check_sqlite_integrity=not _defer_batch_verify)
 
             accepted_at = _utc_now()
             entry = _accepted_entry_for_artifact(artifact, accepted_at)
@@ -826,7 +832,7 @@ def ingest_artifact(source: pathlib.Path, corpus_root: pathlib.Path) -> dict:
         else:
             conn.close()
 
-        postconditions = verify_ingest_postconditions(paths, artifact.artifact_sha256)
+        postconditions = verify_ingest_postconditions(paths, artifact.artifact_sha256, check_sqlite_integrity=not _defer_batch_verify)
         write_ingest_receipt(
             paths,
             artifact_sha256=artifact.artifact_sha256,
@@ -851,12 +857,22 @@ def ingest_many(
     results = []
     for source in sources:
         try:
-            results.append({"source": str(source), **ingest_artifact(pathlib.Path(source), corpus_root)})
+            results.append({
+                "source": str(source),
+                **ingest_artifact(pathlib.Path(source), corpus_root, _defer_batch_verify=True),
+            })
         except Exception as exc:
             results.append({"source": str(source), "status": "FAILED", "error": str(exc)})
+
+    batch_verification = verify_corpus(pathlib.Path(corpus_root))
+    complete = (
+        all(r.get("status") != "FAILED" for r in results)
+        and batch_verification.get("status") == "VERIFIED"
+    )
     return {
-        "status": "COMPLETE" if all(r.get("status") != "FAILED" for r in results) else "DEGRADED",
+        "status": "COMPLETE" if complete else "DEGRADED",
         "results": results,
+        "batch_verification": batch_verification,
     }
 
 
