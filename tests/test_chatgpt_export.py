@@ -947,6 +947,73 @@ class ChatGPTExportAdapterTest(unittest.TestCase):
                 second_message.projection_source_canonical_sha256,
             )
 
+    def test_duplicate_embedded_multimodal_lineage_fails_closed(self):
+        from session_search.chatgpt_export import materialize_export
+
+        message = self.message(
+            "m-u",
+            "user",
+            "multimodal_text",
+            ["same caption"],
+            10.0,
+        )
+        message["content"]["source_marker"] = "source-a"
+        mapping = {
+            "r": self.node("r", None, None),
+            "u": self.node("u", "r", message),
+            "a": self.node(
+                "a",
+                "u",
+                self.message("m-a", "assistant", "text", ["answer"], 20.0),
+            ),
+        }
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            child = materialize_export(
+                self.write_export(
+                    root,
+                    [
+                        self.conversation(
+                            cid="duplicate-embedded-lineage",
+                            current="a",
+                            mapping=mapping,
+                        )
+                    ],
+                ),
+                root / "out",
+            )[0]
+            manifest, payload = self.payload(child)
+            projected = next(
+                item
+                for item in payload["messages"]
+                if (item.get("metadata") or {}).get("chatgpt_projection")
+                == "multimodal-text"
+            )
+            duplicate = json.loads(json.dumps(projected))
+            duplicate["metadata"]["chatgpt_projection_source_content"][
+                "source_marker"
+            ] = "source-b"
+            payload["messages"].append(duplicate)
+            member = manifest["files"][0]["name"]
+            data = json.dumps(
+                payload,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+            manifest["files"][0]["bytes"] = len(data)
+            manifest["files"][0]["sha256"] = hashlib.sha256(data).hexdigest()
+            corrupted = root / "duplicate-embedded-lineage.zip"
+            with zipfile.ZipFile(corrupted, "w") as zf:
+                zf.writestr("manifest.json", json.dumps(manifest, sort_keys=True))
+                zf.writestr(member, data)
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "conflicting multimodal projection lineage",
+            ):
+                normalize_artifact(corrupted)
+
     def test_text_only_multimodal_different_source_lineage_conflicts(self):
         from session_search.chatgpt_export import materialize_export
         from session_search.corpus_store import ingest_artifact, verify_corpus

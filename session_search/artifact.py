@@ -415,6 +415,11 @@ def normalize_artifact(source: pathlib.Path) -> NormalizedArtifact:
                     expected_projection_digest = _sha256_json(canonical_message_object({"author": {"role": source_role}, "content": content}))
                 if author.get("role") != source_role or projected_digest != expected_projection_digest:
                     raise ValueError("BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: multimodal projection payload mismatch")
+                previous_digest = projection_source_digests.get(raw_id)
+                if previous_digest is not None and previous_digest != digest:
+                    raise ValueError(
+                        "BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: conflicting multimodal projection lineage"
+                    )
                 projection_source_digests[raw_id] = digest
 
     canonical: dict[str, dict] = {}
