@@ -31,6 +31,7 @@ class PortableRuntimeBuildTest(unittest.TestCase):
             (source / "session_search" / f"{module}.py").write_text(
                 f"VALUE = {index}\n"
             )
+        (source / "session_search" / "reconciliation.py").write_text("VALUE = 'reconciliation'\n")
         (source / "docs" / "portable-runtime.md").write_text("# Portable runtime\n")
         return source
 
@@ -81,6 +82,7 @@ class PortableRuntimeBuildTest(unittest.TestCase):
                 self.assertIn("runtime-manifest.json", names)
                 self.assertIn("PORTABLE_RUNTIME.md", names)
                 self.assertIn("session_search/__init__.py", names)
+                self.assertIn("session_search/reconciliation.py", names)
                 manifest_raw = zf.read("runtime-manifest.json")
                 manifest = json.loads(manifest_raw)
                 self.assertEqual(manifest["schema"], "theseus.session-search-portable-runtime.v1")
