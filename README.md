@@ -80,6 +80,17 @@ python3 -m session_search.search "lightweight IDE" --recall
 
 `--recall` keeps strict search as the default. It broadens FTS candidate generation to token-OR matching, oversamples candidates, then reranks with session-level token coverage and session-diverse output so one large evidence dump cannot monopolize the result window. This is still lexical historical retrieval, not semantic memory, and a miss remains `UNKNOWN`.
 
+Strict search combines query tokens with `AND` within one indexed message. That is useful for precise lookup, but a natural-language query can produce a lexical false negative when relevant facts are distributed across several messages, inflection changes a token, or an otherwise helpful extra term is absent from the matching message. A zero-hit strict query therefore does **not** establish a capture or corpus coverage gap.
+
+For continuity reconstruction, use a bounded Sonar-style escalation before classifying history as absent:
+
+1. try several short, independent discriminating anchors;
+2. include at least one functional rephrase that does not merely repeat the expected wording;
+3. if strict results are empty or weak, repeat the broader query with `--recall`;
+4. compare sessions, provenance, coverage state, conflicts, and repeated fragments before deciding whether the result is a retrieval false negative, a real coverage gap, or still `UNKNOWN`.
+
+Repeated retrieval of the same fragment is not independent evidence. This escalation is a retrieval discipline around Session Search, not a claim that the FTS projection is semantic memory, and it should remain bounded rather than turning every lookup into a full federated-memory traversal.
+
 Each corpus search hit carries session identity, title, coverage state, message time, role, search class, and score so the assistant can distinguish relevance from evidence completeness. Restrict a query when needed:
 
 ```bash
