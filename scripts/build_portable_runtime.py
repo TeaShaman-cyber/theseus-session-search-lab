@@ -24,6 +24,7 @@ ENTRYPOINTS = [
     "python3 -m session_search.chatgpt_export",
     "python3 -m session_search.barn_recovery",
     "python3 -m session_search.handoff",
+    "python3 -m session_search.refresh_readiness",
 ]
 
 
