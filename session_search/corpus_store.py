@@ -1368,32 +1368,72 @@ def ingest_many(
 ) -> dict:
     source_paths = [pathlib.Path(source) for source in sources]
 
-    if any(_chatgpt_branch_batch_key(source) is not None for source in source_paths):
-        try:
-            batch = ingest_reconciled_many(source_paths, corpus_root)
-            batch_results = batch.get("results")
-            if not isinstance(batch_results, list) or len(batch_results) != len(source_paths):
-                raise RuntimeError(
-                    "RECONCILIATION_REQUIRED: batch result cardinality mismatch"
-                )
-            return {
-                **batch,
-                "results": [
-                    {"source": str(source), **row}
-                    for source, row in zip(source_paths, batch_results, strict=True)
-                ],
-            }
-        except Exception as exc:
-            results = [
-                {"source": str(source), "status": "FAILED", "error": str(exc)}
-                for source in source_paths
-            ]
-            batch_verification = verify_corpus(pathlib.Path(corpus_root))
-            return {
-                "status": "DEGRADED",
-                "results": results,
-                "batch_verification": batch_verification,
-            }
+    branch_keys = [_chatgpt_branch_batch_key(source) for source in source_paths]
+    if any(key is not None for key in branch_keys):
+        grouped: dict[tuple[str, str], list[tuple[int, pathlib.Path]]] = {}
+        independent_units: list[tuple[int, tuple[str, str] | None, list[tuple[int, pathlib.Path]]]] = []
+        for index, (source, key) in enumerate(zip(source_paths, branch_keys, strict=True)):
+            if key is None:
+                independent_units.append((index, None, [(index, source)]))
+            else:
+                grouped.setdefault(key, []).append((index, source))
+        branch_units = [
+            (members[0][0], key, members)
+            for key, members in grouped.items()
+        ]
+        branch_units.sort(key=lambda unit: unit[0])
+        independent_units.sort(key=lambda unit: unit[0])
+
+        # Establish branch authority first so raw/unkeyed sources route the same
+        # way regardless of where they appeared in the caller's input order.
+        ordered_results: list[dict | None] = [None] * len(source_paths)
+        for _, key, members in [*branch_units, *independent_units]:
+            if key is None:
+                index, source = members[0]
+                try:
+                    row = ingest_artifact(
+                        source, corpus_root, _defer_batch_verify=True
+                    )
+                    ordered_results[index] = {"source": str(source), **row}
+                except Exception as exc:
+                    ordered_results[index] = {
+                        "source": str(source),
+                        "status": "FAILED",
+                        "error": str(exc),
+                    }
+                continue
+
+            group_sources = [source for _, source in members]
+            try:
+                batch = ingest_reconciled_many(group_sources, corpus_root)
+                batch_results = batch.get("results")
+                if not isinstance(batch_results, list) or len(batch_results) != len(members):
+                    raise RuntimeError(
+                        "RECONCILIATION_REQUIRED: batch result cardinality mismatch"
+                    )
+                for (index, source), row in zip(members, batch_results, strict=True):
+                    ordered_results[index] = {"source": str(source), **row}
+            except Exception as exc:
+                for index, source in members:
+                    ordered_results[index] = {
+                        "source": str(source),
+                        "status": "FAILED",
+                        "error": str(exc),
+                    }
+
+        results = [row for row in ordered_results if row is not None]
+        if len(results) != len(source_paths):
+            raise RuntimeError("RECONCILIATION_REQUIRED: batch result cardinality mismatch")
+        batch_verification = verify_corpus(pathlib.Path(corpus_root))
+        complete = (
+            all(r.get("status") != "FAILED" for r in results)
+            and batch_verification.get("status") == "VERIFIED"
+        )
+        return {
+            "status": "COMPLETE" if complete else "DEGRADED",
+            "results": results,
+            "batch_verification": batch_verification,
+        }
 
     results = []
     for source in source_paths:
