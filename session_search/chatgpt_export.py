@@ -68,6 +68,136 @@ def _conversation_members(zf: zipfile.ZipFile) -> list[str]:
     return [name for _, name in found]
 
 
+def _object_without_duplicate_keys(pairs):
+    obj = {}
+    for key, value in pairs:
+        if key in obj:
+            raise ValueError(
+                f"BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: duplicate JSON object key: {key}"
+            )
+        obj[key] = value
+    return obj
+
+
+def _iter_ijson_array_objects(fh, ijson_module) -> Iterator[dict]:
+    stack: list[dict] = []
+
+    def attach(value):
+        if not stack:
+            return
+        frame = stack[-1]
+        if frame["kind"] == "array":
+            frame["value"].append(value)
+            return
+        key = frame.get("pending_key")
+        if key is None:
+            raise ValueError(
+                "BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: malformed JSON object"
+            )
+        frame["value"][key] = value
+        frame["pending_key"] = None
+
+    events = iter(ijson_module.basic_parse(fh, use_float=True))
+    try:
+        first_event, _ = next(events)
+    except StopIteration as exc:
+        raise ValueError(
+            "BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: conversations member must be array"
+        ) from exc
+    if first_event != "start_array":
+        raise ValueError(
+            "BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: conversations member must be array"
+        )
+
+    complete = False
+    for event, value in events:
+        if not stack:
+            if event == "end_array":
+                complete = True
+                break
+            if event != "start_map":
+                raise ValueError(
+                    "BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: conversation must be object"
+                )
+            stack.append(
+                {
+                    "kind": "map",
+                    "value": {},
+                    "seen_keys": set(),
+                    "pending_key": None,
+                }
+            )
+            continue
+
+        frame = stack[-1]
+        if event == "map_key":
+            if frame["kind"] != "map" or frame.get("pending_key") is not None:
+                raise ValueError(
+                    "BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: malformed JSON object"
+                )
+            if value in frame["seen_keys"]:
+                raise ValueError(
+                    f"BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: duplicate JSON object key: {value}"
+                )
+            frame["seen_keys"].add(value)
+            frame["pending_key"] = value
+            continue
+
+        if event in {"start_map", "start_array"}:
+            child = (
+                {
+                    "kind": "map",
+                    "value": {},
+                    "seen_keys": set(),
+                    "pending_key": None,
+                }
+                if event == "start_map"
+                else {"kind": "array", "value": []}
+            )
+            attach(child["value"])
+            stack.append(child)
+            continue
+
+        if event in {"end_map", "end_array"}:
+            expected = "map" if event == "end_map" else "array"
+            if frame["kind"] != expected:
+                raise ValueError(
+                    "BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: malformed conversations JSON"
+                )
+            if frame["kind"] == "map" and frame.get("pending_key") is not None:
+                raise ValueError(
+                    "BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: malformed JSON object"
+                )
+            completed = stack.pop()["value"]
+            if not stack:
+                if not isinstance(completed, dict):
+                    raise ValueError(
+                        "BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: conversation must be object"
+                    )
+                yield completed
+            continue
+
+        if event in {"null", "boolean", "integer", "double", "number", "string"}:
+            attach(value)
+            continue
+
+        raise ValueError(
+            f"BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: unsupported JSON event: {event}"
+        )
+
+    if not complete or stack:
+        raise ValueError(
+            "BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: malformed conversations JSON"
+        )
+    try:
+        next(events)
+    except StopIteration:
+        return
+    raise ValueError(
+        "BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: trailing JSON content"
+    )
+
+
 def _iter_member_conversations(zf: zipfile.ZipFile, member: str) -> tuple[str, Iterator[dict]]:
     try:
         import ijson  # type: ignore
@@ -76,30 +206,41 @@ def _iter_member_conversations(zf: zipfile.ZipFile, member: str) -> tuple[str, I
             try:
                 with zf.open(member) as fh:
                     obj = json.load(
-                    io.TextIOWrapper(fh, encoding="utf-8"),
-                    parse_constant=lambda value: (_ for _ in ()).throw(ValueError(f"nonstandard JSON constant: {value}")),
-                )
+                        io.TextIOWrapper(fh, encoding="utf-8"),
+                        object_pairs_hook=_object_without_duplicate_keys,
+                        parse_constant=lambda value: (_ for _ in ()).throw(
+                            ValueError(f"nonstandard JSON constant: {value}")
+                        ),
+                    )
             except Exception as exc:
-                raise ValueError("BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: invalid conversations JSON") from exc
+                raise ValueError(
+                    "BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: invalid conversations JSON: "
+                    f"{exc}"
+                ) from exc
             if not isinstance(obj, list):
-                raise ValueError("BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: conversations member must be array")
+                raise ValueError(
+                    "BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: conversations member must be array"
+                )
             for item in obj:
                 if not isinstance(item, dict):
-                    raise ValueError("BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: conversation must be object")
+                    raise ValueError(
+                        "BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: conversation must be object"
+                    )
                 yield item
+
         return "stdlib-json", fallback()
 
     def streaming() -> Iterator[dict]:
         try:
             with zf.open(member) as fh:
-                for item in ijson.items(fh, "item", use_float=True):
-                    if not isinstance(item, dict):
-                        raise ValueError("BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: conversation must be object")
-                    yield item
+                yield from _iter_ijson_array_objects(fh, ijson)
         except ValueError:
             raise
         except Exception as exc:
-            raise ValueError("BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: invalid conversations JSON") from exc
+            raise ValueError(
+                "BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: invalid conversations JSON"
+            ) from exc
+
     return "ijson-stream", streaming()
 
 

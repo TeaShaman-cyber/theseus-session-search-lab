@@ -819,6 +819,46 @@ class ChatGPTExportAdapterTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "tied child timestamps"):
                 materialize_export(self.write_export(root, [tied]), root / "out")
 
+    def test_duplicate_json_object_key_is_rejected_in_stdlib_path(self):
+        import sys
+
+        from session_search.chatgpt_export import materialize_export
+
+        raw = b'[{"id":"dup-key","conversation_id":"dup-key","title":"x","current_node":"b","mapping":{"root":{"id":"root"},"root":{"id":"root"}}}]'
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            source = root / "duplicate-key.zip"
+            with zipfile.ZipFile(source, "w") as zf:
+                zf.writestr("conversations.json", raw)
+            with mock.patch.dict(sys.modules, {"ijson": None}):
+                with self.assertRaisesRegex(ValueError, "duplicate JSON object key"):
+                    materialize_export(source, root / "out")
+
+    def test_duplicate_json_object_key_is_rejected_in_streaming_path(self):
+        from session_search.chatgpt_export import _iter_ijson_array_objects
+
+        class FakeIjson:
+            @staticmethod
+            def basic_parse(_fh, use_float=True):
+                self.assertTrue(use_float)
+                return iter(
+                    [
+                        ("start_array", None),
+                        ("start_map", None),
+                        ("map_key", "mapping"),
+                        ("start_map", None),
+                        ("map_key", "root"),
+                        ("start_map", None),
+                        ("map_key", "id"),
+                        ("string", "root"),
+                        ("end_map", None),
+                        ("map_key", "root"),
+                    ]
+                )
+
+        with self.assertRaisesRegex(ValueError, "duplicate JSON object key"):
+            list(_iter_ijson_array_objects(object(), FakeIjson))
+
     def test_split_members_duplicate_conversation_identity_is_rejected(self):
         from session_search.chatgpt_export import materialize_export
 
