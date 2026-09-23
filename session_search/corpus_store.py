@@ -14,8 +14,14 @@ from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 
 from .artifact import NormalizedArtifact, file_sha256, normalize_artifact
+from .branch_routing import (
+    ROUTING_VERSION,
+    ProjectionRoute,
+    build_official_families,
+    route_artifact,
+)
 
-CORPUS_SCHEMA_VERSION = "session-search-corpus-v1"
+CORPUS_SCHEMA_VERSION = "session-search-corpus-v2"
 ACCEPTED_LEDGER_SCHEMA = "theseus.session-search-accepted-artifact.v1"
 
 
@@ -204,7 +210,7 @@ def init_corpus_db(conn: sqlite3.Connection) -> None:
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
         );
-        INSERT INTO corpus_meta(key,value) VALUES ('schema_version','session-search-corpus-v1');
+        INSERT INTO corpus_meta(key,value) VALUES ('schema_version','session-search-corpus-v2');
 
         CREATE TABLE sessions (
             session_id TEXT PRIMARY KEY,
@@ -236,6 +242,18 @@ def init_corpus_db(conn: sqlite3.Connection) -> None:
             observed_message_count INTEGER NOT NULL,
             FOREIGN KEY(session_id) REFERENCES sessions(session_id)
         );
+
+        CREATE TABLE artifact_routes (
+            artifact_id INTEGER PRIMARY KEY,
+            accepted_session_id TEXT NOT NULL,
+            projected_session_id TEXT NOT NULL,
+            route_state TEXT NOT NULL,
+            route_reason TEXT NOT NULL,
+            route_version TEXT NOT NULL,
+            FOREIGN KEY(artifact_id) REFERENCES artifacts(artifact_id)
+        );
+        CREATE INDEX artifact_routes_projected_session
+        ON artifact_routes(projected_session_id);
 
         CREATE TABLE payload_pages (
             page_id INTEGER PRIMARY KEY,
@@ -338,6 +356,12 @@ def _connect_corpus(paths: CorpusPaths) -> sqlite3.Connection:
         if row is None or row[0] != CORPUS_SCHEMA_VERSION:
             conn.close()
             raise RuntimeError("CORPUS_SCHEMA_MISMATCH")
+        route_table = conn.execute(
+            "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='artifact_routes'"
+        ).fetchone()[0]
+        if int(route_table) != 1:
+            conn.close()
+            raise RuntimeError("CORPUS_SCHEMA_MISMATCH")
         columns={r[1] for r in conn.execute("PRAGMA table_info(messages)")}
         if "provider_order" not in columns:
             conn.execute("ALTER TABLE messages ADD COLUMN provider_order INTEGER")
@@ -402,6 +426,12 @@ def _verify_existing_membership(
         raise RuntimeError("RECONCILIATION_REQUIRED: projection metadata mismatch")
     if db_row["ledger_sha256"] != accepted_entry_digest(ledger):
         raise RuntimeError("RECONCILIATION_REQUIRED: projection ledger digest mismatch")
+    route = conn.execute(
+        "SELECT * FROM artifact_routes WHERE artifact_id=?",
+        (db_row["artifact_id"],),
+    ).fetchone()
+    if route is None or route["accepted_session_id"] != artifact.session_id or route["route_version"] != ROUTING_VERSION:
+        raise RuntimeError("RECONCILIATION_REQUIRED: projection route mismatch")
     if check_sqlite_integrity and _full_sqlite_integrity(conn) != "ok":
         raise RuntimeError("RECONCILIATION_REQUIRED: sqlite integrity failure")
     return {
@@ -409,10 +439,17 @@ def _verify_existing_membership(
         "mutation": "none",
         "artifact_sha256": artifact.artifact_sha256,
         "session_id": artifact.session_id,
+        "projected_session_id": str(route["projected_session_id"]),
+        "route_state": str(route["route_state"]),
     }
 
 
-def _ensure_session_stub(conn: sqlite3.Connection, artifact: NormalizedArtifact, accepted_at: str) -> None:
+def _ensure_session_stub(
+    conn: sqlite3.Connection,
+    session_id: str,
+    artifact: NormalizedArtifact,
+    accepted_at: str,
+) -> None:
     conn.execute(
         """
         INSERT OR IGNORE INTO sessions(
@@ -422,7 +459,7 @@ def _ensure_session_stub(conn: sqlite3.Connection, artifact: NormalizedArtifact,
         ) VALUES (?,?,?,?,?,?,?,?,?,?)
         """,
         (
-            artifact.session_id,
+            session_id,
             artifact.title,
             "PARTIAL_SESSION_SLICE",
             "pending_recompute",
@@ -466,7 +503,34 @@ def _insert_artifact_row(conn: sqlite3.Connection, artifact: NormalizedArtifact,
     return int(cur.lastrowid)
 
 
-def _insert_pages(conn: sqlite3.Connection, artifact: NormalizedArtifact, artifact_id: int) -> dict[int, int]:
+def _insert_route_row(
+    conn: sqlite3.Connection,
+    artifact_id: int,
+    route: ProjectionRoute,
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO artifact_routes(
+            artifact_id,accepted_session_id,projected_session_id,route_state,route_reason,route_version
+        ) VALUES (?,?,?,?,?,?)
+        """,
+        (
+            artifact_id,
+            route.accepted_session_id,
+            route.projected_session_id,
+            route.state,
+            route.reason,
+            ROUTING_VERSION,
+        ),
+    )
+
+
+def _insert_pages(
+    conn: sqlite3.Connection,
+    artifact: NormalizedArtifact,
+    artifact_id: int,
+    projected_session_id: str,
+) -> dict[int, int]:
     page_ids: dict[int, int] = {}
     for page in artifact.pages:
         cur = conn.execute(
@@ -478,7 +542,7 @@ def _insert_pages(conn: sqlite3.Connection, artifact: NormalizedArtifact, artifa
             """,
             (
                 artifact_id,
-                artifact.session_id,
+                projected_session_id,
                 page.capture_sequence,
                 page.member_name,
                 page.start_cursor,
@@ -604,6 +668,7 @@ def _upsert_messages(
     paths: CorpusPaths,
     artifact: NormalizedArtifact,
     page_ids: dict[int, int],
+    projected_session_id: str,
 ) -> dict:
     novel = 0
     reused = 0
@@ -614,7 +679,7 @@ def _upsert_messages(
         if message.message_id is not None:
             row = conn.execute(
                 "SELECT * FROM messages WHERE session_id=? AND message_id=?",
-                (artifact.session_id, message.message_id),
+                (projected_session_id, message.message_id),
             ).fetchone()
         if row is None and artifact.source_adapter == "speed-booster-export" and message.provider_order is not None:
             order_rows = conn.execute(
@@ -627,7 +692,7 @@ def _upsert_messages(
                 WHERE m.session_id=? AND m.provider_order=? AND a.source_adapter=?
                 ORDER BY m.row_id
                 """,
-                (artifact.session_id, message.provider_order, "speed-booster-export"),
+                (projected_session_id, message.provider_order, "speed-booster-export"),
             ).fetchall()
             if len(order_rows) > 1:
                 raise RuntimeError("FAILED_CONFLICTING_DUPLICATE")
@@ -647,7 +712,7 @@ def _upsert_messages(
                 ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
-                    artifact.session_id,
+                    projected_session_id,
                     0,
                     message.message_id,
                     local_identity,
@@ -728,7 +793,13 @@ def _recompute_ordinals(conn: sqlite3.Connection, session_id: str) -> None:
 
 def _session_metadata_values(conn: sqlite3.Connection, session_id: str) -> dict:
     artifacts = conn.execute(
-        "SELECT * FROM artifacts WHERE session_id=?",
+        """
+        SELECT a.*
+        FROM artifacts a
+        JOIN artifact_routes r ON r.artifact_id=a.artifact_id
+        WHERE r.projected_session_id=?
+        ORDER BY a.sha256
+        """,
         (session_id,),
     ).fetchall()
     total_messages = int(
@@ -821,14 +892,32 @@ def apply_normalized_artifact_to_projection(
     paths: CorpusPaths,
     artifact: NormalizedArtifact,
     accepted_at: str,
+    route: ProjectionRoute | None = None,
 ) -> dict:
-    _ensure_session_stub(conn, artifact, accepted_at)
+    route = route or ProjectionRoute(
+        accepted_session_id=artifact.session_id,
+        projected_session_id=artifact.session_id,
+        state="DIRECT",
+        reason="explicit_session_identity",
+    )
+    if route.accepted_session_id != artifact.session_id:
+        raise RuntimeError("FAILED_BRANCH_ROUTE_SOURCE_IDENTITY")
+    _ensure_session_stub(conn, artifact.session_id, artifact, accepted_at)
+    _ensure_session_stub(conn, route.projected_session_id, artifact, accepted_at)
     artifact_id = _insert_artifact_row(conn, artifact, accepted_at)
-    page_ids = _insert_pages(conn, artifact, artifact_id)
-    delta = _upsert_messages(conn, paths, artifact, page_ids)
-    _recompute_ordinals(conn, artifact.session_id)
-    _recompute_session_metadata(conn, artifact.session_id)
-    return {"artifact_id": artifact_id, **delta}
+    _insert_route_row(conn, artifact_id, route)
+    page_ids = _insert_pages(conn, artifact, artifact_id, route.projected_session_id)
+    delta = _upsert_messages(conn, paths, artifact, page_ids, route.projected_session_id)
+    _recompute_ordinals(conn, route.projected_session_id)
+    _recompute_session_metadata(conn, route.projected_session_id)
+    if route.projected_session_id != artifact.session_id:
+        _recompute_session_metadata(conn, artifact.session_id)
+    return {
+        "artifact_id": artifact_id,
+        "projected_session_id": route.projected_session_id,
+        "route_state": route.state,
+        **delta,
+    }
 
 
 def _assert_global_transaction_invariants(conn: sqlite3.Connection) -> None:
@@ -854,6 +943,16 @@ def assert_transaction_invariants(
     row = conn.execute("SELECT count(*) FROM artifacts WHERE sha256=?", (artifact.artifact_sha256,)).fetchone()
     if int(row[0]) != 1:
         raise RuntimeError("FAILED_TRANSACTION: artifact registry invariant")
+    route_row = conn.execute(
+        """
+        SELECT count(*) FROM artifact_routes r
+        JOIN artifacts a ON a.artifact_id=r.artifact_id
+        WHERE a.sha256=? AND r.accepted_session_id=? AND r.route_version=?
+        """,
+        (artifact.artifact_sha256, artifact.session_id, ROUTING_VERSION),
+    ).fetchone()
+    if int(route_row[0]) != 1:
+        raise RuntimeError("FAILED_TRANSACTION: artifact route invariant")
     if check_global:
         _assert_global_transaction_invariants(conn)
 
@@ -930,11 +1029,219 @@ def write_ingest_receipt(
             temp.unlink()
 
 
+def _projection_routes_need_reconciliation(paths: CorpusPaths) -> bool:
+    conn = _open_existing_projection(paths.db)
+    if conn is None:
+        return False
+    try:
+        try:
+            missing = conn.execute(
+                """
+                SELECT count(*)
+                FROM artifacts a
+                LEFT JOIN artifact_routes r ON r.artifact_id=a.artifact_id
+                WHERE r.artifact_id IS NULL
+                   OR r.accepted_session_id<>a.session_id
+                   OR r.route_version<>?
+                   OR NOT EXISTS (
+                       SELECT 1 FROM sessions s
+                       WHERE s.session_id=r.projected_session_id
+                   )
+                   OR EXISTS (
+                       SELECT 1 FROM payload_pages p
+                       WHERE p.artifact_id=a.artifact_id
+                         AND p.session_id<>r.projected_session_id
+                   )
+                """,
+                (ROUTING_VERSION,),
+            ).fetchone()[0]
+        except sqlite3.Error:
+            return True
+        return int(missing) != 0
+    finally:
+        conn.close()
+
+
+def _has_accepted_branched_chatgpt_family(paths: CorpusPaths, session_id: str) -> bool:
+    conn = _open_existing_projection(paths.db)
+    if conn is None:
+        return False
+    try:
+        branch_ids = {
+            str(row[0])
+            for row in conn.execute(
+                "SELECT session_id FROM artifacts WHERE source_adapter=? ORDER BY session_id",
+                ("chatgpt-export",),
+            ).fetchall()
+            if str(row[0]) == session_id
+            or str(row[0]).startswith(f"{session_id}~branch-")
+        }
+        return session_id in branch_ids and len(branch_ids) > 1
+    finally:
+        conn.close()
+
+
+def ingest_reconciled_many(
+    sources: Sequence[pathlib.Path],
+    corpus_root: pathlib.Path,
+) -> dict:
+    paths = CorpusPaths.from_root(pathlib.Path(corpus_root))
+    source_paths = [pathlib.Path(source) for source in sources]
+    with CorpusMutationLock(paths, "reconciled-ingest"):
+        paths.ensure_layout()
+        existing_entries = read_accepted_ledger(paths)
+        conn = _open_existing_projection(paths.db)
+        try:
+            if conn is None:
+                db_shas: set[str] = set()
+            else:
+                try:
+                    db_shas = {
+                        str(row[0])
+                        for row in conn.execute("SELECT sha256 FROM artifacts").fetchall()
+                    }
+                except sqlite3.Error as exc:
+                    raise RuntimeError(
+                        f"RECONCILIATION_REQUIRED: projection artifact registry unreadable: {exc}"
+                    ) from exc
+            if set(existing_entries) != db_shas:
+                raise RuntimeError(
+                    "RECONCILIATION_REQUIRED: ledger/projection membership disagreement"
+                )
+        finally:
+            if conn is not None:
+                conn.close()
+
+        combined_entries = dict(existing_entries)
+        input_shas: list[str] = []
+        new_shas: set[str] = set()
+        seen_input_shas: set[str] = set()
+        accepted_at = _utc_now()
+        for source in source_paths:
+            artifact = normalize_artifact(source)
+            sha = artifact.artifact_sha256
+            if sha in seen_input_shas:
+                raise RuntimeError("FAILED_DUPLICATE_INGEST_SOURCE")
+            seen_input_shas.add(sha)
+            input_shas.append(sha)
+            _copy_artifact_blob(paths, artifact)
+            if sha in combined_entries:
+                continue
+            combined_entries[sha] = _accepted_entry_for_artifact(artifact, accepted_at)
+            new_shas.add(sha)
+            del artifact
+
+        current_verify = _verify_projection(paths, paths.db)
+        if not new_shas and current_verify.get("status") == "VERIFIED":
+            results = []
+            conn = _connect_corpus(paths)
+            try:
+                for sha in input_shas:
+                    entry = combined_entries[sha]
+                    artifact = _normalize_accepted_entry(paths, sha, entry)
+                    db_row = conn.execute(
+                        "SELECT * FROM artifacts WHERE sha256=?", (sha,)
+                    ).fetchone()
+                    if db_row is None:
+                        raise RuntimeError(
+                            "RECONCILIATION_REQUIRED: existing reconciled membership missing"
+                        )
+                    results.append(
+                        _verify_existing_membership(
+                            conn, paths, artifact, entry, db_row
+                        )
+                    )
+            finally:
+                conn.close()
+            return {
+                "status": "COMPLETE",
+                "results": results,
+                "batch_verification": current_verify,
+            }
+
+        candidate = paths.staging / f"reconciled-{uuid.uuid4().hex}.sqlite3"
+        routes = _plan_projection_routes_for_entries(paths, combined_entries)
+        _populate_projection_from_entries(
+            paths, candidate, combined_entries, routes=routes
+        )
+        published_ledger_shas: list[str] = []
+        try:
+            candidate_verify = _verify_projection(
+                paths, candidate, ledger_override=combined_entries
+            )
+            if candidate_verify.get("status") != "VERIFIED":
+                raise RuntimeError(
+                    f"RECONCILIATION_REQUIRED: candidate verification failed: {candidate_verify}"
+                )
+            for sha in sorted(new_shas):
+                entry = combined_entries[sha]
+                observed_path = write_accepted_entry(paths, entry)
+                if json.loads(observed_path.read_text()) != entry:
+                    raise RuntimeError("ACCEPTED_LEDGER_READBACK_MISMATCH")
+                published_ledger_shas.append(sha)
+            os.replace(candidate, paths.db)
+        except Exception as exc:
+            if candidate.exists():
+                candidate.unlink()
+            for sha in reversed(published_ledger_shas):
+                path = accepted_entry_path(paths, sha)
+                if path.exists():
+                    path.unlink()
+            raise RuntimeError(
+                "RECONCILIATION_REQUIRED: reconciled ingest publication failed"
+            ) from exc
+
+        final = verify_corpus(paths.root)
+        if final.get("status") != "VERIFIED":
+            raise RuntimeError(
+                f"RECONCILIATION_REQUIRED: reconciled ingest postcondition failed: {final}"
+            )
+        results = []
+        for sha in input_shas:
+            entry = combined_entries[sha]
+            artifact = _normalize_accepted_entry(paths, sha, entry)
+            route = routes[sha]
+            status = "INGESTED" if sha in new_shas else "ALREADY_INGESTED"
+            postconditions = verify_ingest_postconditions(paths, sha)
+            write_ingest_receipt(paths, sha, status, postconditions)
+            results.append(
+                {
+                    "status": status,
+                    "mutation": "applied" if status == "INGESTED" else "none",
+                    "artifact_sha256": sha,
+                    "session_id": artifact.session_id,
+                    "projected_session_id": route.projected_session_id,
+                    "route_state": route.state,
+                    "coverage_state": artifact.coverage_state,
+                    **postconditions,
+                }
+            )
+        return {"status": "COMPLETE", "results": results, "batch_verification": final}
+
+
 def ingest_artifact(source: pathlib.Path, corpus_root: pathlib.Path, *, _defer_batch_verify: bool = False) -> dict:
     source = pathlib.Path(source)
     paths = CorpusPaths.from_root(pathlib.Path(corpus_root))
+    artifact = normalize_artifact(source)
+    branch_sensitive = (
+        artifact.source_adapter == "chatgpt-export"
+        and artifact.branch_count is not None
+        and artifact.branch_count > 1
+    ) or (
+        artifact.source_adapter != "chatgpt-export"
+        and paths.accepted_ledger.exists()
+        and _has_accepted_branched_chatgpt_family(paths, artifact.session_id)
+    )
+    route_reconciliation_needed = (
+        paths.db.exists() and _projection_routes_need_reconciliation(paths)
+    )
+    if branch_sensitive or route_reconciliation_needed:
+        grouped = ingest_reconciled_many([source], paths.root)
+        result = grouped["results"][0]
+        if _defer_batch_verify:
+            result = {**result, "sqlite_integrity": "DEFERRED_BATCH", "corpus_counts": "DEFERRED_BATCH"}
+        return result
     with CorpusMutationLock(paths, "ingest"):
-        artifact = normalize_artifact(source)
         if artifact.source_adapter == "speed-booster-export":
             from .speed_booster_export import validate_materialized_artifact_identity
 
@@ -1112,8 +1419,17 @@ def _open_existing_projection(db_path: pathlib.Path) -> sqlite3.Connection | Non
     return conn
 
 
-def _verify_projection(paths: CorpusPaths, db_path: pathlib.Path) -> dict:
-    ledger = read_accepted_ledger(paths)
+def _verify_projection(
+    paths: CorpusPaths,
+    db_path: pathlib.Path,
+    *,
+    ledger_override: Mapping[str, dict] | None = None,
+) -> dict:
+    ledger = (
+        read_accepted_ledger(paths)
+        if ledger_override is None
+        else dict(ledger_override)
+    )
     for sha, entry in ledger.items():
         blob = _artifact_blob_path(paths, sha)
         if not blob.exists():
@@ -1145,6 +1461,45 @@ def _verify_projection(paths: CorpusPaths, db_path: pathlib.Path) -> dict:
                 "ledger_members": len(ledger),
                 "projection_members": len(db_map),
             }
+        try:
+            route_rows = conn.execute(
+                """
+                SELECT a.sha256,a.session_id AS artifact_session_id,
+                       r.accepted_session_id,r.projected_session_id,r.route_state,r.route_reason,r.route_version
+                FROM artifacts a
+                LEFT JOIN artifact_routes r ON r.artifact_id=a.artifact_id
+                ORDER BY a.sha256
+                """
+            ).fetchall()
+        except sqlite3.Error:
+            return {"status": "RECONCILIATION_REQUIRED", "reason": "artifact routing projection missing"}
+        if len(route_rows) != len(db_rows):
+            return {"status": "RECONCILIATION_REQUIRED", "reason": "artifact routing membership disagreement"}
+        for route_row in route_rows:
+            if route_row["accepted_session_id"] is None:
+                return {"status": "RECONCILIATION_REQUIRED", "reason": "artifact route missing", "artifact_sha256": route_row["sha256"]}
+            if route_row["accepted_session_id"] != route_row["artifact_session_id"]:
+                return {"status": "RECONCILIATION_REQUIRED", "reason": "artifact route source identity mismatch", "artifact_sha256": route_row["sha256"]}
+            if route_row["route_version"] != ROUTING_VERSION:
+                return {"status": "RECONCILIATION_REQUIRED", "reason": "artifact route version mismatch", "artifact_sha256": route_row["sha256"]}
+            if route_row["route_state"] not in {"DIRECT", "BRANCH_MATCH", "UNRESOLVED"}:
+                return {"status": "RECONCILIATION_REQUIRED", "reason": "artifact route state invalid", "artifact_sha256": route_row["sha256"]}
+            session_exists = conn.execute(
+                "SELECT count(*) FROM sessions WHERE session_id=?",
+                (route_row["projected_session_id"],),
+            ).fetchone()[0]
+            if int(session_exists) != 1:
+                return {"status": "RECONCILIATION_REQUIRED", "reason": "artifact projected session missing", "artifact_sha256": route_row["sha256"]}
+            page_mismatch = conn.execute(
+                """
+                SELECT count(*) FROM payload_pages p
+                JOIN artifacts a ON a.artifact_id=p.artifact_id
+                WHERE a.sha256=? AND p.session_id<>?
+                """,
+                (route_row["sha256"], route_row["projected_session_id"]),
+            ).fetchone()[0]
+            if int(page_mismatch):
+                return {"status": "RECONCILIATION_REQUIRED", "reason": "artifact page route mismatch", "artifact_sha256": route_row["sha256"]}
         for sha, entry in ledger.items():
             row = db_map[sha]
             if row["ledger_sha256"] != accepted_entry_digest(entry):
@@ -1210,46 +1565,97 @@ def _verify_projection(paths: CorpusPaths, db_path: pathlib.Path) -> dict:
         conn.close()
 
 
-def _load_accepted_normalized_artifacts(
+def _normalize_accepted_entry(
     paths: CorpusPaths,
-) -> list[tuple[dict, NormalizedArtifact]]:
-    ledger = read_accepted_ledger(paths)
-    normalized: list[tuple[dict, NormalizedArtifact]] = []
-    for sha, entry in sorted(ledger.items(), key=lambda item: item[0]):
-        blob = _artifact_blob_path(paths, sha)
-        if (
-            not blob.exists()
-            or blob.stat().st_size != int(entry["size_bytes"])
-            or file_sha256(blob) != sha
-        ):
-            raise RuntimeError(f"FAILED_INTEGRITY: accepted artifact {sha} invalid")
-        artifact = normalize_artifact(blob)
-        if artifact.artifact_sha256 != sha:
-            raise RuntimeError("FAILED_INTEGRITY: normalized artifact hash mismatch")
-        if (
-            artifact.session_id != entry["session_id"]
-            or artifact.coverage_state != entry["coverage_state"]
-        ):
-            raise RuntimeError("RECONCILIATION_REQUIRED: accepted ledger metadata mismatch")
-        normalized.append((entry, artifact))
-    return normalized
+    sha: str,
+    entry: dict,
+) -> NormalizedArtifact:
+    blob = _artifact_blob_path(paths, sha)
+    if (
+        not blob.exists()
+        or blob.stat().st_size != int(entry["size_bytes"])
+        or file_sha256(blob) != sha
+    ):
+        raise RuntimeError(f"FAILED_INTEGRITY: accepted artifact {sha} invalid")
+    artifact = normalize_artifact(blob)
+    if artifact.artifact_sha256 != sha:
+        raise RuntimeError("FAILED_INTEGRITY: normalized artifact hash mismatch")
+    if (
+        artifact.session_id != entry["session_id"]
+        or artifact.coverage_state != entry["coverage_state"]
+    ):
+        raise RuntimeError("RECONCILIATION_REQUIRED: accepted ledger metadata mismatch")
+    return artifact
 
 
-def _build_projection_from_accepted_artifacts(
+def _iter_normalized_entries(
+    paths: CorpusPaths,
+    entries: dict[str, dict],
+    *,
+    adapter: str | None = None,
+):
+    for sha, entry in sorted(entries.items()):
+        if adapter is not None and entry.get("source_adapter") != adapter:
+            continue
+        yield entry, _normalize_accepted_entry(paths, sha, entry)
+
+
+def _plan_projection_routes_for_entries(
+    paths: CorpusPaths,
+    entries: dict[str, dict],
+) -> dict[str, ProjectionRoute]:
+    families = build_official_families(
+        artifact
+        for _entry, artifact in _iter_normalized_entries(
+            paths, entries, adapter="chatgpt-export"
+        )
+    )
+    routes: dict[str, ProjectionRoute] = {}
+    for sha, entry in sorted(entries.items()):
+        session_id = str(entry["session_id"])
+        if (
+            entry.get("source_adapter") == "chatgpt-export"
+            or session_id not in families
+            or len(families[session_id]) <= 1
+        ):
+            routes[sha] = ProjectionRoute(
+                accepted_session_id=session_id,
+                projected_session_id=session_id,
+                state="DIRECT",
+                reason="explicit_session_identity",
+            )
+            continue
+        artifact = _normalize_accepted_entry(paths, sha, entry)
+        routes[sha] = route_artifact(artifact, families)
+    return routes
+
+
+def _populate_projection_from_entries(
     paths: CorpusPaths,
     target: pathlib.Path,
-) -> dict:
+    entries: dict[str, dict],
+    routes: dict[str, ProjectionRoute] | None = None,
+) -> dict[str, ProjectionRoute]:
     if target.exists():
         target.unlink()
+    routes = routes or _plan_projection_routes_for_entries(paths, entries)
     conn = sqlite3.connect(target)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute("PRAGMA journal_mode=OFF")
+    conn.execute("PRAGMA synchronous=OFF")
     try:
         init_corpus_db(conn)
         conn.execute("BEGIN")
-        for entry, artifact in _load_accepted_normalized_artifacts(paths):
-            apply_normalized_artifact_to_projection(conn, paths, artifact, str(entry["accepted_at"]))
+        for sha, entry in sorted(entries.items()):
+            artifact = _normalize_accepted_entry(paths, sha, entry)
+            apply_normalized_artifact_to_projection(
+                conn, paths, artifact, str(entry["accepted_at"]), routes[sha]
+            )
             assert_transaction_invariants(conn, artifact, check_global=False)
+        for row in conn.execute("SELECT session_id FROM sessions ORDER BY session_id").fetchall():
+            _recompute_ordinals(conn, str(row["session_id"]))
+            _recompute_session_metadata(conn, str(row["session_id"]))
         conn.commit()
     except Exception:
         conn.rollback()
@@ -1259,6 +1665,15 @@ def _build_projection_from_accepted_artifacts(
         raise
     else:
         conn.close()
+    return routes
+
+
+def _build_projection_from_accepted_artifacts(
+    paths: CorpusPaths,
+    target: pathlib.Path,
+) -> dict:
+    entries = read_accepted_ledger(paths)
+    _populate_projection_from_entries(paths, target, entries)
     return _verify_projection(paths, target)
 
 
@@ -1278,6 +1693,14 @@ _SEMANTIC_STREAM_QUERIES = (
                coverage_state,session_id,ledger_sha256,observed_min_time,observed_max_time,
                observed_message_count
         FROM artifacts ORDER BY sha256
+        """,
+    ),
+    (
+        "routes",
+        """
+        SELECT a.sha256,r.accepted_session_id,r.projected_session_id,r.route_state,r.route_reason,r.route_version
+        FROM artifact_routes r JOIN artifacts a ON a.artifact_id=r.artifact_id
+        ORDER BY a.sha256
         """,
     ),
     (
@@ -1435,6 +1858,13 @@ def semantic_snapshot(corpus_root: pathlib.Path, db_path: pathlib.Path | None = 
             FROM artifacts ORDER BY sha256
             """
         ).fetchall()]
+        routes = [tuple(row) for row in conn.execute(
+            """
+            SELECT a.sha256,r.accepted_session_id,r.projected_session_id,r.route_state,r.route_reason,r.route_version
+            FROM artifact_routes r JOIN artifacts a ON a.artifact_id=r.artifact_id
+            ORDER BY a.sha256
+            """
+        ).fetchall()]
         pages = [tuple(row) for row in conn.execute(
             """
             SELECT a.sha256,p.session_id,p.capture_sequence,p.member_name,p.start_cursor,p.end_cursor,
@@ -1504,6 +1934,7 @@ def semantic_snapshot(corpus_root: pathlib.Path, db_path: pathlib.Path | None = 
         return {
             "sessions": sessions,
             "artifacts": artifacts,
+            "routes": routes,
             "pages": pages,
             "messages": messages,
             "sources": sources,

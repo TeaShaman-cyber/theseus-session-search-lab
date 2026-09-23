@@ -26,7 +26,9 @@ The live corpus commands operate on private evidence and therefore are not part 
 
 `corpus.sqlite3` and FTS are disposable projections, never authority. A projection is not `VERIFIED` merely because SQLite integrity, row counts, and ledger metadata agree internally. Verification must bind the searchable semantic/provenance state back to the accepted ledger plus immutable artifact bytes.
 
-This rule is regression-covered in `tests/test_corpus_store.py` and tracked by Issue #28.
+Branch routing is derived state under the same rule. Projection schema `session-search-corpus-v2` stores one versioned artifact route per accepted artifact, preserving the accepted ledger `session_id` separately from the projected branch session. `verify` checks route membership/version and rebuild derivability; an old v1 projection reports reconciliation required until `rebuild` regenerates v2 from immutable accepted evidence.
+
+This rule is regression-covered in `tests/test_corpus_store.py` and tracked by Issues #28 and #43.
 
 ## Adding QA
 

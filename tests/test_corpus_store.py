@@ -141,7 +141,7 @@ class CorpusPrimitiveTest(unittest.TestCase):
             self.assertEqual(json.loads(path.read_text()), entry)
             self.assertFalse(any(paths.staging.iterdir()))
 
-    def test_existing_v1_corpus_adds_nullable_provider_order_projection_column(self):
+    def test_existing_current_corpus_adds_nullable_provider_order_projection_column(self):
         with tempfile.TemporaryDirectory() as td:
             root=pathlib.Path(td); corpus=root/"corpus"
             corpus.mkdir(parents=True)
@@ -163,6 +163,38 @@ class CorpusPrimitiveTest(unittest.TestCase):
             finally:
                 conn.close()
 
+    def test_v1_projection_requires_versioned_rebuild_to_v2(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus"
+            corpus.mkdir(parents=True)
+            db = corpus / "corpus.sqlite3"
+            conn = sqlite3.connect(db)
+            try:
+                init_corpus_db(conn)
+                conn.execute(
+                    "UPDATE corpus_meta SET value='session-search-corpus-v1' WHERE key='schema_version'"
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            before = verify_corpus(corpus)
+            self.assertEqual(before["status"], "RECONCILIATION_REQUIRED")
+            self.assertEqual(before["reason"], "projection schema mismatch")
+            with self.assertRaisesRegex(RuntimeError, "CORPUS_SCHEMA_MISMATCH"):
+                from session_search.corpus_store import _connect_corpus
+                conn = _connect_corpus(CorpusPaths.from_root(corpus))
+                conn.close()
+            self.assertEqual(rebuild_corpus(corpus)["status"], "REBUILT")
+            self.assertEqual(verify_corpus(corpus)["status"], "VERIFIED")
+            with sqlite3.connect(db) as conn:
+                self.assertEqual(
+                    conn.execute(
+                        "SELECT value FROM corpus_meta WHERE key='schema_version'"
+                    ).fetchone()[0],
+                    "session-search-corpus-v2",
+                )
+
     def test_schema_supports_many_sessions_and_scoped_message_identity(self):
         conn = sqlite3.connect(":memory:")
         try:
@@ -177,6 +209,7 @@ class CorpusPrimitiveTest(unittest.TestCase):
                 {
                     "corpus_meta",
                     "artifacts",
+                    "artifact_routes",
                     "sessions",
                     "payload_pages",
                     "messages",
@@ -287,6 +320,35 @@ class CorpusIngestTest(unittest.TestCase):
             self.assertEqual(result["sessions"], 1)
             self.assertEqual(result["messages"], 1)
             self.assertNotIn("corpus_counts", result)
+
+    def test_missing_artifact_route_requires_reconciliation(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus"
+            capture = _write_capture(
+                root / "route-required.zip",
+                "route-required",
+                [_message("m1", "alpha", 1.0)],
+            )
+            self.assertEqual(ingest_artifact(capture, corpus)["status"], "INGESTED")
+            db = CorpusPaths.from_root(corpus).db
+            with sqlite3.connect(db) as conn:
+                conn.execute("DELETE FROM artifact_routes")
+                conn.commit()
+            result = verify_corpus(corpus)
+            self.assertEqual(result["status"], "RECONCILIATION_REQUIRED")
+            self.assertEqual(result["reason"], "artifact route missing")
+            repaired = ingest_artifact(capture, corpus)
+            self.assertEqual(repaired["status"], "ALREADY_INGESTED")
+            self.assertEqual(repaired["mutation"], "none")
+            self.assertEqual(verify_corpus(corpus)["status"], "VERIFIED")
+            with sqlite3.connect(db) as conn:
+                self.assertEqual(
+                    conn.execute(
+                        "SELECT count(*) FROM artifact_routes"
+                    ).fetchone()[0],
+                    1,
+                )
 
     def test_same_artifact_sha_is_verified_noop(self):
         with tempfile.TemporaryDirectory() as td:

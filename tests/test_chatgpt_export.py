@@ -4,6 +4,7 @@ import pathlib
 import sqlite3
 import tempfile
 import unittest
+from unittest import mock
 import zipfile
 
 from session_search.artifact import normalize_artifact
@@ -200,6 +201,404 @@ class ChatGPTExportAdapterTest(unittest.TestCase):
                     ).fetchone()[0], 1)
                 self.assertEqual(rebuild_corpus(corpus)["status"], "REBUILT")
                 self.assertEqual(verify_corpus(corpus)["status"], "VERIFIED")
+
+    def test_branched_raw_capture_routes_to_alternate_in_both_ingest_orders(self):
+        from session_search.chatgpt_export import ingest_export, materialize_export
+        from session_search.corpus_store import (
+            CorpusPaths,
+            ingest_artifact,
+            semantic_snapshot,
+            verify_corpus,
+        )
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            source = self.write_export(root, [self.conversation(cid="route-alt")])
+            children = materialize_export(source, root / "children")
+            by_id = {normalize_artifact(path).session_id: path for path in children}
+            alt_id = next(sid for sid in by_id if sid.startswith("route-alt~branch-"))
+            raw = self.write_raw_capture(
+                root / "raw-alt.zip",
+                "route-alt",
+                [
+                    self.message("m-u", "user", "text", ["question"], 10.0),
+                    self.message("m-b", "assistant", "text", ["answer B"], 30.0),
+                    self.message(
+                        "provider-extra", "assistant", "text", ["provider only"], 35.0
+                    ),
+                ],
+            )
+            raw_sha = normalize_artifact(raw).artifact_sha256
+            snapshots = []
+
+            for label, official_first in (
+                ("raw-first", False),
+                ("official-first", True),
+            ):
+                corpus = root / f"corpus-{label}"
+                with mock.patch(
+                    "session_search.corpus_store._utc_now",
+                    return_value="2026-09-23T00:00:00+00:00",
+                ):
+                    if official_first:
+                        self.assertEqual(
+                            ingest_export(source, corpus)["status"], "COMPLETE"
+                        )
+                        self.assertEqual(
+                            ingest_artifact(raw, corpus)["status"], "INGESTED"
+                        )
+                    else:
+                        self.assertEqual(
+                            ingest_artifact(raw, corpus)["status"], "INGESTED"
+                        )
+                        self.assertEqual(
+                            ingest_export(source, corpus)["status"], "COMPLETE"
+                        )
+                self.assertEqual(verify_corpus(corpus)["status"], "VERIFIED")
+                with sqlite3.connect(CorpusPaths.from_root(corpus).db) as conn:
+                    route = conn.execute(
+                        """
+                        SELECT r.projected_session_id,r.route_state
+                        FROM artifact_routes r JOIN artifacts a ON a.artifact_id=r.artifact_id
+                        WHERE a.sha256=?
+                        """,
+                        (raw_sha,),
+                    ).fetchone()
+                    self.assertEqual(route, (alt_id, "BRANCH_MATCH"))
+                    self.assertEqual(
+                        conn.execute(
+                            "SELECT session_id FROM messages WHERE message_id='provider-extra'"
+                        ).fetchone()[0],
+                        alt_id,
+                    )
+                snapshots.append(semantic_snapshot(corpus))
+            self.assertEqual(snapshots[0], snapshots[1])
+
+    def test_branched_raw_capture_routes_to_base_from_base_only_evidence(self):
+        from session_search.chatgpt_export import ingest_export
+        from session_search.corpus_store import CorpusPaths, ingest_artifact
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            source = self.write_export(root, [self.conversation(cid="route-base")])
+            corpus = root / "corpus"
+            self.assertEqual(ingest_export(source, corpus)["status"], "COMPLETE")
+            raw = self.write_raw_capture(
+                root / "raw-base.zip",
+                "route-base",
+                [self.message("m-a", "assistant", "text", ["answer A"], 20.0)],
+            )
+            raw_sha = normalize_artifact(raw).artifact_sha256
+            self.assertEqual(ingest_artifact(raw, corpus)["status"], "INGESTED")
+            with sqlite3.connect(CorpusPaths.from_root(corpus).db) as conn:
+                self.assertEqual(
+                    conn.execute(
+                        """
+                        SELECT r.projected_session_id,r.route_state
+                        FROM artifact_routes r JOIN artifacts a ON a.artifact_id=r.artifact_id
+                        WHERE a.sha256=?
+                        """,
+                        (raw_sha,),
+                    ).fetchone(),
+                    ("route-base", "BRANCH_MATCH"),
+                )
+
+    def test_common_only_and_zero_overlap_raw_captures_are_isolated(self):
+        from session_search.chatgpt_export import ingest_export
+        from session_search.corpus_store import (
+            CorpusPaths,
+            ingest_artifact,
+            verify_corpus,
+        )
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            source = self.write_export(
+                root, [self.conversation(cid="route-unresolved")]
+            )
+            corpus = root / "corpus"
+            self.assertEqual(ingest_export(source, corpus)["status"], "COMPLETE")
+            raws = [
+                self.write_raw_capture(
+                    root / "common.zip",
+                    "route-unresolved",
+                    [self.message("m-u", "user", "text", ["question"], 10.0)],
+                ),
+                self.write_raw_capture(
+                    root / "zero.zip",
+                    "route-unresolved",
+                    [
+                        self.message(
+                            "provider-only",
+                            "assistant",
+                            "text",
+                            ["not in export"],
+                            50.0,
+                        )
+                    ],
+                ),
+            ]
+            observed = []
+            for raw in raws:
+                raw_artifact = normalize_artifact(raw)
+                result = ingest_artifact(raw, corpus)
+                self.assertEqual(result["route_state"], "UNRESOLVED")
+                self.assertTrue(
+                    result["projected_session_id"].startswith(
+                        "route-unresolved~unresolved-"
+                    )
+                )
+                observed.append(
+                    (raw_artifact.artifact_sha256, result["projected_session_id"])
+                )
+            self.assertEqual(verify_corpus(corpus)["status"], "VERIFIED")
+            self.assertEqual(len({session_id for _sha, session_id in observed}), 2)
+            with sqlite3.connect(CorpusPaths.from_root(corpus).db) as conn:
+                for sha, projected in observed:
+                    self.assertEqual(
+                        conn.execute(
+                            """
+                            SELECT r.projected_session_id,r.route_state
+                            FROM artifact_routes r JOIN artifacts a ON a.artifact_id=r.artifact_id
+                            WHERE a.sha256=?
+                            """,
+                            (sha,),
+                        ).fetchone(),
+                        (projected, "UNRESOLVED"),
+                    )
+
+    def test_cross_branch_raw_evidence_fails_without_accepting_artifact(self):
+        from session_search.chatgpt_export import ingest_export
+        from session_search.corpus_store import (
+            CorpusPaths,
+            ingest_artifact,
+            read_accepted_ledger,
+            verify_corpus,
+        )
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            source = self.write_export(root, [self.conversation(cid="route-conflict")])
+            corpus = root / "corpus"
+            self.assertEqual(ingest_export(source, corpus)["status"], "COMPLETE")
+            conflicting = self.write_raw_capture(
+                root / "conflict.zip",
+                "route-conflict",
+                [
+                    self.message("m-a", "assistant", "text", ["answer A"], 20.0),
+                    self.message("m-b", "assistant", "text", ["answer B"], 30.0),
+                ],
+            )
+            sha = normalize_artifact(conflicting).artifact_sha256
+            with self.assertRaisesRegex(
+                RuntimeError, "FAILED_BRANCH_RECONCILIATION_CONFLICT"
+            ):
+                ingest_artifact(conflicting, corpus)
+            self.assertNotIn(sha, read_accepted_ledger(CorpusPaths.from_root(corpus)))
+            self.assertEqual(verify_corpus(corpus)["status"], "VERIFIED")
+
+    def test_single_child_from_branched_snapshot_fails_closed(self):
+        from session_search.chatgpt_export import materialize_export
+        from session_search.corpus_store import (
+            CorpusPaths,
+            ingest_artifact,
+            read_accepted_ledger,
+        )
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            children = materialize_export(
+                self.write_export(root, [self.conversation(cid="route-incomplete")]),
+                root / "children",
+            )
+            corpus = root / "corpus"
+            with self.assertRaisesRegex(
+                RuntimeError, "incomplete ChatGPT branch family"
+            ):
+                ingest_artifact(children[0], corpus)
+            self.assertEqual(read_accepted_ledger(CorpusPaths.from_root(corpus)), {})
+
+    def test_rebuild_repairs_legacy_flat_projection_without_rewriting_ledger_identity(
+        self,
+    ):
+        from session_search.branch_routing import ProjectionRoute
+        from session_search.chatgpt_export import materialize_export
+        from session_search.corpus_store import (
+            CorpusPaths,
+            ingest_reconciled_many,
+            read_accepted_ledger,
+            rebuild_corpus,
+            verify_corpus,
+        )
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            source = self.write_export(root, [self.conversation(cid="route-repair")])
+            children = materialize_export(source, root / "children")
+            alt_id = next(
+                normalize_artifact(path).session_id
+                for path in children
+                if normalize_artifact(path).session_id.startswith(
+                    "route-repair~branch-"
+                )
+            )
+            raw = self.write_raw_capture(
+                root / "raw.zip",
+                "route-repair",
+                [self.message("m-b", "assistant", "text", ["answer B"], 30.0)],
+            )
+            raw_sha = normalize_artifact(raw).artifact_sha256
+
+            def all_direct(_paths, entries):
+                return {
+                    sha: ProjectionRoute(
+                        str(entry["session_id"]),
+                        str(entry["session_id"]),
+                        "DIRECT",
+                        "legacy_flat_projection",
+                    )
+                    for sha, entry in entries.items()
+                }
+
+            corpus = root / "corpus"
+            with mock.patch(
+                "session_search.corpus_store._plan_projection_routes_for_entries",
+                side_effect=all_direct,
+            ):
+                self.assertEqual(
+                    ingest_reconciled_many([raw, *children], corpus)["status"],
+                    "COMPLETE",
+                )
+            before_ledger = read_accepted_ledger(CorpusPaths.from_root(corpus))
+            self.assertEqual(before_ledger[raw_sha]["session_id"], "route-repair")
+            self.assertEqual(verify_corpus(corpus)["status"], "RECONCILIATION_REQUIRED")
+            self.assertEqual(rebuild_corpus(corpus)["status"], "REBUILT")
+            self.assertEqual(verify_corpus(corpus)["status"], "VERIFIED")
+            after_ledger = read_accepted_ledger(CorpusPaths.from_root(corpus))
+            self.assertEqual(after_ledger, before_ledger)
+            with sqlite3.connect(CorpusPaths.from_root(corpus).db) as conn:
+                self.assertEqual(
+                    conn.execute(
+                        """
+                        SELECT r.projected_session_id,r.route_state,a.session_id
+                        FROM artifact_routes r JOIN artifacts a ON a.artifact_id=r.artifact_id
+                        WHERE a.sha256=?
+                        """,
+                        (raw_sha,),
+                    ).fetchone(),
+                    (alt_id, "BRANCH_MATCH", "route-repair"),
+                )
+
+    def test_reconciled_publish_failure_rolls_back_new_ledger_entries(self):
+        import os
+
+        from session_search.chatgpt_export import ingest_export
+        from session_search.corpus_store import (
+            CorpusPaths,
+            ingest_artifact,
+            read_accepted_ledger,
+            semantic_snapshot,
+            verify_corpus,
+        )
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            source = self.write_export(
+                root, [self.conversation(cid="route-publish-failure")]
+            )
+            corpus = root / "corpus"
+            self.assertEqual(ingest_export(source, corpus)["status"], "COMPLETE")
+            paths = CorpusPaths.from_root(corpus)
+            before_ledger = read_accepted_ledger(paths)
+            before_snapshot = semantic_snapshot(corpus)
+            raw = self.write_raw_capture(
+                root / "raw-publish-failure.zip",
+                "route-publish-failure",
+                [self.message("m-b", "assistant", "text", ["answer B"], 30.0)],
+            )
+            raw_sha = normalize_artifact(raw).artifact_sha256
+            real_replace = os.replace
+
+            def fail_final_projection_publish(source_path, target_path):
+                if pathlib.Path(target_path) == paths.db and pathlib.Path(
+                    source_path
+                ).name.startswith("reconciled-"):
+                    raise OSError("synthetic projection publication failure")
+                return real_replace(source_path, target_path)
+
+            with mock.patch(
+                "session_search.corpus_store.os.replace",
+                side_effect=fail_final_projection_publish,
+            ):
+                with self.assertRaisesRegex(
+                    RuntimeError, "reconciled ingest publication failed"
+                ):
+                    ingest_artifact(raw, corpus)
+
+            self.assertNotIn(raw_sha, read_accepted_ledger(paths))
+            self.assertEqual(read_accepted_ledger(paths), before_ledger)
+            self.assertEqual(semantic_snapshot(corpus), before_snapshot)
+            self.assertEqual(verify_corpus(corpus)["status"], "VERIFIED")
+
+    def test_multimodal_projection_lineage_can_discriminate_branch(self):
+        from session_search.chatgpt_export import ingest_export
+        from session_search.corpus_store import CorpusPaths, ingest_artifact
+
+        raw_message = self.message(
+            "m-mm",
+            "user",
+            "multimodal_text",
+            [
+                "branch caption",
+                {"content_type": "audio_transcription", "text": "branch audio"},
+                {"content_type": "image_asset_pointer", "asset_pointer": "file-branch"},
+            ],
+            30.0,
+        )
+        mapping = {
+            "r": self.node("r", None, None),
+            "u": self.node(
+                "u", "r", self.message("m-u", "user", "text", ["question"], 10.0)
+            ),
+            "a": self.node(
+                "a",
+                "u",
+                self.message("m-a", "assistant", "text", ["base answer"], 20.0),
+            ),
+            "mm": self.node("mm", "u", raw_message),
+        }
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            source = self.write_export(
+                root,
+                [
+                    self.conversation(
+                        cid="route-multimodal", current="mm", mapping=mapping
+                    )
+                ],
+            )
+            corpus = root / "corpus"
+            self.assertEqual(ingest_export(source, corpus)["status"], "COMPLETE")
+            raw = self.write_raw_capture(
+                root / "raw-mm.zip", "route-multimodal", [raw_message]
+            )
+            raw_sha = normalize_artifact(raw).artifact_sha256
+            result = ingest_artifact(raw, corpus)
+            self.assertEqual(result["route_state"], "BRANCH_MATCH")
+            self.assertTrue(
+                result["projected_session_id"].startswith("route-multimodal~branch-")
+            )
+            with sqlite3.connect(CorpusPaths.from_root(corpus).db) as conn:
+                self.assertEqual(
+                    conn.execute(
+                        """
+                        SELECT r.route_state FROM artifact_routes r
+                        JOIN artifacts a ON a.artifact_id=r.artifact_id WHERE a.sha256=?
+                        """,
+                        (raw_sha,),
+                    ).fetchone()[0],
+                    "BRANCH_MATCH",
+                )
 
     def test_multimodal_projection_must_match_traced_source_content(self):
         from session_search.chatgpt_export import materialize_export

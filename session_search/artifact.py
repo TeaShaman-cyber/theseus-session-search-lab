@@ -54,6 +54,9 @@ class NormalizedArtifact:
     size_bytes: int
     source_schema: str
     source_adapter: str
+    source_export_sha256: str | None
+    source_conversation_id: str | None
+    branch_count: int | None
     session_id: str
     title: str
     coverage_state: str
@@ -388,6 +391,9 @@ def normalize_artifact(source: pathlib.Path) -> NormalizedArtifact:
         size_bytes=source.stat().st_size,
         source_schema=str(manifest.get("schema") or ""),
         source_adapter=(str(manifest.get("source_adapter") or "barn-doctor") if str(manifest.get("schema") or "").startswith("theseus.session-search.") else "barn-doctor"),
+        source_export_sha256=(str(manifest.get("source_export_sha256")) if isinstance(manifest.get("source_export_sha256"), str) and manifest.get("source_export_sha256") else None),
+        source_conversation_id=(str(manifest.get("source_conversation_id")) if isinstance(manifest.get("source_conversation_id"), str) and manifest.get("source_conversation_id") else None),
+        branch_count=(int(manifest.get("branch_count")) if isinstance(manifest.get("branch_count"), int) and not isinstance(manifest.get("branch_count"), bool) else None),
         session_id=session_id,
         title=title,
         coverage_state=coverage,

@@ -516,12 +516,12 @@ def materialize_export(source: pathlib.Path, output_dir: pathlib.Path) -> list[p
 
 
 def ingest_export(source: pathlib.Path, corpus_root: pathlib.Path) -> dict:
-    from .corpus_store import ingest_many
+    from .corpus_store import ingest_reconciled_many
 
     with tempfile.TemporaryDirectory(prefix="session-search-chatgpt-") as td:
         snapshot = _materialize_export_snapshot(pathlib.Path(source), pathlib.Path(td))
         child_ids = {str(path): f"chatgpt-child-sha256:{_sha256(path.read_bytes())}" for path in snapshot.artifacts}
-        result = ingest_many(list(snapshot.artifacts), pathlib.Path(corpus_root))
+        result = ingest_reconciled_many(list(snapshot.artifacts), pathlib.Path(corpus_root))
         for item in result.get("results", []):
             source_value = item.get("source")
             if source_value in child_ids:
