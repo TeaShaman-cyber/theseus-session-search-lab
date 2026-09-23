@@ -26,6 +26,7 @@ class PortableRuntimeBuildTest(unittest.TestCase):
             "chatgpt_export",
             "barn_recovery",
             "handoff",
+            "refresh_readiness",
         )
         for index, module in enumerate(modules, start=1):
             (source / "session_search" / f"{module}.py").write_text(
@@ -83,6 +84,7 @@ class PortableRuntimeBuildTest(unittest.TestCase):
                 self.assertIn("PORTABLE_RUNTIME.md", names)
                 self.assertIn("session_search/__init__.py", names)
                 self.assertIn("session_search/reconciliation.py", names)
+                self.assertIn("session_search/refresh_readiness.py", names)
                 manifest_raw = zf.read("runtime-manifest.json")
                 manifest = json.loads(manifest_raw)
                 self.assertEqual(manifest["schema"], "theseus.session-search-portable-runtime.v1")
@@ -91,6 +93,10 @@ class PortableRuntimeBuildTest(unittest.TestCase):
                 self.assertEqual(receipt["manifest_sha256"], hashlib.sha256(manifest_raw).hexdigest())
                 self.assertIn(
                     "python3 -m session_search.chatgpt_export",
+                    manifest["entrypoints"],
+                )
+                self.assertIn(
+                    "python3 -m session_search.refresh_readiness",
                     manifest["entrypoints"],
                 )
                 for entrypoint in manifest["entrypoints"]:
