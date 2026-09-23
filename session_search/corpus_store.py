@@ -501,14 +501,114 @@ def _deterministic_local_identity(artifact: NormalizedArtifact, message) -> str:
     return f"anon:{artifact.artifact_sha256}:{source.capture_sequence}:{source.page_position}"
 
 
+def _existing_projection_source_digests(
+    conn: sqlite3.Connection,
+    paths: CorpusPaths,
+    row: sqlite3.Row,
+    cache: dict[tuple[int, str], set[str]],
+) -> set[str]:
+    key = (int(row["row_id"]), str(row["canonical_message_sha256"]))
+    if key in cache:
+        return cache[key]
+    digests: set[str] = set()
+    source_rows = conn.execute(
+        """
+        SELECT DISTINCT a.sha256
+        FROM message_sources ms
+        JOIN payload_pages p ON p.page_id=ms.page_id
+        JOIN artifacts a ON a.artifact_id=p.artifact_id
+        WHERE ms.message_row_id=? AND a.source_adapter=?
+        ORDER BY a.sha256
+        """,
+        (row["row_id"], "chatgpt-export"),
+    ).fetchall()
+    for source_row in source_rows:
+        source_artifact = normalize_artifact(_artifact_blob_path(paths, str(source_row["sha256"])))
+        for candidate in source_artifact.messages:
+            if (
+                candidate.message_id == row["message_id"]
+                and candidate.canonical_message_sha256 == row["canonical_message_sha256"]
+                and candidate.projection_source_canonical_sha256 is not None
+            ):
+                digests.add(candidate.projection_source_canonical_sha256)
+    cache[key] = digests
+    return digests
+
+
+def _linked_projection_resolution(
+    conn: sqlite3.Connection,
+    paths: CorpusPaths,
+    artifact: NormalizedArtifact,
+    message,
+    row: sqlite3.Row,
+    cache: dict[tuple[int, str], set[str]],
+) -> str | None:
+    same_role = row["role"] == message.role
+    incoming_projection = (
+        artifact.source_adapter == "chatgpt-export"
+        and same_role
+        and row["content_type"] == "multimodal_text"
+        and row["search_class"] == "trace"
+        and message.content_type == "text"
+        and message.search_class == "dialogue"
+        and message.projection_source_canonical_sha256 == row["canonical_message_sha256"]
+    )
+    if incoming_projection:
+        return "promote"
+
+    incoming_raw = (
+        same_role
+        and row["content_type"] == "text"
+        and row["search_class"] == "dialogue"
+        and message.content_type == "multimodal_text"
+        and message.search_class == "trace"
+    )
+    if incoming_raw:
+        source_digests = _existing_projection_source_digests(conn, paths, row, cache)
+        if message.canonical_message_sha256 in source_digests:
+            return "keep"
+    return None
+
+
+def _promote_linked_projection(
+    conn: sqlite3.Connection,
+    row: sqlite3.Row,
+    message,
+) -> None:
+    if row["text"] != "":
+        raise RuntimeError("FAILED_CONFLICTING_DUPLICATE")
+    fts_rows = int(conn.execute("SELECT count(*) FROM messages_fts WHERE rowid=?", (row["row_id"],)).fetchone()[0])
+    if fts_rows != 0:
+        raise RuntimeError("FAILED_CONFLICTING_DUPLICATE")
+    conn.execute(
+        """
+        UPDATE messages
+        SET canonical_message_sha256=?,role=?,content_type=?,search_class=?,text=?
+        WHERE row_id=?
+        """,
+        (
+            message.canonical_message_sha256,
+            message.role,
+            message.content_type,
+            message.search_class,
+            message.text,
+            row["row_id"],
+        ),
+    )
+    if message.text and message.search_class != "hidden":
+        conn.execute("INSERT INTO messages_fts(rowid,text) VALUES (?,?)", (row["row_id"], message.text))
+
+
 def _upsert_messages(
     conn: sqlite3.Connection,
+    paths: CorpusPaths,
     artifact: NormalizedArtifact,
     page_ids: dict[int, int],
 ) -> dict:
     novel = 0
     reused = 0
     source_additions = 0
+    projection_digest_cache: dict[tuple[int, str], set[str]] = {}
     for message in artifact.messages:
         row = None
         if message.message_id is not None:
@@ -566,7 +666,18 @@ def _upsert_messages(
             novel += 1
         else:
             if row["canonical_message_sha256"] != message.canonical_message_sha256:
-                raise RuntimeError("FAILED_CONFLICTING_DUPLICATE")
+                resolution = _linked_projection_resolution(
+                    conn,
+                    paths,
+                    artifact,
+                    message,
+                    row,
+                    projection_digest_cache,
+                )
+                if resolution == "promote":
+                    _promote_linked_projection(conn, row, message)
+                elif resolution != "keep":
+                    raise RuntimeError("FAILED_CONFLICTING_DUPLICATE")
             row_id = int(row["row_id"])
             existing_time = row["create_time"]
             incoming_time = message.create_time
@@ -703,13 +814,14 @@ def _recompute_session_metadata(conn: sqlite3.Connection, session_id: str) -> No
 
 def apply_normalized_artifact_to_projection(
     conn: sqlite3.Connection,
+    paths: CorpusPaths,
     artifact: NormalizedArtifact,
     accepted_at: str,
 ) -> dict:
     _ensure_session_stub(conn, artifact, accepted_at)
     artifact_id = _insert_artifact_row(conn, artifact, accepted_at)
     page_ids = _insert_pages(conn, artifact, artifact_id)
-    delta = _upsert_messages(conn, artifact, page_ids)
+    delta = _upsert_messages(conn, paths, artifact, page_ids)
     _recompute_ordinals(conn, artifact.session_id)
     _recompute_session_metadata(conn, artifact.session_id)
     return {"artifact_id": artifact_id, **delta}
@@ -836,7 +948,7 @@ def ingest_artifact(source: pathlib.Path, corpus_root: pathlib.Path, *, _defer_b
             accepted_at = _utc_now()
             entry = _accepted_entry_for_artifact(artifact, accepted_at)
             conn.execute("BEGIN IMMEDIATE")
-            delta = apply_normalized_artifact_to_projection(conn, artifact, accepted_at)
+            delta = apply_normalized_artifact_to_projection(conn, paths, artifact, accepted_at)
             assert_transaction_invariants(conn, artifact, check_global=not _defer_batch_verify)
             ledger_path = write_accepted_entry(paths, entry)
             observed = json.loads(ledger_path.read_text())
@@ -1132,7 +1244,7 @@ def _build_projection_from_accepted_artifacts(
         init_corpus_db(conn)
         conn.execute("BEGIN")
         for entry, artifact in _load_accepted_normalized_artifacts(paths):
-            apply_normalized_artifact_to_projection(conn, artifact, str(entry["accepted_at"]))
+            apply_normalized_artifact_to_projection(conn, paths, artifact, str(entry["accepted_at"]))
             assert_transaction_invariants(conn, artifact, check_global=False)
         conn.commit()
     except Exception:

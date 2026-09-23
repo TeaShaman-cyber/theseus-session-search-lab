@@ -1,6 +1,7 @@
 import hashlib
 import json
 import pathlib
+import sqlite3
 import tempfile
 import unittest
 import zipfile
@@ -63,6 +64,24 @@ class ChatGPTExportAdapterTest(unittest.TestCase):
             manifest = json.loads(zf.read("manifest.json"))
             member = manifest["files"][0]["name"]
             return manifest, json.loads(zf.read(member))
+
+    def write_raw_capture(self, path, session_id, messages, title="Synthetic ChatGPT"):
+        payload = {
+            "conversation_id": session_id,
+            "title": title,
+            "page_info": {"has_previous_page": True, "has_next_page": False},
+            "messages": messages,
+        }
+        data = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        member = "optional/conversation-raw.bin"
+        manifest = {
+            "schema": "barn-doctor-export:v1",
+            "files": [{"name": member, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}],
+        }
+        with zipfile.ZipFile(path, "w") as zf:
+            zf.writestr("manifest.json", json.dumps(manifest, sort_keys=True))
+            zf.writestr(member, data)
+        return path
 
     def test_parent_graph_materializes_every_leaf_and_current_does_not_define_base_identity(self):
         from session_search.chatgpt_export import materialize_export
@@ -129,6 +148,58 @@ class ChatGPTExportAdapterTest(unittest.TestCase):
             self.assertEqual([m.text for m in artifact.messages if m.search_class == "dialogue"], ["caption\nspoken words", "answer"])
             self.assertIn("chatgpt_multimodal_trace", by_type)
             self.assertEqual(by_type["chatgpt_multimodal_trace"].search_class, "trace")
+
+    def test_linked_multimodal_projection_reconciles_with_raw_capture_in_both_orders(self):
+        from session_search.chatgpt_export import materialize_export
+        from session_search.corpus_store import CorpusPaths, ingest_artifact, rebuild_corpus, verify_corpus
+
+        raw_message = self.message(
+            "m-u",
+            "user",
+            "multimodal_text",
+            [
+                "caption",
+                {"content_type": "audio_transcription", "text": "spoken words"},
+                {"content_type": "image_asset_pointer", "asset_pointer": "file-synthetic"},
+            ],
+            10.0,
+        )
+        mapping = {
+            "r": self.node("r", None, None),
+            "u": self.node("u", "r", raw_message),
+            "a": self.node("a", "u", self.message("m-a", "assistant", "text", ["answer"], 20.0)),
+        }
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            projected = materialize_export(
+                self.write_export(root, [self.conversation(cid="multi-reconcile", current="a", mapping=mapping)]),
+                root / "projected",
+            )[0]
+            raw = self.write_raw_capture(root / "raw.zip", "multi-reconcile", [raw_message])
+
+            projected_artifact = normalize_artifact(projected)
+            raw_artifact = normalize_artifact(raw)
+            projected_message = next(m for m in projected_artifact.messages if m.message_id == "m-u")
+            raw_normalized = next(m for m in raw_artifact.messages if m.message_id == "m-u")
+            self.assertEqual(projected_message.projection_source_canonical_sha256, raw_normalized.canonical_message_sha256)
+
+            for label, order in (("raw-first", (raw, projected)), ("projection-first", (projected, raw))):
+                corpus = root / f"corpus-{label}"
+                for artifact in order:
+                    self.assertEqual(ingest_artifact(artifact, corpus)["status"], "INGESTED")
+                self.assertEqual(verify_corpus(corpus)["status"], "VERIFIED")
+                db = CorpusPaths.from_root(corpus).db
+                with sqlite3.connect(db) as conn:
+                    row = conn.execute(
+                        "SELECT content_type,search_class,text FROM messages WHERE session_id=? AND message_id=?",
+                        ("multi-reconcile", "m-u"),
+                    ).fetchone()
+                    self.assertEqual(row, ("text", "dialogue", "caption\nspoken words"))
+                    self.assertEqual(conn.execute(
+                        "SELECT count(*) FROM messages_fts WHERE messages_fts MATCH ?", ("caption",)
+                    ).fetchone()[0], 1)
+                self.assertEqual(rebuild_corpus(corpus)["status"], "REBUILT")
+                self.assertEqual(verify_corpus(corpus)["status"], "VERIFIED")
 
     def test_legacy_single_conversations_json_is_supported(self):
         from session_search.chatgpt_export import materialize_export
