@@ -1224,14 +1224,19 @@ def ingest_artifact(source: pathlib.Path, corpus_root: pathlib.Path, *, _defer_b
     source = pathlib.Path(source)
     paths = CorpusPaths.from_root(pathlib.Path(corpus_root))
     artifact = normalize_artifact(source)
+    branch_source_id = (
+        artifact.source_conversation_id
+        if artifact.source_adapter == "chatgpt-export"
+        else artifact.session_id
+    )
     branch_sensitive = (
         artifact.source_adapter == "chatgpt-export"
         and artifact.branch_count is not None
         and artifact.branch_count > 1
     ) or (
-        artifact.source_adapter != "chatgpt-export"
-        and paths.accepted_ledger.exists()
-        and _has_accepted_branched_chatgpt_family(paths, artifact.session_id)
+        paths.accepted_ledger.exists()
+        and branch_source_id is not None
+        and _has_accepted_branched_chatgpt_family(paths, branch_source_id)
     )
     route_reconciliation_needed = (
         paths.db.exists() and _projection_routes_need_reconciliation(paths)

@@ -352,6 +352,89 @@ class ChatGPTExportAdapterTest(unittest.TestCase):
                     {branch_id},
                 )
 
+    def test_late_single_leaf_chatgpt_snapshot_reconciles_against_known_branched_family(self):
+        from session_search.chatgpt_export import ingest_export, materialize_export
+        from session_search.corpus_store import (
+            CorpusPaths,
+            ingest_artifact,
+            verify_corpus,
+        )
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            full_source = self.write_export(
+                root,
+                [self.conversation(cid="route-branched-then-single", current="b")],
+            )
+            full_children = materialize_export(full_source, root / "full-children")
+            full_by_id = {
+                normalize_artifact(path).session_id: path for path in full_children
+            }
+            branch_id = next(
+                session_id
+                for session_id in full_by_id
+                if session_id.startswith("route-branched-then-single~branch-")
+            )
+            corpus = root / "corpus"
+            self.assertEqual(ingest_export(full_source, corpus)["status"], "COMPLETE")
+
+            single_mapping = {
+                "r": self.node("r", None, None),
+                "u": self.node(
+                    "u",
+                    "r",
+                    self.message("m-u", "user", "text", ["question"], 10.0),
+                ),
+                "b": self.node(
+                    "b",
+                    "u",
+                    self.message("m-b", "assistant", "text", ["answer B"], 30.0),
+                ),
+            }
+            single_source = self.write_export(
+                root,
+                [
+                    self.conversation(
+                        cid="route-branched-then-single",
+                        current="b",
+                        mapping=single_mapping,
+                    )
+                ],
+            )
+            single_child = materialize_export(
+                single_source, root / "single-child"
+            )[0]
+            single_sha = normalize_artifact(single_child).artifact_sha256
+
+            result = ingest_artifact(single_child, corpus)
+            self.assertEqual(result["status"], "INGESTED")
+            self.assertEqual(result["route_state"], "BRANCH_MATCH")
+            self.assertEqual(result["projected_session_id"], branch_id)
+            self.assertEqual(verify_corpus(corpus)["status"], "VERIFIED")
+
+            with sqlite3.connect(CorpusPaths.from_root(corpus).db) as conn:
+                self.assertEqual(
+                    conn.execute(
+                        """
+                        SELECT r.projected_session_id,r.route_state
+                        FROM artifact_routes r
+                        JOIN artifacts a ON a.artifact_id=r.artifact_id
+                        WHERE a.sha256=?
+                        """,
+                        (single_sha,),
+                    ).fetchone(),
+                    (branch_id, "BRANCH_MATCH"),
+                )
+                self.assertEqual(
+                    {
+                        row[0]
+                        for row in conn.execute(
+                            "SELECT session_id FROM messages WHERE message_id='m-b'"
+                        )
+                    },
+                    {branch_id},
+                )
+
     def test_branched_raw_capture_routes_to_base_from_base_only_evidence(self):
         from session_search.chatgpt_export import ingest_export
         from session_search.corpus_store import CorpusPaths, ingest_artifact
