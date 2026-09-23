@@ -10,6 +10,7 @@ import socket
 import sqlite3
 import tempfile
 import uuid
+import zipfile
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 
@@ -1175,10 +1176,10 @@ def ingest_reconciled_many(
                 )
             for sha in sorted(new_shas):
                 entry = combined_entries[sha]
+                published_ledger_shas.append(sha)
                 observed_path = write_accepted_entry(paths, entry)
                 if json.loads(observed_path.read_text()) != entry:
                     raise RuntimeError("ACCEPTED_LEDGER_READBACK_MISMATCH")
-                published_ledger_shas.append(sha)
             os.replace(candidate, paths.db)
         except Exception as exc:
             if candidate.exists():
@@ -1303,19 +1304,82 @@ def ingest_artifact(source: pathlib.Path, corpus_root: pathlib.Path, *, _defer_b
         }
 
 
+def _chatgpt_branch_batch_key(
+    source: pathlib.Path,
+) -> tuple[str, str] | None:
+    try:
+        with zipfile.ZipFile(source) as zf:
+            manifest = json.loads(zf.read("manifest.json"))
+    except (OSError, KeyError, ValueError, zipfile.BadZipFile):
+        return None
+    if not isinstance(manifest, dict):
+        return None
+    if manifest.get("source_adapter") != "chatgpt-export":
+        return None
+    branch_count = manifest.get("branch_count")
+    source_export_sha256 = manifest.get("source_export_sha256")
+    source_conversation_id = manifest.get("source_conversation_id")
+    if (
+        isinstance(branch_count, bool)
+        or not isinstance(branch_count, int)
+        or branch_count <= 1
+        or not isinstance(source_export_sha256, str)
+        or not source_export_sha256
+        or not isinstance(source_conversation_id, str)
+        or not source_conversation_id
+    ):
+        return None
+    return source_export_sha256, source_conversation_id
+
+
 def ingest_many(
     sources: Sequence[pathlib.Path],
     corpus_root: pathlib.Path,
 ) -> dict:
-    results = []
-    for source in sources:
+    source_paths = [pathlib.Path(source) for source in sources]
+
+    if any(_chatgpt_branch_batch_key(source) is not None for source in source_paths):
         try:
-            results.append({
-                "source": str(source),
-                **ingest_artifact(pathlib.Path(source), corpus_root, _defer_batch_verify=True),
-            })
+            batch = ingest_reconciled_many(source_paths, corpus_root)
+            batch_results = batch.get("results")
+            if not isinstance(batch_results, list) or len(batch_results) != len(source_paths):
+                raise RuntimeError(
+                    "RECONCILIATION_REQUIRED: batch result cardinality mismatch"
+                )
+            return {
+                **batch,
+                "results": [
+                    {"source": str(source), **row}
+                    for source, row in zip(source_paths, batch_results, strict=True)
+                ],
+            }
         except Exception as exc:
-            results.append({"source": str(source), "status": "FAILED", "error": str(exc)})
+            results = [
+                {"source": str(source), "status": "FAILED", "error": str(exc)}
+                for source in source_paths
+            ]
+            batch_verification = verify_corpus(pathlib.Path(corpus_root))
+            return {
+                "status": "DEGRADED",
+                "results": results,
+                "batch_verification": batch_verification,
+            }
+
+    results = []
+    for source in source_paths:
+        try:
+            results.append(
+                {
+                    "source": str(source),
+                    **ingest_artifact(
+                        source, corpus_root, _defer_batch_verify=True
+                    ),
+                }
+            )
+        except Exception as exc:
+            results.append(
+                {"source": str(source), "status": "FAILED", "error": str(exc)}
+            )
 
     batch_verification = verify_corpus(pathlib.Path(corpus_root))
     complete = (
@@ -1327,7 +1391,6 @@ def ingest_many(
         "results": results,
         "batch_verification": batch_verification,
     }
-
 
 
 def corpus_status(corpus_root: pathlib.Path) -> dict:
