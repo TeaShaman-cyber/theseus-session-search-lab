@@ -20,12 +20,13 @@ unzip session-search-runtime.zip -d session-search-runtime
 cd session-search-runtime
 
 python3 -m session_search.deepseek_export conversations.json --corpus ./corpus
+python3 -m session_search.chatgpt_export chatgpt-export.zip --corpus ./chatgpt-corpus
 python3 -m session_search.corpus verify --corpus ./corpus --json
 python3 -m session_search.corpus status --corpus ./corpus --json
 python3 -m session_search.search "previous decision" --corpus ./corpus --json
 ```
 
-The runtime also contains the xAI/Grok, Speed Booster, Barn Doctor portable-artifact ingest, Barn provenance-recovery, and one-shot source-agnostic inbox handoff entrypoints already present in the source revision. Transport/acquisition remains outside the core runtime contract.
+The runtime also contains the xAI/Grok, Speed Booster, official ChatGPT account-export, Barn Doctor portable-artifact ingest, Barn provenance-recovery, and one-shot source-agnostic inbox handoff entrypoints already present in the source revision. The ChatGPT adapter uses the same branch-aware cumulative-corpus reconciliation contract as the repository checkout; accepted source identity remains immutable while branch routing is derived in the v2 projection. Transport/acquisition remains outside the core runtime contract.
 
 ## Authority boundary
 

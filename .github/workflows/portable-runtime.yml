@@ -112,11 +112,76 @@ jobs:
               assert manifest['schema'] == 'theseus.session-search-portable-runtime.v1'
               assert manifest['source'] == receipt['source']
               assert manifest['dependencies'] == {'python': 'stdlib-only'}
+              assert 'python3 -m session_search.chatgpt_export' in manifest['entrypoints']
+              member_paths = {item['path'] for item in manifest['members']}
+              for entrypoint in manifest['entrypoints']:
+                  module = entrypoint.removeprefix('python3 -m ')
+                  assert module.replace('.', '/') + '.py' in member_paths
               for item in manifest['members']:
                   assert len(zf.read(item['path'])) == item['size_bytes']
                   assert hashlib.sha256(zf.read(item['path'])).hexdigest() == item['sha256']
               zf.extractall('runtime')
           print('PORTABLE_RUNTIME_INDEPENDENT_VERIFY_PASS')
+          PY
+      - name: Create synthetic official ChatGPT export
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, zipfile
+          def message(mid, role, text, create_time):
+              return {
+                  'id': mid,
+                  'author': {'role': role, 'name': None, 'metadata': {}},
+                  'create_time': create_time,
+                  'update_time': None,
+                  'content': {'content_type': 'text', 'parts': [text]},
+                  'status': 'finished_successfully',
+                  'end_turn': True,
+                  'weight': 1.0,
+                  'metadata': {},
+                  'recipient': 'all',
+                  'channel': None,
+              }
+          conversation = {
+              'title': 'Portable ChatGPT smoke',
+              'create_time': 1.0,
+              'update_time': 20.0,
+              'current_node': 'a',
+              'conversation_id': 'portable-chatgpt-smoke',
+              'id': 'portable-chatgpt-smoke',
+              'moderation_results': [],
+              'mapping': {
+                  'r': {'id': 'r', 'message': None, 'parent': None},
+                  'u': {'id': 'u', 'message': message('m-u', 'user', 'portable-chatgpt-canary', 10.0), 'parent': 'r'},
+                  'a': {'id': 'a', 'message': message('m-a', 'assistant', 'portable-chatgpt-answer', 20.0), 'parent': 'u'},
+              },
+          }
+          with zipfile.ZipFile('synthetic-chatgpt-export.zip', 'w') as zf:
+              zf.writestr('conversations.json', json.dumps([conversation], sort_keys=True))
+          PY
+      - name: Exercise packaged ChatGPT adapter without repository checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd runtime
+          python3 -m session_search.chatgpt_export --help >/dev/null
+          python3 -m session_search.chatgpt_export ../synthetic-chatgpt-export.zip --corpus ../chatgpt-corpus > ../chatgpt-ingest.json
+          python3 -m session_search.corpus verify --corpus ../chatgpt-corpus --json > ../chatgpt-verify.json
+          python3 -m session_search.search portable-chatgpt-canary --corpus ../chatgpt-corpus --json > ../chatgpt-search.json
+          cd ..
+          python3 - <<'PY'
+          import json, pathlib
+          ingest = json.loads(pathlib.Path('chatgpt-ingest.json').read_text())
+          verify = json.loads(pathlib.Path('chatgpt-verify.json').read_text())
+          search = json.loads(pathlib.Path('chatgpt-search.json').read_text())
+          assert ingest['status'] == 'COMPLETE'
+          assert ingest['conversation_count'] == 1
+          assert ingest['artifact_count'] == 1
+          assert ingest['branch_count'] == 1
+          assert verify['status'] == 'VERIFIED'
+          assert len(search) == 1 and search[0]['text'] == 'portable-chatgpt-canary'
+          print('PORTABLE_RUNTIME_CHATGPT_ACCEPTANCE_PASS')
           PY
       - name: Create synthetic portable capture
         shell: bash

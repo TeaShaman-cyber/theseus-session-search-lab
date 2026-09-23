@@ -21,6 +21,7 @@ ENTRYPOINTS = [
     "python3 -m session_search.deepseek_export",
     "python3 -m session_search.xai_export",
     "python3 -m session_search.speed_booster_export",
+    "python3 -m session_search.chatgpt_export",
     "python3 -m session_search.barn_recovery",
     "python3 -m session_search.handoff",
 ]
@@ -74,6 +75,15 @@ def build_runtime(
         raise ValueError("source revision must be a 40-character lowercase Git SHA")
 
     payload = _runtime_members(source_root)
+    packaged_paths = {path for path, _data in payload}
+    for entrypoint in ENTRYPOINTS:
+        prefix = "python3 -m "
+        if not entrypoint.startswith(prefix):
+            raise ValueError(f"unsupported runtime entrypoint declaration: {entrypoint}")
+        module = entrypoint[len(prefix):]
+        module_path = module.replace(".", "/") + ".py"
+        if module_path not in packaged_paths:
+            raise ValueError(f"runtime entrypoint module missing from package: {module}")
     manifest = {
         "schema": RUNTIME_SCHEMA,
         "source": {"repo": source_repo, "revision": source_revision},
