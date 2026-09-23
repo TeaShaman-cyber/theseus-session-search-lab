@@ -397,6 +397,60 @@ class ChatGPTExportAdapterTest(unittest.TestCase):
             self.assertNotIn(sha, read_accepted_ledger(CorpusPaths.from_root(corpus)))
             self.assertEqual(verify_corpus(corpus)["status"], "VERIFIED")
 
+    def test_standard_multi_ingest_accepts_complete_chatgpt_branch_family(self):
+        from session_search.chatgpt_export import materialize_export
+        from session_search.corpus_store import (
+            CorpusPaths,
+            ingest_many,
+            read_accepted_ledger,
+            verify_corpus,
+        )
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            children = materialize_export(
+                self.write_export(root, [self.conversation(cid="route-standard-batch")]),
+                root / "children",
+            )
+            corpus = root / "corpus"
+            result = ingest_many(children, corpus)
+            self.assertEqual(result["status"], "COMPLETE")
+            self.assertEqual(result["batch_verification"]["status"], "VERIFIED")
+            self.assertEqual(len(result["results"]), len(children))
+            self.assertEqual(
+                {row["status"] for row in result["results"]}, {"INGESTED"}
+            )
+            self.assertEqual(
+                len(read_accepted_ledger(CorpusPaths.from_root(corpus))), len(children)
+            )
+            self.assertEqual(verify_corpus(corpus)["status"], "VERIFIED")
+
+    def test_standard_multi_ingest_routes_raw_capture_independent_of_input_order(self):
+        from session_search.chatgpt_export import materialize_export
+        from session_search.corpus_store import ingest_many, verify_corpus
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            children = materialize_export(
+                self.write_export(root, [self.conversation(cid="route-standard-mixed")]),
+                root / "children",
+            )
+            raw = self.write_raw_capture(
+                root / "raw-first.zip",
+                "route-standard-mixed",
+                [self.message("m-b", "assistant", "text", ["answer B"], 30.0)],
+            )
+            corpus = root / "corpus"
+            result = ingest_many([raw, *children], corpus)
+            self.assertEqual(result["status"], "COMPLETE")
+            self.assertEqual(result["results"][0]["route_state"], "BRANCH_MATCH")
+            self.assertTrue(
+                result["results"][0]["projected_session_id"].startswith(
+                    "route-standard-mixed~branch-"
+                )
+            )
+            self.assertEqual(verify_corpus(corpus)["status"], "VERIFIED")
+
     def test_single_child_from_branched_snapshot_fails_closed(self):
         from session_search.chatgpt_export import materialize_export
         from session_search.corpus_store import (
@@ -548,6 +602,53 @@ class ChatGPTExportAdapterTest(unittest.TestCase):
                 self.assertTrue(
                     route[0].startswith("route-crash-recovery~branch-")
                 )
+
+    def test_reconciled_post_publish_writer_failure_rolls_back_current_entry(self):
+        from session_search.chatgpt_export import ingest_export
+        from session_search.corpus_store import (
+            CorpusPaths,
+            ingest_artifact,
+            read_accepted_ledger,
+            semantic_snapshot,
+            verify_corpus,
+            write_accepted_entry,
+        )
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            source = self.write_export(
+                root, [self.conversation(cid="route-ledger-readback-failure")]
+            )
+            corpus = root / "corpus"
+            self.assertEqual(ingest_export(source, corpus)["status"], "COMPLETE")
+            paths = CorpusPaths.from_root(corpus)
+            before_ledger = read_accepted_ledger(paths)
+            before_snapshot = semantic_snapshot(corpus)
+            raw = self.write_raw_capture(
+                root / "raw-ledger-readback-failure.zip",
+                "route-ledger-readback-failure",
+                [self.message("m-b", "assistant", "text", ["answer B"], 30.0)],
+            )
+            raw_sha = normalize_artifact(raw).artifact_sha256
+            real_write = write_accepted_entry
+
+            def publish_then_fail(paths_arg, entry):
+                real_write(paths_arg, entry)
+                raise RuntimeError("synthetic post-publication readback failure")
+
+            with mock.patch(
+                "session_search.corpus_store.write_accepted_entry",
+                side_effect=publish_then_fail,
+            ):
+                with self.assertRaisesRegex(
+                    RuntimeError, "reconciled ingest publication failed"
+                ):
+                    ingest_artifact(raw, corpus)
+
+            self.assertNotIn(raw_sha, read_accepted_ledger(paths))
+            self.assertEqual(read_accepted_ledger(paths), before_ledger)
+            self.assertEqual(semantic_snapshot(corpus), before_snapshot)
+            self.assertEqual(verify_corpus(corpus)["status"], "VERIFIED")
 
     def test_reconciled_publish_failure_rolls_back_new_ledger_entries(self):
         import os
