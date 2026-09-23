@@ -1,0 +1,210 @@
+{
+  "authority": "retrieval outputs are candidates; accepted artifacts/messages remain historical evidence authority",
+  "baseline": "session-search strict AND + opt-in recall OR/session rerank",
+  "case_count": 7,
+  "cases": [
+    {
+      "authority_expectation": "recall may surface a candidate; lexical miss remains UNKNOWN",
+      "baseline_disposition": "SUPPORTED_BY_CURRENT_RECALL",
+      "checks": {
+        "recall_surfaces_target": true,
+        "strict_misses_target": true
+      },
+      "class": "LEXICAL_MISS_ADJACENT_WORDING",
+      "id": "adjacent-wording-recall",
+      "intended_session": "adjacent-target",
+      "observed": {
+        "recall_result_count": 2,
+        "recall_sessions": [
+          "adjacent-dump",
+          "adjacent-target"
+        ],
+        "recall_target_rank": 2,
+        "recall_unique_session_count": 2,
+        "strict_result_count": 1,
+        "strict_sessions": [
+          "adjacent-dump"
+        ],
+        "strict_target_rank": null,
+        "strict_unique_session_count": 1,
+        "top_recall_provenance_resolvable": true,
+        "top_strict_provenance_resolvable": true
+      },
+      "pass": true,
+      "query": "lightweight IDE"
+    },
+    {
+      "authority_expectation": "session aggregation may join lexical evidence across messages; messages remain separate evidence",
+      "baseline_disposition": "SUPPORTED_BY_CURRENT_RECALL",
+      "checks": {
+        "recall_surfaces_split_session": true,
+        "strict_misses_split_session": true
+      },
+      "class": "SESSION_LEVEL_CONCEPT_SPLIT",
+      "id": "split-across-messages",
+      "intended_session": "split-target",
+      "observed": {
+        "recall_result_count": 3,
+        "recall_sessions": [
+          "split-target",
+          "split-noise"
+        ],
+        "recall_target_rank": 1,
+        "recall_unique_session_count": 2,
+        "strict_result_count": 0,
+        "strict_sessions": [],
+        "strict_target_rank": null,
+        "strict_unique_session_count": 0,
+        "top_recall_provenance_resolvable": true,
+        "top_strict_provenance_resolvable": null
+      },
+      "pass": true,
+      "query": "authority reconciliation"
+    },
+    {
+      "authority_expectation": "broad OR result is CANDIDATE only and must not become evidence of the target concept",
+      "baseline_disposition": "RISK_IF_DOWNSTREAM_PROMOTES_RECALL",
+      "checks": {
+        "recall_exposes_context_candidate": true,
+        "strict_has_no_false_target": true
+      },
+      "class": "BROAD_CONTEXT_FALSE_POSITIVE_RISK",
+      "id": "broad-context-candidate",
+      "intended_session": null,
+      "observed": {
+        "recall_result_count": 1,
+        "recall_sessions": [
+          "context-only"
+        ],
+        "recall_target_rank": null,
+        "recall_unique_session_count": 1,
+        "strict_result_count": 0,
+        "strict_sessions": [],
+        "strict_target_rank": null,
+        "strict_unique_session_count": 0,
+        "top_recall_provenance_resolvable": true,
+        "top_strict_provenance_resolvable": null
+      },
+      "pass": true,
+      "query": "resolvent Feshbach spectral measure"
+    },
+    {
+      "authority_expectation": "alias reconciliation may add a candidate but must preserve the original RAG mention and provenance",
+      "baseline_disposition": "GAP_CANDIDATE_FOR_RECONCILIATION",
+      "checks": {
+        "recall_misses_alias": true,
+        "strict_misses_alias": true
+      },
+      "class": "ALIAS_CANONICALIZATION",
+      "id": "alias-canonicalization-gap",
+      "intended_session": "alias-target",
+      "observed": {
+        "recall_result_count": 0,
+        "recall_sessions": [],
+        "recall_target_rank": null,
+        "recall_unique_session_count": 0,
+        "strict_result_count": 0,
+        "strict_sessions": [],
+        "strict_target_rank": null,
+        "strict_unique_session_count": 0,
+        "top_recall_provenance_resolvable": null,
+        "top_strict_provenance_resolvable": null
+      },
+      "pass": true,
+      "query": "retrieval augmented generation"
+    },
+    {
+      "authority_expectation": "reconciliation must not degrade a strong exact lexical result",
+      "baseline_disposition": "SUPPORTED_BY_STRICT",
+      "checks": {
+        "strict_provenance_resolves": true,
+        "strict_target_is_rank_one": true
+      },
+      "class": "EXACT_LEXICAL_POSITIVE",
+      "id": "exact-positive-control",
+      "intended_session": "exact-target",
+      "observed": {
+        "recall_result_count": 2,
+        "recall_sessions": [
+          "exact-target",
+          "exact-noise"
+        ],
+        "recall_target_rank": 1,
+        "recall_unique_session_count": 2,
+        "strict_result_count": 1,
+        "strict_sessions": [
+          "exact-target"
+        ],
+        "strict_target_rank": 1,
+        "strict_unique_session_count": 1,
+        "top_recall_provenance_resolvable": true,
+        "top_strict_provenance_resolvable": true
+      },
+      "pass": true,
+      "query": "immutable artifact provenance"
+    },
+    {
+      "authority_expectation": "retrieved message must remain resolvable through message_sources to accepted artifact provenance",
+      "baseline_disposition": "SUPPORTED_BY_CORPUS_PROVENANCE",
+      "checks": {
+        "strict_finds_target": true,
+        "strict_provenance_resolves": true
+      },
+      "class": "PROVENANCE_RESOLUTION",
+      "id": "provenance-readback",
+      "intended_session": "provenance-target",
+      "observed": {
+        "recall_result_count": 1,
+        "recall_sessions": [
+          "provenance-target"
+        ],
+        "recall_target_rank": 1,
+        "recall_unique_session_count": 1,
+        "strict_result_count": 1,
+        "strict_sessions": [
+          "provenance-target"
+        ],
+        "strict_target_rank": 1,
+        "strict_unique_session_count": 1,
+        "top_recall_provenance_resolvable": true,
+        "top_strict_provenance_resolvable": true
+      },
+      "pass": true,
+      "query": "source message evidence"
+    },
+    {
+      "authority_expectation": "multiple plausible concepts remain ambiguous; reconciliation must not silently choose one",
+      "baseline_disposition": "GAP_NEEDS_EXPLICIT_AMBIGUITY_STATE",
+      "checks": {
+        "recall_preserves_multiple_candidates": true,
+        "strict_preserves_multiple_candidates": true
+      },
+      "class": "AMBIGUOUS_CANONICALIZATION",
+      "id": "unresolved-ambiguity",
+      "intended_session": null,
+      "observed": {
+        "recall_result_count": 2,
+        "recall_sessions": [
+          "mercury-language",
+          "mercury-planet"
+        ],
+        "recall_target_rank": null,
+        "recall_unique_session_count": 2,
+        "strict_result_count": 2,
+        "strict_sessions": [
+          "mercury-language",
+          "mercury-planet"
+        ],
+        "strict_target_rank": null,
+        "strict_unique_session_count": 2,
+        "top_recall_provenance_resolvable": true,
+        "top_strict_provenance_resolvable": true
+      },
+      "pass": true,
+      "query": "Mercury"
+    }
+  ],
+  "overall": "PASS",
+  "pass_count": 7,
+  "schema": "theseus.session-search-authority-retrieval-benchmark.v0"
+}
