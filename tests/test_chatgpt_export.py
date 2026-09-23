@@ -435,6 +435,62 @@ class ChatGPTExportAdapterTest(unittest.TestCase):
                     {branch_id},
                 )
 
+    def test_late_single_leaf_rechecks_branch_sensitivity_under_writer_lock(self):
+        from session_search.chatgpt_export import ingest_export, materialize_export
+        from session_search.corpus_store import ingest_artifact
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            full_source = self.write_export(
+                root,
+                [self.conversation(cid="route-race-single", current="b")],
+            )
+            full_children = materialize_export(full_source, root / "full-children")
+            branch_id = next(
+                normalize_artifact(path).session_id
+                for path in full_children
+                if "~branch-" in normalize_artifact(path).session_id
+            )
+            corpus = root / "corpus"
+            self.assertEqual(ingest_export(full_source, corpus)["status"], "COMPLETE")
+
+            single_mapping = {
+                "r": self.node("r", None, None),
+                "u": self.node(
+                    "u",
+                    "r",
+                    self.message("m-u", "user", "text", ["question"], 10.0),
+                ),
+                "b": self.node(
+                    "b",
+                    "u",
+                    self.message("m-b", "assistant", "text", ["answer B"], 30.0),
+                ),
+            }
+            single_source = self.write_export(
+                root,
+                [
+                    self.conversation(
+                        cid="route-race-single",
+                        current="b",
+                        mapping=single_mapping,
+                    )
+                ],
+            )
+            single_child = materialize_export(
+                single_source, root / "single-child"
+            )[0]
+
+            with mock.patch(
+                "session_search.corpus_store._has_accepted_branched_chatgpt_family",
+                side_effect=[False, True],
+            ) as branch_probe:
+                result = ingest_artifact(single_child, corpus)
+
+            self.assertEqual(branch_probe.call_count, 2)
+            self.assertEqual(result["route_state"], "BRANCH_MATCH")
+            self.assertEqual(result["projected_session_id"], branch_id)
+
     def test_branched_raw_capture_routes_to_base_from_base_only_evidence(self):
         from session_search.chatgpt_export import ingest_export
         from session_search.corpus_store import CorpusPaths, ingest_artifact

@@ -1220,6 +1220,10 @@ def ingest_reconciled_many(
         return {"status": "COMPLETE", "results": results, "batch_verification": final}
 
 
+class _RetryReconciledIngest(Exception):
+    pass
+
+
 def ingest_artifact(source: pathlib.Path, corpus_root: pathlib.Path, *, _defer_batch_verify: bool = False) -> dict:
     source = pathlib.Path(source)
     paths = CorpusPaths.from_root(pathlib.Path(corpus_root))
@@ -1247,66 +1251,87 @@ def ingest_artifact(source: pathlib.Path, corpus_root: pathlib.Path, *, _defer_b
         if _defer_batch_verify:
             result = {**result, "sqlite_integrity": "DEFERRED_BATCH", "corpus_counts": "DEFERRED_BATCH"}
         return result
-    with CorpusMutationLock(paths, "ingest"):
-        if artifact.source_adapter == "speed-booster-export":
-            from .speed_booster_export import validate_materialized_artifact_identity
+    try:
+        with CorpusMutationLock(paths, "ingest"):
+            locked_branch_sensitive = (
+                artifact.source_adapter == "chatgpt-export"
+                and artifact.branch_count is not None
+                and artifact.branch_count > 1
+            ) or (
+                paths.accepted_ledger.exists()
+                and branch_source_id is not None
+                and _has_accepted_branched_chatgpt_family(paths, branch_source_id)
+            )
+            locked_route_reconciliation_needed = (
+                paths.db.exists() and _projection_routes_need_reconciliation(paths)
+            )
+            if locked_branch_sensitive or locked_route_reconciliation_needed:
+                raise _RetryReconciledIngest
+            if artifact.source_adapter == "speed-booster-export":
+                from .speed_booster_export import validate_materialized_artifact_identity
 
-            validate_materialized_artifact_identity(source, paths.root)
-        _copy_artifact_blob(paths, artifact)
-        conn = _connect_corpus(paths)
-        ledger_written = False
-        try:
-            ledger, db_row = _membership_state(conn, paths, artifact.artifact_sha256)
-            if ledger is not None or db_row is not None:
-                if ledger is None or db_row is None:
-                    raise RuntimeError("RECONCILIATION_REQUIRED: ledger/projection membership disagreement")
-                return _verify_existing_membership(conn, paths, artifact, ledger, db_row, check_sqlite_integrity=not _defer_batch_verify)
-
-            accepted_at = _utc_now()
-            entry = _accepted_entry_for_artifact(artifact, accepted_at)
-            conn.execute("BEGIN IMMEDIATE")
-            delta = apply_normalized_artifact_to_projection(conn, paths, artifact, accepted_at)
-            assert_transaction_invariants(conn, artifact, check_global=not _defer_batch_verify)
-            ledger_path = write_accepted_entry(paths, entry)
-            observed = json.loads(ledger_path.read_text())
-            if observed != entry:
-                raise RuntimeError("ACCEPTED_LEDGER_READBACK_MISMATCH")
-            ledger_written = True
-            conn.commit()
-        except Exception as exc:
+                validate_materialized_artifact_identity(source, paths.root)
+            _copy_artifact_blob(paths, artifact)
+            conn = _connect_corpus(paths)
+            ledger_written = False
             try:
-                conn.rollback()
-            finally:
-                conn.close()
-            if ledger_written:
-                raise RuntimeError(
-                    "RECONCILIATION_REQUIRED: ledger accepted but projection commit failed"
-                ) from exc
-            raise
-        else:
-            conn.close()
+                ledger, db_row = _membership_state(conn, paths, artifact.artifact_sha256)
+                if ledger is not None or db_row is not None:
+                    if ledger is None or db_row is None:
+                        raise RuntimeError("RECONCILIATION_REQUIRED: ledger/projection membership disagreement")
+                    return _verify_existing_membership(conn, paths, artifact, ledger, db_row, check_sqlite_integrity=not _defer_batch_verify)
 
-        postconditions = verify_ingest_postconditions(
-            paths,
-            artifact.artifact_sha256,
-            check_sqlite_integrity=not _defer_batch_verify,
-            include_corpus_counts=not _defer_batch_verify,
-        )
-        write_ingest_receipt(
-            paths,
-            artifact_sha256=artifact.artifact_sha256,
-            status="INGESTED",
-            postconditions=postconditions,
-        )
-        return {
-            "status": "INGESTED",
-            "mutation": "applied",
-            "artifact_sha256": artifact.artifact_sha256,
-            "session_id": artifact.session_id,
-            "coverage_state": artifact.coverage_state,
-            **delta,
-            **postconditions,
-        }
+                accepted_at = _utc_now()
+                entry = _accepted_entry_for_artifact(artifact, accepted_at)
+                conn.execute("BEGIN IMMEDIATE")
+                delta = apply_normalized_artifact_to_projection(conn, paths, artifact, accepted_at)
+                assert_transaction_invariants(conn, artifact, check_global=not _defer_batch_verify)
+                ledger_path = write_accepted_entry(paths, entry)
+                observed = json.loads(ledger_path.read_text())
+                if observed != entry:
+                    raise RuntimeError("ACCEPTED_LEDGER_READBACK_MISMATCH")
+                ledger_written = True
+                conn.commit()
+            except Exception as exc:
+                try:
+                    conn.rollback()
+                finally:
+                    conn.close()
+                if ledger_written:
+                    raise RuntimeError(
+                        "RECONCILIATION_REQUIRED: ledger accepted but projection commit failed"
+                    ) from exc
+                raise
+            else:
+                conn.close()
+
+            postconditions = verify_ingest_postconditions(
+                paths,
+                artifact.artifact_sha256,
+                check_sqlite_integrity=not _defer_batch_verify,
+                include_corpus_counts=not _defer_batch_verify,
+            )
+            write_ingest_receipt(
+                paths,
+                artifact_sha256=artifact.artifact_sha256,
+                status="INGESTED",
+                postconditions=postconditions,
+            )
+            return {
+                "status": "INGESTED",
+                "mutation": "applied",
+                "artifact_sha256": artifact.artifact_sha256,
+                "session_id": artifact.session_id,
+                "coverage_state": artifact.coverage_state,
+                **delta,
+                **postconditions,
+            }
+    except _RetryReconciledIngest:
+        grouped = ingest_reconciled_many([source], paths.root)
+        result = grouped["results"][0]
+        if _defer_batch_verify:
+            result = {**result, "sqlite_integrity": "DEFERRED_BATCH", "corpus_counts": "DEFERRED_BATCH"}
+        return result
 
 
 def _chatgpt_branch_batch_key(
