@@ -1,0 +1,20 @@
+{
+  "schema": "theseus.session-search-controlled-concepts.v0",
+  "concepts": [
+    {
+      "id": "retrieval-augmented-generation",
+      "preferred_label": "retrieval augmented generation",
+      "aliases": ["RAG"]
+    },
+    {
+      "id": "mercury-planet",
+      "preferred_label": "Mercury (planet)",
+      "aliases": ["Mercury"]
+    },
+    {
+      "id": "mercury-programming-language",
+      "preferred_label": "Mercury (programming language)",
+      "aliases": ["Mercury"]
+    }
+  ]
+}

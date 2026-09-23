@@ -1,0 +1,285 @@
+{
+  "authority": "all candidate/reconciliation states remain NON_AUTHORITATIVE_RETRIEVAL",
+  "candidate": "exact controlled-label/alias reconciliation + explicit ambiguity state",
+  "case_count": 7,
+  "cases": [
+    {
+      "baseline_disposition": "SUPPORTED_BY_CURRENT_RECALL",
+      "candidate": {
+        "authority": "NON_AUTHORITATIVE_RETRIEVAL",
+        "concept_matches": [],
+        "expanded_forms": [],
+        "hits": [
+          {
+            "message_id": "a3",
+            "promotion_eligibility": "LEXICAL_EVIDENCE_ELIGIBLE",
+            "retrieval_basis": "DIRECT_LEXICAL",
+            "session_id": "adjacent-dump"
+          },
+          {
+            "message_id": "a1",
+            "promotion_eligibility": "CANDIDATE_ONLY",
+            "retrieval_basis": "RECALL_ONLY",
+            "session_id": "adjacent-target"
+          }
+        ],
+        "promotion_eligibility": "MIXED",
+        "query_mode": "strict_and_with_recall_candidates",
+        "result_count": 2,
+        "sessions": [
+          "adjacent-dump",
+          "adjacent-target"
+        ],
+        "state": "DIRECT_WITH_RECALL_CANDIDATES",
+        "target_rank": 2,
+        "top_provenance_resolvable": true
+      },
+      "checks": {
+        "no_reconciliation_needed": true,
+        "recall_target_stays_candidate_only": true,
+        "target_remains_visible": true
+      },
+      "id": "adjacent-wording-recall",
+      "pass": true
+    },
+    {
+      "baseline_disposition": "SUPPORTED_BY_CURRENT_RECALL",
+      "candidate": {
+        "authority": "NON_AUTHORITATIVE_RETRIEVAL",
+        "concept_matches": [],
+        "expanded_forms": [],
+        "hits": [
+          {
+            "message_id": "s2",
+            "promotion_eligibility": "CANDIDATE_ONLY",
+            "retrieval_basis": "RECALL_ONLY",
+            "session_id": "split-target"
+          },
+          {
+            "message_id": "s3",
+            "promotion_eligibility": "CANDIDATE_ONLY",
+            "retrieval_basis": "RECALL_ONLY",
+            "session_id": "split-noise"
+          },
+          {
+            "message_id": "s1",
+            "promotion_eligibility": "CANDIDATE_ONLY",
+            "retrieval_basis": "RECALL_ONLY",
+            "session_id": "split-target"
+          }
+        ],
+        "promotion_eligibility": "CANDIDATE_ONLY",
+        "query_mode": "explicit_recall_or",
+        "result_count": 3,
+        "sessions": [
+          "split-target",
+          "split-noise"
+        ],
+        "state": "RECALL_CANDIDATE",
+        "target_rank": 1,
+        "top_provenance_resolvable": true
+      },
+      "checks": {
+        "remains_candidate_only": true,
+        "target_remains_visible": true
+      },
+      "id": "split-across-messages",
+      "pass": true
+    },
+    {
+      "baseline_disposition": "RISK_IF_DOWNSTREAM_PROMOTES_RECALL",
+      "candidate": {
+        "authority": "NON_AUTHORITATIVE_RETRIEVAL",
+        "concept_matches": [],
+        "expanded_forms": [],
+        "hits": [
+          {
+            "message_id": "c1",
+            "promotion_eligibility": "CANDIDATE_ONLY",
+            "retrieval_basis": "RECALL_ONLY",
+            "session_id": "context-only"
+          }
+        ],
+        "promotion_eligibility": "CANDIDATE_ONLY",
+        "query_mode": "explicit_recall_or",
+        "result_count": 1,
+        "sessions": [
+          "context-only"
+        ],
+        "state": "RECALL_CANDIDATE",
+        "target_rank": null,
+        "top_provenance_resolvable": true
+      },
+      "checks": {
+        "broad_context_is_recall_candidate": true,
+        "broad_context_not_promotable": true
+      },
+      "id": "broad-context-candidate",
+      "pass": true
+    },
+    {
+      "baseline_disposition": "GAP_CANDIDATE_FOR_RECONCILIATION",
+      "candidate": {
+        "authority": "NON_AUTHORITATIVE_RETRIEVAL",
+        "concept_matches": [
+          {
+            "id": "retrieval-augmented-generation",
+            "preferred_label": "retrieval augmented generation"
+          }
+        ],
+        "expanded_forms": [
+          "RAG"
+        ],
+        "hits": [
+          {
+            "message_id": "g1",
+            "promotion_eligibility": "CANDIDATE_ONLY",
+            "retrieval_basis": "CONTROLLED_ALIAS_EXPANSION",
+            "session_id": "alias-target"
+          }
+        ],
+        "promotion_eligibility": "CANDIDATE_ONLY",
+        "query_mode": "controlled_alias_expansion",
+        "result_count": 1,
+        "sessions": [
+          "alias-target"
+        ],
+        "state": "RECONCILED_CANDIDATE",
+        "target_rank": 1,
+        "top_provenance_resolvable": true
+      },
+      "checks": {
+        "alias_gap_is_recovered": true,
+        "alias_hit_remains_candidate_only": true
+      },
+      "id": "alias-canonicalization-gap",
+      "pass": true
+    },
+    {
+      "baseline_disposition": "SUPPORTED_BY_STRICT",
+      "candidate": {
+        "authority": "NON_AUTHORITATIVE_RETRIEVAL",
+        "concept_matches": [],
+        "expanded_forms": [],
+        "hits": [
+          {
+            "message_id": "e1",
+            "promotion_eligibility": "LEXICAL_EVIDENCE_ELIGIBLE",
+            "retrieval_basis": "DIRECT_LEXICAL",
+            "session_id": "exact-target"
+          },
+          {
+            "message_id": "e2",
+            "promotion_eligibility": "CANDIDATE_ONLY",
+            "retrieval_basis": "RECALL_ONLY",
+            "session_id": "exact-noise"
+          }
+        ],
+        "promotion_eligibility": "MIXED",
+        "query_mode": "strict_and_with_recall_candidates",
+        "result_count": 2,
+        "sessions": [
+          "exact-target",
+          "exact-noise"
+        ],
+        "state": "DIRECT_WITH_RECALL_CANDIDATES",
+        "target_rank": 1,
+        "top_provenance_resolvable": true
+      },
+      "checks": {
+        "direct_target_is_typed": true,
+        "exact_rank_not_degraded": true,
+        "supplemental_recall_not_promoted": true
+      },
+      "id": "exact-positive-control",
+      "pass": true
+    },
+    {
+      "baseline_disposition": "SUPPORTED_BY_CORPUS_PROVENANCE",
+      "candidate": {
+        "authority": "NON_AUTHORITATIVE_RETRIEVAL",
+        "concept_matches": [],
+        "expanded_forms": [],
+        "hits": [
+          {
+            "message_id": "p1",
+            "promotion_eligibility": "LEXICAL_EVIDENCE_ELIGIBLE",
+            "retrieval_basis": "DIRECT_LEXICAL",
+            "session_id": "provenance-target"
+          }
+        ],
+        "promotion_eligibility": "LEXICAL_EVIDENCE_ELIGIBLE",
+        "query_mode": "strict_and_with_recall_candidates",
+        "result_count": 1,
+        "sessions": [
+          "provenance-target"
+        ],
+        "state": "DIRECT_LEXICAL",
+        "target_rank": 1,
+        "top_provenance_resolvable": true
+      },
+      "checks": {
+        "direct_query_remains_rank_one": true,
+        "provenance_remains_resolvable": true
+      },
+      "id": "provenance-readback",
+      "pass": true
+    },
+    {
+      "baseline_disposition": "GAP_NEEDS_EXPLICIT_AMBIGUITY_STATE",
+      "candidate": {
+        "authority": "NON_AUTHORITATIVE_RETRIEVAL",
+        "concept_matches": [
+          {
+            "id": "mercury-planet",
+            "preferred_label": "Mercury (planet)"
+          },
+          {
+            "id": "mercury-programming-language",
+            "preferred_label": "Mercury (programming language)"
+          }
+        ],
+        "expanded_forms": [],
+        "hits": [
+          {
+            "message_id": "m2",
+            "promotion_eligibility": "AMBIGUOUS",
+            "retrieval_basis": "AMBIGUOUS_DIRECT_LEXICAL",
+            "session_id": "mercury-language"
+          },
+          {
+            "message_id": "m1",
+            "promotion_eligibility": "AMBIGUOUS",
+            "retrieval_basis": "AMBIGUOUS_DIRECT_LEXICAL",
+            "session_id": "mercury-planet"
+          }
+        ],
+        "promotion_eligibility": "AMBIGUOUS",
+        "query_mode": "controlled_alias_collision",
+        "result_count": 2,
+        "sessions": [
+          "mercury-language",
+          "mercury-planet"
+        ],
+        "state": "AMBIGUOUS_CONCEPT",
+        "target_rank": null,
+        "top_provenance_resolvable": true
+      },
+      "checks": {
+        "ambiguity_is_explicit": true,
+        "ambiguity_is_not_promotable": true,
+        "both_candidates_remain_visible": true
+      },
+      "id": "unresolved-ambiguity",
+      "pass": true
+    }
+  ],
+  "concept_registry_sha256": "b1dd2536b88d60353257f18f14a76e65a911b3d5d7c19a9aa35f02ba29de08be",
+  "frozen_baseline_sha256": "bfd8ae5e4b8c3fdc47a08faa2448c73fef18532ed978cfb8139208a99961745e",
+  "new_runtime_dependencies": [],
+  "overall": "PASS",
+  "pass_count": 7,
+  "persisted_derived_state": false,
+  "research_signal": "KEEP_MINIMAL_LOCAL_RECONCILIATION",
+  "schema": "theseus.session-search-reconciliation-comparison.v0"
+}
