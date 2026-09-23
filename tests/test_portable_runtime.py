@@ -17,8 +17,20 @@ class PortableRuntimeBuildTest(unittest.TestCase):
         (source / "session_search").mkdir(parents=True)
         (source / "docs").mkdir(parents=True)
         (source / "session_search" / "__init__.py").write_text("")
-        (source / "session_search" / "corpus.py").write_text("VALUE = 1\n")
-        (source / "session_search" / "search.py").write_text("VALUE = 2\n")
+        modules = (
+            "corpus",
+            "search",
+            "deepseek_export",
+            "xai_export",
+            "speed_booster_export",
+            "chatgpt_export",
+            "barn_recovery",
+            "handoff",
+        )
+        for index, module in enumerate(modules, start=1):
+            (source / "session_search" / f"{module}.py").write_text(
+                f"VALUE = {index}\n"
+            )
         (source / "docs" / "portable-runtime.md").write_text("# Portable runtime\n")
         return source
 
@@ -75,6 +87,13 @@ class PortableRuntimeBuildTest(unittest.TestCase):
                 self.assertEqual(manifest["python_min"], "3.11")
                 self.assertEqual(manifest["source"], receipt["source"])
                 self.assertEqual(receipt["manifest_sha256"], hashlib.sha256(manifest_raw).hexdigest())
+                self.assertIn(
+                    "python3 -m session_search.chatgpt_export",
+                    manifest["entrypoints"],
+                )
+                for entrypoint in manifest["entrypoints"]:
+                    module = entrypoint.removeprefix("python3 -m ")
+                    self.assertIn(module.replace(".", "/") + ".py", names)
                 expected = {
                     item["path"]: item["sha256"]
                     for item in manifest["members"]
