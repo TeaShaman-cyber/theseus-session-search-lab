@@ -489,6 +489,66 @@ class ChatGPTExportAdapterTest(unittest.TestCase):
                     (alt_id, "BRANCH_MATCH", "route-repair"),
                 )
 
+    def test_ledger_ahead_crash_state_rebuilds_to_same_branch_route(self):
+        import shutil
+
+        from session_search.chatgpt_export import ingest_export
+        from session_search.corpus_store import (
+            CorpusPaths,
+            _accepted_entry_for_artifact,
+            read_accepted_ledger,
+            rebuild_corpus,
+            verify_corpus,
+            write_accepted_entry,
+        )
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            source = self.write_export(
+                root, [self.conversation(cid="route-crash-recovery")]
+            )
+            corpus = root / "corpus"
+            self.assertEqual(ingest_export(source, corpus)["status"], "COMPLETE")
+            raw = self.write_raw_capture(
+                root / "raw-crash.zip",
+                "route-crash-recovery",
+                [self.message("m-b", "assistant", "text", ["answer B"], 30.0)],
+            )
+            artifact = normalize_artifact(raw)
+            paths = CorpusPaths.from_root(corpus)
+            paths.ensure_layout()
+            shutil.copyfile(
+                raw,
+                paths.artifacts_sha256 / f"{artifact.artifact_sha256}.zip",
+            )
+            write_accepted_entry(
+                paths,
+                _accepted_entry_for_artifact(
+                    artifact, "2026-09-23T00:00:00+00:00"
+                ),
+            )
+            before_ledger = read_accepted_ledger(paths)
+
+            self.assertEqual(verify_corpus(corpus)["status"], "RECONCILIATION_REQUIRED")
+            self.assertEqual(rebuild_corpus(corpus)["status"], "REBUILT")
+            self.assertEqual(verify_corpus(corpus)["status"], "VERIFIED")
+            self.assertEqual(read_accepted_ledger(paths), before_ledger)
+
+            with sqlite3.connect(paths.db) as conn:
+                route = conn.execute(
+                    """
+                    SELECT r.projected_session_id,r.route_state,a.session_id
+                    FROM artifact_routes r JOIN artifacts a ON a.artifact_id=r.artifact_id
+                    WHERE a.sha256=?
+                    """,
+                    (artifact.artifact_sha256,),
+                ).fetchone()
+                self.assertIsNotNone(route)
+                self.assertEqual(route[1:], ("BRANCH_MATCH", "route-crash-recovery"))
+                self.assertTrue(
+                    route[0].startswith("route-crash-recovery~branch-")
+                )
+
     def test_reconciled_publish_failure_rolls_back_new_ledger_entries(self):
         import os
 
