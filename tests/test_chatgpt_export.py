@@ -760,6 +760,46 @@ class ChatGPTExportAdapterTest(unittest.TestCase):
             ):
                 ingest_artifact(corrupted, root / "corpus")
 
+    def test_mixed_batch_reconciles_branch_families_independently(self):
+        from session_search.chatgpt_export import materialize_export
+        from session_search.corpus_store import ingest_many, verify_corpus
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            children = materialize_export(
+                self.write_export(
+                    root,
+                    [
+                        self.conversation(cid="mixed-good"),
+                        self.conversation(cid="mixed-bad"),
+                    ],
+                ),
+                root / "children",
+            )
+            by_conversation = {}
+            for child in children:
+                manifest, _ = self.payload(child)
+                by_conversation.setdefault(manifest["source_conversation_id"], []).append(child)
+
+            good = by_conversation["mixed-good"]
+            bad = by_conversation["mixed-bad"]
+            self.assertEqual(len(good), 2)
+            self.assertEqual(len(bad), 2)
+
+            inputs = [good[0], bad[0], good[1]]
+            corpus = root / "corpus"
+            result = ingest_many(inputs, corpus)
+
+            self.assertEqual(result["status"], "DEGRADED")
+            self.assertEqual([row["source"] for row in result["results"]], [str(p) for p in inputs])
+            self.assertEqual(
+                [row["status"] for row in result["results"]],
+                ["INGESTED", "FAILED", "INGESTED"],
+            )
+            self.assertIn("incomplete ChatGPT branch family", result["results"][1]["error"])
+            self.assertEqual(result["batch_verification"]["status"], "VERIFIED")
+            self.assertEqual(verify_corpus(corpus)["status"], "VERIFIED")
+
     def test_single_child_from_branched_snapshot_fails_closed(self):
         from session_search.chatgpt_export import materialize_export
         from session_search.corpus_store import (
