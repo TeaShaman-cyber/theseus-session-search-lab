@@ -451,6 +451,98 @@ class ChatGPTExportAdapterTest(unittest.TestCase):
             )
             self.assertEqual(verify_corpus(corpus)["status"], "VERIFIED")
 
+    def test_chatgpt_child_manifest_provenance_matrix_fails_closed(self):
+        from session_search.chatgpt_export import materialize_export
+        from session_search.corpus_store import ingest_artifact
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            child = materialize_export(
+                self.write_export(
+                    root,
+                    [self.conversation(cid="route-provenance-matrix")],
+                ),
+                root / "children",
+            )[0]
+            with zipfile.ZipFile(child) as zf:
+                original_manifest = json.loads(zf.read("manifest.json"))
+                member = original_manifest["files"][0]["name"]
+                payload_bytes = zf.read(member)
+
+            cases = (
+                ("session_id", lambda m: m.__setitem__("session_id", "wrong-session")),
+                (
+                    "source_conversation_id",
+                    lambda m: m.__setitem__(
+                        "source_conversation_id", "wrong-source-conversation"
+                    ),
+                ),
+                (
+                    "branch_leaf_id",
+                    lambda m: m.__setitem__("branch_leaf_id", "wrong-leaf"),
+                ),
+                ("branch_count", lambda m: m.__setitem__("branch_count", 1)),
+                (
+                    "selected_is_current",
+                    lambda m: m.__setitem__(
+                        "selected_is_current", not m["selected_is_current"]
+                    ),
+                ),
+                (
+                    "snapshot_scope",
+                    lambda m: m.__setitem__("snapshot_scope", "WRONG_SCOPE"),
+                ),
+                ("missing_branch_count", lambda m: m.pop("branch_count")),
+            )
+
+            for index, (label, mutate) in enumerate(cases):
+                with self.subTest(label=label):
+                    manifest = json.loads(json.dumps(original_manifest))
+                    mutate(manifest)
+                    corrupted = root / f"corrupted-{index}.zip"
+                    with zipfile.ZipFile(corrupted, "w") as zf:
+                        zf.writestr(
+                            "manifest.json", json.dumps(manifest, sort_keys=True)
+                        )
+                        zf.writestr(member, payload_bytes)
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        "branch provenance (mismatch|missing or invalid)",
+                    ):
+                        ingest_artifact(corrupted, root / f"corpus-{index}")
+
+    def test_chatgpt_child_manifest_branch_count_must_match_payload(self):
+        from session_search.chatgpt_export import materialize_export
+        from session_search.corpus_store import ingest_artifact
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            children = materialize_export(
+                self.write_export(
+                    root,
+                    [self.conversation(cid="route-provenance-mismatch")],
+                ),
+                root / "children",
+            )
+            child = children[0]
+            with zipfile.ZipFile(child) as zf:
+                manifest = json.loads(zf.read("manifest.json"))
+                member = manifest["files"][0]["name"]
+                payload_bytes = zf.read(member)
+                payload = json.loads(payload_bytes)
+            self.assertEqual(payload["chatgpt_branch_count"], 2)
+            manifest["branch_count"] = 1
+            corrupted = root / "corrupted-branch-count.zip"
+            with zipfile.ZipFile(corrupted, "w") as zf:
+                zf.writestr("manifest.json", json.dumps(manifest, sort_keys=True))
+                zf.writestr(member, payload_bytes)
+
+            with self.assertRaisesRegex(
+                (ValueError, RuntimeError),
+                "branch.*(provenance|count|mismatch)|RECONCILIATION_REQUIRED",
+            ):
+                ingest_artifact(corrupted, root / "corpus")
+
     def test_single_child_from_branched_snapshot_fails_closed(self):
         from session_search.chatgpt_export import materialize_export
         from session_search.corpus_store import (

@@ -207,6 +207,71 @@ def _chronology_key(page: dict) -> tuple[int, float, int]:
     return (0, float(min_time), int(page["capture_sequence"]))
 
 
+CHATGPT_CHILD_SCHEMA = "theseus.session-search.chatgpt-export-child.v1"
+CHATGPT_ADAPTER = "chatgpt-export"
+
+
+def _validated_chatgpt_child_provenance(manifest: dict, raw_pages: list[dict]) -> dict | None:
+    schema = manifest.get("schema")
+    adapter = manifest.get("source_adapter")
+    if schema != CHATGPT_CHILD_SCHEMA and adapter != CHATGPT_ADAPTER:
+        return None
+    if schema != CHATGPT_CHILD_SCHEMA or adapter != CHATGPT_ADAPTER:
+        raise ValueError(
+            "BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: manifest schema/adapter provenance mismatch"
+        )
+    if len(raw_pages) != 1:
+        raise ValueError(
+            "BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: child payload cardinality mismatch"
+        )
+    payload = raw_pages[0].get("object")
+    if not isinstance(payload, dict):
+        raise ValueError(
+            "BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: child payload malformed"
+        )
+
+    pairs = (
+        ("session_id", "conversation_id", str),
+        ("source_conversation_id", "chatgpt_source_conversation_id", str),
+        ("branch_leaf_id", "chatgpt_selected_leaf_id", str),
+        ("branch_count", "chatgpt_branch_count", int),
+        ("selected_is_current", "chatgpt_selected_is_current", bool),
+        ("snapshot_scope", "chatgpt_snapshot_scope", str),
+    )
+    validated: dict[str, object] = {}
+    for manifest_key, payload_key, expected_type in pairs:
+        manifest_value = manifest.get(manifest_key)
+        payload_value = payload.get(payload_key)
+        if expected_type is int:
+            manifest_valid = isinstance(manifest_value, int) and not isinstance(
+                manifest_value, bool
+            )
+            payload_valid = isinstance(payload_value, int) and not isinstance(
+                payload_value, bool
+            )
+        else:
+            manifest_valid = isinstance(manifest_value, expected_type)
+            payload_valid = isinstance(payload_value, expected_type)
+        if expected_type is str:
+            manifest_valid = manifest_valid and bool(manifest_value)
+            payload_valid = payload_valid and bool(payload_value)
+        if expected_type is int:
+            manifest_valid = manifest_valid and manifest_value > 0
+            payload_valid = payload_valid and payload_value > 0
+        if not manifest_valid or not payload_valid:
+            raise ValueError(
+                "BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: branch provenance missing or invalid: "
+                f"{manifest_key}"
+            )
+        if manifest_value != payload_value:
+            raise ValueError(
+                "BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: branch provenance mismatch: "
+                f"{manifest_key}"
+            )
+        validated[manifest_key] = payload_value
+    return validated
+
+
 def normalize_artifact(source: pathlib.Path) -> NormalizedArtifact:
     source = pathlib.Path(source)
     with zipfile.ZipFile(source) as zf:
@@ -214,6 +279,9 @@ def normalize_artifact(source: pathlib.Path) -> NormalizedArtifact:
         manifest = json.loads(zf.read("manifest.json"))
         verify_manifest(zf, manifest)
         raw_pages = _load_payload_pages(zf, manifest)
+        chatgpt_provenance = _validated_chatgpt_child_provenance(
+            manifest, raw_pages
+        )
 
     session_ids = {
         str(page["object"].get("conversation_id"))
@@ -428,8 +496,16 @@ def normalize_artifact(source: pathlib.Path) -> NormalizedArtifact:
         source_schema=str(manifest.get("schema") or ""),
         source_adapter=(str(manifest.get("source_adapter") or "barn-doctor") if str(manifest.get("schema") or "").startswith("theseus.session-search.") else "barn-doctor"),
         source_export_sha256=(str(manifest.get("source_export_sha256")) if isinstance(manifest.get("source_export_sha256"), str) and manifest.get("source_export_sha256") else None),
-        source_conversation_id=(str(manifest.get("source_conversation_id")) if isinstance(manifest.get("source_conversation_id"), str) and manifest.get("source_conversation_id") else None),
-        branch_count=(int(manifest.get("branch_count")) if isinstance(manifest.get("branch_count"), int) and not isinstance(manifest.get("branch_count"), bool) else None),
+        source_conversation_id=(
+            str(chatgpt_provenance["source_conversation_id"])
+            if chatgpt_provenance is not None
+            else (str(manifest.get("source_conversation_id")) if isinstance(manifest.get("source_conversation_id"), str) and manifest.get("source_conversation_id") else None)
+        ),
+        branch_count=(
+            int(chatgpt_provenance["branch_count"])
+            if chatgpt_provenance is not None
+            else (int(manifest.get("branch_count")) if isinstance(manifest.get("branch_count"), int) and not isinstance(manifest.get("branch_count"), bool) else None)
+        ),
         session_id=session_id,
         title=title,
         coverage_state=coverage,
