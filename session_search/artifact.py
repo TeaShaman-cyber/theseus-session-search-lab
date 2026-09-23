@@ -299,6 +299,42 @@ def normalize_artifact(source: pathlib.Path) -> NormalizedArtifact:
                 projected_digest = _sha256_json(canonical_message_object(message))
                 digest = trace_digests.get(raw_id)
                 expected_projection_digest = trace_projection_digests.get(raw_id)
+                embedded_source_content = metadata.get(
+                    "chatgpt_projection_source_content"
+                )
+                if embedded_source_content is not None:
+                    if not isinstance(embedded_source_content, dict):
+                        raise ValueError(
+                            "BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: multimodal projection lineage malformed"
+                        )
+                    embedded_digest = _sha256_json(
+                        canonical_message_object(
+                            {
+                                "author": {"role": source_role},
+                                "content": embedded_source_content,
+                            }
+                        )
+                    )
+                    embedded_projection = _chatgpt_multimodal_text_projection(
+                        embedded_source_content
+                    )
+                    embedded_projection_digest = _sha256_json(
+                        canonical_message_object(
+                            {
+                                "author": {"role": source_role},
+                                "content": embedded_projection,
+                            }
+                        )
+                    )
+                    if (digest is not None and digest != embedded_digest) or (
+                        expected_projection_digest is not None
+                        and expected_projection_digest != embedded_projection_digest
+                    ):
+                        raise ValueError(
+                            "BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: conflicting multimodal projection lineage"
+                        )
+                    digest = embedded_digest
+                    expected_projection_digest = embedded_projection_digest
                 if digest is None:
                     parts = content.get("parts")
                     if not isinstance(parts, list) or any(

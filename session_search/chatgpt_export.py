@@ -448,12 +448,19 @@ def _convert_node_messages(node_id: str, node: dict, order: int) -> tuple[list[d
         text_parts, trace_parts = _multimodal_parts(content)
         converted: list[dict] = []
         if text_parts:
+            projection_metadata = {
+                **base_metadata,
+                "chatgpt_projection": "multimodal-text",
+                "session_search_order": order,
+            }
+            if not trace_parts:
+                projection_metadata["chatgpt_projection_source_content"] = content
             converted.append({
                 "id": message_id,
                 "author": {"role": role},
                 "create_time": created,
                 "content": {"content_type": "text", "parts": text_parts},
-                "metadata": {**base_metadata, "chatgpt_projection": "multimodal-text", "session_search_order": order},
+                "metadata": projection_metadata,
             })
             order += 1
         if trace_parts:

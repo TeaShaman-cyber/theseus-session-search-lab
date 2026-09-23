@@ -799,6 +799,109 @@ class ChatGPTExportAdapterTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "multimodal projection .*mismatch"):
                 normalize_artifact(tampered)
 
+    def test_text_only_multimodal_preserves_full_source_lineage(self):
+        from session_search.chatgpt_export import materialize_export
+
+        def conversation(source_marker):
+            message = self.message(
+                "m-u",
+                "user",
+                "multimodal_text",
+                ["same caption"],
+                10.0,
+            )
+            message["content"]["source_marker"] = source_marker
+            mapping = {
+                "r": self.node("r", None, None),
+                "u": self.node("u", "r", message),
+                "a": self.node(
+                    "a",
+                    "u",
+                    self.message("m-a", "assistant", "text", ["answer"], 20.0),
+                ),
+            }
+            return self.conversation(
+                cid="text-only-lineage", current="a", mapping=mapping
+            )
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            first = materialize_export(
+                self.write_export(root, [conversation("source-a")]),
+                root / "first",
+            )[0]
+            second_source = root / "second-export.zip"
+            with zipfile.ZipFile(second_source, "w") as zf:
+                zf.writestr(
+                    "conversations-000.json",
+                    json.dumps([conversation("source-b")]),
+                )
+            second = materialize_export(second_source, root / "second")[0]
+
+            first_message = next(
+                message
+                for message in normalize_artifact(first).messages
+                if message.message_id == "m-u"
+            )
+            second_message = next(
+                message
+                for message in normalize_artifact(second).messages
+                if message.message_id == "m-u"
+            )
+            self.assertIsNotNone(first_message.projection_source_canonical_sha256)
+            self.assertIsNotNone(second_message.projection_source_canonical_sha256)
+            self.assertNotEqual(
+                first_message.projection_source_canonical_sha256,
+                second_message.projection_source_canonical_sha256,
+            )
+
+    def test_text_only_multimodal_different_source_lineage_conflicts(self):
+        from session_search.chatgpt_export import materialize_export
+        from session_search.corpus_store import ingest_artifact, verify_corpus
+
+        def conversation(source_marker):
+            message = self.message(
+                "m-u",
+                "user",
+                "multimodal_text",
+                ["same caption"],
+                10.0,
+            )
+            message["content"]["source_marker"] = source_marker
+            mapping = {
+                "r": self.node("r", None, None),
+                "u": self.node("u", "r", message),
+                "a": self.node(
+                    "a",
+                    "u",
+                    self.message("m-a", "assistant", "text", ["answer"], 20.0),
+                ),
+            }
+            return self.conversation(
+                cid="text-only-lineage-conflict", current="a", mapping=mapping
+            )
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            first = materialize_export(
+                self.write_export(root, [conversation("source-a")]),
+                root / "first",
+            )[0]
+            second_source = root / "second-export.zip"
+            with zipfile.ZipFile(second_source, "w") as zf:
+                zf.writestr(
+                    "conversations-000.json",
+                    json.dumps([conversation("source-b")]),
+                )
+            second = materialize_export(second_source, root / "second")[0]
+            corpus = root / "corpus"
+            self.assertEqual(ingest_artifact(first, corpus)["status"], "INGESTED")
+            with self.assertRaisesRegex(
+                RuntimeError, "FAILED_CONFLICTING_DUPLICATE"
+            ):
+                ingest_artifact(second, corpus)
+            self.assertEqual(verify_corpus(corpus)["status"], "VERIFIED")
+
     def test_identical_text_projections_with_different_multimodal_lineage_conflict(self):
         from session_search.chatgpt_export import materialize_export
         from session_search.corpus_store import ingest_artifact, verify_corpus
