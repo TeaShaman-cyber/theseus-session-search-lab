@@ -80,6 +80,30 @@ python3 -m session_search.search "lightweight IDE" --recall
 
 `--recall` keeps strict search as the default. It broadens FTS candidate generation to token-OR matching, oversamples candidates, then reranks with session-level token coverage and session-diverse output so one large evidence dump cannot monopolize the result window. This is still lexical historical retrieval, not semantic memory, and a miss remains `UNKNOWN`.
 
+For an explicit local controlled-vocabulary lookup, opt into reconciliation with a JSON registry:
+
+```bash
+python3 -m session_search.search "retrieval augmented generation" \
+  --reconcile-registry /path/to/concepts.json --json
+```
+
+Registry schema v0 contains `id`, `preferred_label`, and `aliases` for each concept. Reconciliation uses exact normalized forms only. It expands aliases only after strict search misses and only when one controlled concept matches. Multiple matching concepts return `AMBIGUOUS_CONCEPT`; no semantic winner is chosen. Alias-expanded and recall-only hits are `CANDIDATE_ONLY`, while strict lexical hits are typed separately as `LEXICAL_EVIDENCE_ELIGIBLE`. Every hit remains `NON_AUTHORITATIVE_RETRIEVAL`: accepted artifacts/messages remain historical evidence authority. `--recall` is independent and must still be requested explicitly. No external vocabulary lookup, embedding model, or new persisted state is used.
+
+Minimal registry example:
+
+```json
+{
+  "schema": "theseus.session-search-controlled-concepts.v0",
+  "concepts": [
+    {
+      "id": "retrieval-augmented-generation",
+      "preferred_label": "retrieval augmented generation",
+      "aliases": ["RAG"]
+    }
+  ]
+}
+```
+
 Strict search combines query tokens with `AND` within one indexed message. That is useful for precise lookup, but a natural-language query can produce a lexical false negative when relevant facts are distributed across several messages, inflection changes a token, or an otherwise helpful extra term is absent from the matching message. A zero-hit strict query therefore does **not** establish a capture or corpus coverage gap.
 
 For continuity reconstruction, use a bounded Sonar-style escalation before classifying history as absent:

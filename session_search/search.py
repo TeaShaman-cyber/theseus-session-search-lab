@@ -199,15 +199,23 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--scope", action="append", choices=["dialogue", "evidence", "trace"])
     parser.add_argument("--limit", type=int, default=8)
     parser.add_argument("--recall", action="store_true", help="Use broader session-level lexical recall ranking.")
+    parser.add_argument(
+        "--reconcile-registry",
+        type=pathlib.Path,
+        help="Opt into local controlled-label/alias reconciliation using a JSON registry.",
+    )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     scopes = args.scope or ["dialogue", "evidence"]
 
+    reconciliation_result = None
     if args.db:
         if args.session:
             parser.error("--session requires corpus search")
         if args.recall:
             parser.error("--recall requires corpus search")
+        if args.reconcile_registry:
+            parser.error("--reconcile-registry requires corpus search")
         rows = search(args.db, args.query, scopes, args.limit)
         corpus_mode = False
     else:
@@ -215,24 +223,54 @@ def main(argv: list[str] | None = None) -> int:
             corpus_root = resolve_corpus_root(args.corpus)
         except ValueError as exc:
             parser.error(str(exc))
-        rows = search_corpus(
-            corpus_root,
-            args.query,
-            scopes,
-            args.limit,
-            session_id=args.session,
-            recall=args.recall,
-        )
+        if args.reconcile_registry:
+            from .reconciliation import load_concept_registry, reconcile_search
+
+            try:
+                registry = load_concept_registry(args.reconcile_registry)
+                reconciliation_result = reconcile_search(
+                    corpus_root,
+                    args.query,
+                    scopes,
+                    args.limit,
+                    registry,
+                    session_id=args.session,
+                    recall=args.recall,
+                )
+            except ValueError as exc:
+                parser.error(str(exc))
+            rows = reconciliation_result["hits"]
+        else:
+            rows = search_corpus(
+                corpus_root,
+                args.query,
+                scopes,
+                args.limit,
+                session_id=args.session,
+                recall=args.recall,
+            )
         corpus_mode = True
 
     if args.json:
-        print(json.dumps(rows, ensure_ascii=False))
+        print(json.dumps(reconciliation_result if reconciliation_result is not None else rows, ensure_ascii=False))
     else:
+        if reconciliation_result is not None:
+            print(
+                f"=== RECONCILIATION state={reconciliation_result['state']} "
+                f"promotion={reconciliation_result['promotion_eligibility']} "
+                f"mode={reconciliation_result['query_mode']} ==="
+            )
         for i, row in enumerate(rows, 1):
             if corpus_mode:
+                suffix = ""
+                if reconciliation_result is not None:
+                    suffix = (
+                        f" basis={row['retrieval_basis']} "
+                        f"promotion={row['promotion_eligibility']}"
+                    )
                 print(
                     f"=== HIT {i} session={row['session_id']} coverage={row['session_coverage']} "
-                    f"scope={row['search_class']} ordinal={row['ordinal']} role={row['role']} ==="
+                    f"scope={row['search_class']} ordinal={row['ordinal']} role={row['role']}{suffix} ==="
                 )
             else:
                 print(
