@@ -5,6 +5,7 @@ import dataclasses
 import hashlib
 import io
 import json
+import math
 import os
 import pathlib
 import re
@@ -32,19 +33,11 @@ class _MaterializedSnapshot:
 
 
 def _stable_json_bytes(obj: object) -> bytes:
-    return json.dumps(obj, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return json.dumps(obj, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
 
 
 def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
-
-
-def _file_sha256(path: pathlib.Path) -> str:
-    h = hashlib.sha256()
-    with pathlib.Path(path).open("rb") as fh:
-        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
-            h.update(chunk)
-    return h.hexdigest()
 
 
 def _conversation_members(zf: zipfile.ZipFile) -> list[str]:
@@ -82,7 +75,10 @@ def _iter_member_conversations(zf: zipfile.ZipFile, member: str) -> tuple[str, I
         def fallback() -> Iterator[dict]:
             try:
                 with zf.open(member) as fh:
-                    obj = json.load(io.TextIOWrapper(fh, encoding="utf-8"))
+                    obj = json.load(
+                    io.TextIOWrapper(fh, encoding="utf-8"),
+                    parse_constant=lambda value: (_ for _ in ()).throw(ValueError(f"nonstandard JSON constant: {value}")),
+                )
             except Exception as exc:
                 raise ValueError("BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: invalid conversations JSON") from exc
             if not isinstance(obj, list):
@@ -127,7 +123,10 @@ def _message_time(node: dict) -> float | None:
         return None
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError("BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: invalid message timestamp")
-    return float(value)
+    result = float(value)
+    if not math.isfinite(result):
+        raise ValueError("BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: invalid message timestamp")
+    return result
 
 
 def _mapping_graph(conversation: dict) -> tuple[dict[str, dict], str, dict[str, list[str]], list[str], str]:
@@ -392,6 +391,29 @@ def _portable_zip_bytes(member: str, payload_bytes: bytes, manifest: dict) -> by
     return buffer.getvalue()
 
 
+def _snapshot_source(source: pathlib.Path, staging_root: pathlib.Path) -> tuple[pathlib.Path, str, int]:
+    source = pathlib.Path(source)
+    snapshot = pathlib.Path(staging_root) / "source-export.zip"
+    digest = hashlib.sha256()
+    size = 0
+    try:
+        with source.open("rb") as src, snapshot.open("xb") as dst:
+            while True:
+                chunk = src.read(1024 * 1024)
+                if not chunk:
+                    break
+                digest.update(chunk)
+                dst.write(chunk)
+                size += len(chunk)
+            dst.flush()
+            os.fsync(dst.fileno())
+    except Exception as exc:
+        raise ValueError("BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: source snapshot failed") from exc
+    if snapshot.stat().st_size != size:
+        raise ValueError("BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: source snapshot size mismatch")
+    return snapshot, digest.hexdigest(), size
+
+
 def _publish_content_addressed(target: pathlib.Path, data: bytes) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.exists():
@@ -419,8 +441,6 @@ def _publish_content_addressed(target: pathlib.Path, data: bytes) -> None:
 def _materialize_export_snapshot(source: pathlib.Path, output_dir: pathlib.Path) -> _MaterializedSnapshot:
     source = pathlib.Path(source)
     output_dir = pathlib.Path(output_dir)
-    parent_sha = _file_sha256(source)
-    source_size = source.stat().st_size
     outputs: list[pathlib.Path] = []
     pending: list[tuple[pathlib.Path, pathlib.Path]] = []
     seen_source_ids: set[str] = set()
@@ -431,8 +451,9 @@ def _materialize_export_snapshot(source: pathlib.Path, output_dir: pathlib.Path)
 
     staging_root = pathlib.Path(tempfile.mkdtemp(prefix="session-search-chatgpt-stage-"))
     try:
+        source_snapshot, parent_sha, source_size = _snapshot_source(source, staging_root)
         try:
-            zf = zipfile.ZipFile(source)
+            zf = zipfile.ZipFile(source_snapshot)
         except Exception as exc:
             raise ValueError("BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: invalid ZIP") from exc
         with zf:

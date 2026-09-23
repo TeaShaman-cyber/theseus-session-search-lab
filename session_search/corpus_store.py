@@ -665,6 +665,10 @@ def _upsert_messages(
                 conn.execute("INSERT INTO messages_fts(rowid,text) VALUES (?,?)", (row_id, message.text))
             novel += 1
         else:
+            if row["canonical_message_sha256"] == message.canonical_message_sha256 and message.projection_source_canonical_sha256 is not None:
+                existing_lineages = _existing_projection_source_digests(conn, paths, row, projection_digest_cache)
+                if existing_lineages and existing_lineages != {message.projection_source_canonical_sha256}:
+                    raise RuntimeError("FAILED_CONFLICTING_DUPLICATE")
             if row["canonical_message_sha256"] != message.canonical_message_sha256:
                 resolution = _linked_projection_resolution(
                     conn,

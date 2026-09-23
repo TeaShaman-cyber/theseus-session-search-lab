@@ -149,6 +149,22 @@ def canonical_message_object(message: dict) -> dict:
     }
 
 
+def _chatgpt_multimodal_text_projection(source_content: dict) -> dict:
+    if source_content.get("content_type") != "multimodal_text":
+        raise ValueError("BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: multimodal projection source type mismatch")
+    parts = source_content.get("parts")
+    if not isinstance(parts, list):
+        raise ValueError("BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: multimodal projection source parts malformed")
+    text_parts: list[object] = []
+    for part in parts:
+        if isinstance(part, (str, int, float)) and not isinstance(part, bool):
+            text_parts.append(part)
+            continue
+        if isinstance(part, dict) and part.get("content_type") == "audio_transcription" and isinstance(part.get("text"), str):
+            text_parts.append(part["text"])
+    return {"content_type": "text", "parts": text_parts}
+
+
 def _page_time_bounds(messages: list[dict]) -> tuple[float | None, float | None]:
     values = [float(m["create_time"]) for m in messages if isinstance(m.get("create_time"), (int, float))]
     return (min(values), max(values)) if values else (None, None)
@@ -242,6 +258,7 @@ def normalize_artifact(source: pathlib.Path) -> NormalizedArtifact:
     projection_source_digests: dict[str, str] = {}
     if str(manifest.get("source_adapter") or "") == "chatgpt-export":
         trace_digests: dict[str, str] = {}
+        trace_projection_digests: dict[str, str] = {}
         for page in raw_pages:
             for message in page["messages"]:
                 metadata = message.get("metadata") if isinstance(message.get("metadata"), dict) else {}
@@ -254,10 +271,14 @@ def normalize_artifact(source: pathlib.Path) -> NormalizedArtifact:
                 if not isinstance(source_message_id, str) or not source_message_id or not isinstance(source_content, dict):
                     raise ValueError("BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: malformed multimodal projection trace")
                 digest = _sha256_json(canonical_message_object({"author": {"role": source_role}, "content": source_content}))
+                projected_content = _chatgpt_multimodal_text_projection(source_content)
+                projection_digest = _sha256_json(canonical_message_object({"author": {"role": source_role}, "content": projected_content}))
                 previous = trace_digests.get(source_message_id)
-                if previous is not None and previous != digest:
+                previous_projection = trace_projection_digests.get(source_message_id)
+                if (previous is not None and previous != digest) or (previous_projection is not None and previous_projection != projection_digest):
                     raise ValueError("BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: conflicting multimodal projection trace")
                 trace_digests[source_message_id] = digest
+                trace_projection_digests[source_message_id] = projection_digest
 
         for page in raw_pages:
             for message in page["messages"]:
@@ -267,13 +288,26 @@ def normalize_artifact(source: pathlib.Path) -> NormalizedArtifact:
                 raw_id = str(message.get("id") or "")
                 if not raw_id:
                     raise ValueError("BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: projected multimodal message id missing")
+                content = message.get("content") if isinstance(message.get("content"), dict) else {}
+                author = message.get("author") if isinstance(message.get("author"), dict) else {}
+                source_role = metadata.get("chatgpt_source_role")
+                if metadata.get("chatgpt_source_content_type") != "multimodal_text" or str(content.get("content_type") or "") != "text":
+                    raise ValueError("BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: multimodal projection lineage missing")
+                projected_digest = _sha256_json(canonical_message_object(message))
                 digest = trace_digests.get(raw_id)
+                expected_projection_digest = trace_projection_digests.get(raw_id)
                 if digest is None:
-                    content = message.get("content") if isinstance(message.get("content"), dict) else {}
-                    if metadata.get("chatgpt_source_content_type") != "multimodal_text" or str(content.get("content_type") or "") != "text":
+                    parts = content.get("parts")
+                    if not isinstance(parts, list) or any(
+                        not isinstance(part, (str, int, float)) or isinstance(part, bool)
+                        for part in parts
+                    ):
                         raise ValueError("BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: multimodal projection lineage missing")
-                    source_content = {"content_type": "multimodal_text", "parts": content.get("parts") or []}
-                    digest = _sha256_json(canonical_message_object({"author": {"role": metadata.get("chatgpt_source_role")}, "content": source_content}))
+                    source_content = {"content_type": "multimodal_text", "parts": parts}
+                    digest = _sha256_json(canonical_message_object({"author": {"role": source_role}, "content": source_content}))
+                    expected_projection_digest = _sha256_json(canonical_message_object({"author": {"role": source_role}, "content": content}))
+                if author.get("role") != source_role or projected_digest != expected_projection_digest:
+                    raise ValueError("BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: multimodal projection payload mismatch")
                 projection_source_digests[raw_id] = digest
 
     canonical: dict[str, dict] = {}

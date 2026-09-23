@@ -201,6 +201,80 @@ class ChatGPTExportAdapterTest(unittest.TestCase):
                 self.assertEqual(rebuild_corpus(corpus)["status"], "REBUILT")
                 self.assertEqual(verify_corpus(corpus)["status"], "VERIFIED")
 
+    def test_multimodal_projection_must_match_traced_source_content(self):
+        from session_search.chatgpt_export import materialize_export
+
+        mapping = {
+            "r": self.node("r", None, None),
+            "u": self.node(
+                "u",
+                "r",
+                self.message(
+                    "m-u",
+                    "user",
+                    "multimodal_text",
+                    ["caption", {"content_type": "image_asset_pointer", "asset_pointer": "file-a"}],
+                    10.0,
+                ),
+            ),
+            "a": self.node("a", "u", self.message("m-a", "assistant", "text", ["answer"], 20.0)),
+        }
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            child = materialize_export(
+                self.write_export(root, [self.conversation(cid="projection-tamper", current="a", mapping=mapping)]),
+                root / "out",
+            )[0]
+            manifest, payload = self.payload(child)
+            projected = next(m for m in payload["messages"] if (m.get("metadata") or {}).get("chatgpt_projection") == "multimodal-text")
+            projected["content"]["parts"] = ["unrelated searchable text"]
+            member = manifest["files"][0]["name"]
+            data = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+            manifest["files"][0]["bytes"] = len(data)
+            manifest["files"][0]["sha256"] = hashlib.sha256(data).hexdigest()
+            tampered = root / "tampered.zip"
+            with zipfile.ZipFile(tampered, "w") as zf:
+                zf.writestr("manifest.json", json.dumps(manifest, sort_keys=True))
+                zf.writestr(member, data)
+            with self.assertRaisesRegex(ValueError, "multimodal projection .*mismatch"):
+                normalize_artifact(tampered)
+
+    def test_identical_text_projections_with_different_multimodal_lineage_conflict(self):
+        from session_search.chatgpt_export import materialize_export
+        from session_search.corpus_store import ingest_artifact, verify_corpus
+
+        def conversation(asset_pointer):
+            mapping = {
+                "r": self.node("r", None, None),
+                "u": self.node(
+                    "u",
+                    "r",
+                    self.message(
+                        "m-u",
+                        "user",
+                        "multimodal_text",
+                        ["same caption", {"content_type": "image_asset_pointer", "asset_pointer": asset_pointer}],
+                        10.0,
+                    ),
+                ),
+                "a": self.node("a", "u", self.message("m-a", "assistant", "text", ["answer"], 20.0)),
+            }
+            return self.conversation(cid="lineage-conflict", current="a", mapping=mapping)
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            first_source = self.write_export(root, [conversation("file-a")])
+            first = materialize_export(first_source, root / "first")[0]
+            second_source = root / "second-export.zip"
+            with zipfile.ZipFile(second_source, "w") as zf:
+                zf.writestr("conversations-000.json", json.dumps([conversation("file-b")]))
+            second = materialize_export(second_source, root / "second")[0]
+            corpus = root / "corpus"
+            self.assertEqual(ingest_artifact(first, corpus)["status"], "INGESTED")
+            with self.assertRaisesRegex(RuntimeError, "FAILED_CONFLICTING_DUPLICATE"):
+                ingest_artifact(second, corpus)
+            self.assertEqual(verify_corpus(corpus)["status"], "VERIFIED")
+
     def test_legacy_single_conversations_json_is_supported(self):
         from session_search.chatgpt_export import materialize_export
 
@@ -262,6 +336,20 @@ class ChatGPTExportAdapterTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "current_node must be terminal"):
                 materialize_export(self.write_export(root, [nonterminal]), root / "nonterminal-out")
 
+    def test_stdlib_fallback_rejects_nonstandard_nan_timestamp(self):
+        from unittest import mock
+        import sys
+        from session_search.chatgpt_export import materialize_export
+
+        bad = self.conversation(cid="nan-time")
+        bad["mapping"]["a"]["message"]["create_time"] = float("nan")
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            source = self.write_export(root, [bad])
+            with mock.patch.dict(sys.modules, {"ijson": None}):
+                with self.assertRaisesRegex(ValueError, "BLOCKED_UNSUPPORTED_CHATGPT_EXPORT"):
+                    materialize_export(source, root / "out")
+
     def test_tied_fork_timestamps_fail_closed_instead_of_using_json_order(self):
         from session_search.chatgpt_export import materialize_export
 
@@ -281,6 +369,43 @@ class ChatGPTExportAdapterTest(unittest.TestCase):
             source = self.write_export(root, [duplicate, duplicate], split=True)
             with self.assertRaisesRegex(ValueError, "duplicate conversation id"):
                 materialize_export(source, root / "out")
+
+    def test_source_path_replacement_after_snapshot_does_not_change_consumed_bytes(self):
+        from unittest import mock
+        import session_search.chatgpt_export as chatgpt_export
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            source = self.write_export(root, [self.conversation(cid="snapshot-original", title="Original snapshot")])
+            original = source.read_bytes()
+
+            replacement_path = root / "replacement.zip"
+            with zipfile.ZipFile(replacement_path, "w") as zf:
+                zf.writestr(
+                    "conversations-000.json",
+                    json.dumps([self.conversation(cid="snapshot-replacement", title="Replacement snapshot")]),
+                )
+            replacement = replacement_path.read_bytes()
+
+            real_snapshot = chatgpt_export._snapshot_source
+            source_replaced = False
+
+            def racing_snapshot(source_path, staging_root):
+                nonlocal source_replaced
+                result = real_snapshot(source_path, staging_root)
+                source.write_bytes(replacement)
+                source_replaced = True
+                return result
+
+            with mock.patch("session_search.chatgpt_export._snapshot_source", side_effect=racing_snapshot):
+                outputs = chatgpt_export.materialize_export(source, root / "out")
+
+            self.assertTrue(source_replaced)
+            self.assertEqual(len(outputs), 2)
+            manifests = [self.payload(path)[0] for path in outputs]
+            artifacts = [normalize_artifact(path) for path in outputs]
+            self.assertEqual({m["source_export_sha256"] for m in manifests}, {hashlib.sha256(original).hexdigest()})
+            self.assertTrue(all(artifact.session_id.startswith("snapshot-original") for artifact in artifacts))
 
     def test_child_artifacts_bind_parent_zip_hash_and_are_content_addressed(self):
         from session_search.chatgpt_export import materialize_export
