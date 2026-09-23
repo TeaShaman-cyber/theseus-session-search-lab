@@ -1675,19 +1675,6 @@ def _plan_projection_routes_for_entries(
     )
     routes: dict[str, ProjectionRoute] = {}
     for sha, entry in sorted(entries.items()):
-        session_id = str(entry["session_id"])
-        if (
-            entry.get("source_adapter") == "chatgpt-export"
-            or session_id not in families
-            or len(families[session_id]) <= 1
-        ):
-            routes[sha] = ProjectionRoute(
-                accepted_session_id=session_id,
-                projected_session_id=session_id,
-                state="DIRECT",
-                reason="explicit_session_identity",
-            )
-            continue
         artifact = _normalize_accepted_entry(paths, sha, entry)
         routes[sha] = route_artifact(artifact, families)
     return routes

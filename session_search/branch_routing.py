@@ -34,15 +34,19 @@ def _message_evidence(artifact: NormalizedArtifact) -> set[tuple[str, str]]:
 def build_official_families(
     artifacts: Iterable[NormalizedArtifact],
 ) -> OfficialFamilies:
+    materialized = [
+        artifact
+        for artifact in artifacts
+        if artifact.source_adapter == "chatgpt-export"
+    ]
     snapshot_expected: dict[tuple[str, str], int] = {}
     snapshot_branches: dict[tuple[str, str], set[str]] = defaultdict(set)
+    source_has_branched_snapshot: dict[str, bool] = defaultdict(bool)
     families: dict[str, dict[str, set[tuple[str, str]]]] = defaultdict(
         lambda: defaultdict(set)
     )
 
-    for artifact in artifacts:
-        if artifact.source_adapter != "chatgpt-export":
-            continue
+    for artifact in materialized:
         if (
             artifact.source_export_sha256 is None
             or artifact.source_conversation_id is None
@@ -63,9 +67,8 @@ def build_official_families(
             )
         snapshot_expected[snapshot_key] = artifact.branch_count
         snapshot_branches[snapshot_key].add(artifact.session_id)
-        families[artifact.source_conversation_id][artifact.session_id].update(
-            _message_evidence(artifact)
-        )
+        if artifact.branch_count > 1:
+            source_has_branched_snapshot[artifact.source_conversation_id] = True
 
     for snapshot_key, expected_count in snapshot_expected.items():
         source_id = snapshot_key[1]
@@ -76,6 +79,14 @@ def build_official_families(
             )
         if source_id not in branch_ids:
             raise RuntimeError("RECONCILIATION_REQUIRED: ChatGPT base branch missing")
+
+    for artifact in materialized:
+        source_id = artifact.source_conversation_id
+        assert source_id is not None
+        assert artifact.branch_count is not None
+        if source_has_branched_snapshot[source_id] and artifact.branch_count == 1:
+            continue
+        families[source_id][artifact.session_id].update(_message_evidence(artifact))
     return {source: dict(branches) for source, branches in families.items()}
 
 
@@ -89,11 +100,7 @@ def route_artifact(
         else artifact.session_id
     )
     branches = families.get(source_id)
-    if (
-        artifact.source_adapter == "chatgpt-export"
-        or not branches
-        or len(branches) <= 1
-    ):
+    if not branches or len(branches) <= 1:
         return ProjectionRoute(
             accepted_session_id=artifact.session_id,
             projected_session_id=artifact.session_id,
