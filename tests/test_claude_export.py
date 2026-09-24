@@ -79,8 +79,8 @@ class ClaudeExportAdapterTest(unittest.TestCase):
             self.assertEqual(artifact.session_id, "conv-1")
             self.assertEqual([m.text for m in artifact.messages if m.search_class == "dialogue"], ["question", "visible answer"])
             trace = [m for m in artifact.messages if m.search_class == "trace"]
-            self.assertEqual(len(trace), 1)
-            self.assertEqual(trace[0].content_type, "claude_nontext_trace")
+            self.assertEqual(len(trace), 2)
+            self.assertEqual({m.content_type for m in trace}, {"claude_thinking", "claude_tool_use"})
             manifest, payload = self.payload(outputs[0])
             self.assertEqual(manifest["source_adapter"], "claude-export")
             self.assertEqual(payload["claude_snapshot_scope"], "ACCOUNT_EXPORT_SNAPSHOT")
@@ -99,7 +99,7 @@ class ClaudeExportAdapterTest(unittest.TestCase):
     def test_parent_links_materialize_each_leaf_without_flattening(self):
         from session_search.claude_export import materialize_export
 
-        zero = "00000000-0000-0000-0000-000000000000"
+        zero = "00000000-0000-4000-8000-000000000000"
         messages = [
             self.message("u", "human", [{"type": "text", "text": "question"}], "2026-09-24T08:00:00Z", parent=zero),
             self.message("a", "assistant", [{"type": "text", "text": "answer A"}], "2026-09-24T08:00:01Z", parent="u"),
@@ -110,16 +110,15 @@ class ClaudeExportAdapterTest(unittest.TestCase):
             outputs = materialize_export(self.write_zip(root, [self.conversation(cid="branched", messages=messages)]), root / "out")
             self.assertEqual(len(outputs), 2)
             artifacts = {normalize_artifact(path).session_id: normalize_artifact(path) for path in outputs}
-            self.assertIn("branched", artifacts)
             branch_ids = [sid for sid in artifacts if sid.startswith("branched~branch-")]
-            self.assertEqual(len(branch_ids), 1)
-            self.assertEqual([m.text for m in artifacts["branched"].messages if m.search_class == "dialogue"], ["question", "answer A"])
-            self.assertEqual([m.text for m in artifacts[branch_ids[0]].messages if m.search_class == "dialogue"], ["question", "answer B"])
+            self.assertEqual(len(branch_ids), 2)
+            dialogue_paths = sorted([m.text for m in artifacts[sid].messages if m.search_class == "dialogue"] for sid in branch_ids)
+            self.assertEqual(dialogue_paths, [["question", "answer A"], ["question", "answer B"]])
 
-    def test_branched_export_with_tied_child_times_fails_closed(self):
+    def test_branched_export_with_tied_child_times_keeps_both_branches(self):
         from session_search.claude_export import materialize_export
 
-        zero = "00000000-0000-0000-0000-000000000000"
+        zero = "00000000-0000-4000-8000-000000000000"
         messages = [
             self.message("u", "human", [{"type": "text", "text": "question"}], "2026-09-24T08:00:00Z", parent=zero),
             self.message("a", "assistant", [{"type": "text", "text": "answer A"}], "2026-09-24T08:00:01Z", parent="u"),
@@ -127,13 +126,15 @@ class ClaudeExportAdapterTest(unittest.TestCase):
         ]
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)
-            with self.assertRaisesRegex(ValueError, "ambiguous branch"):
-                materialize_export(self.write_json(root, [self.conversation(messages=messages)]), root / "out")
+            outputs = materialize_export(self.write_json(root, [self.conversation(cid="tied", messages=messages)]), root / "out")
+            self.assertEqual(len(outputs), 2)
+            session_ids = {normalize_artifact(path).session_id for path in outputs}
+            self.assertTrue(all(sid.startswith("tied~branch-") for sid in session_ids))
 
     def test_mixed_missing_parent_graph_fails_closed(self):
         from session_search.claude_export import materialize_export
 
-        zero = "00000000-0000-0000-0000-000000000000"
+        zero = "00000000-0000-4000-8000-000000000000"
         messages = [
             self.message("u", "human", [{"type": "text", "text": "question"}], "2026-09-24T08:00:00Z", parent=zero),
             self.message("a", "assistant", [{"type": "text", "text": "answer"}], "2026-09-24T08:00:01Z"),
@@ -166,6 +167,32 @@ class ClaudeExportAdapterTest(unittest.TestCase):
             self.assertEqual(len(second), 1)
             self.assertEqual(first[0].name, second[0].name)
             self.assertEqual(first[0].read_bytes(), second[0].read_bytes())
+
+
+    def test_virtual_2026_contract_fixture(self):
+        from session_search.claude_export import materialize_export
+
+        fixture = pathlib.Path(__file__).parent / "fixtures" / "claude_export_virtual" / "conversations.json"
+        with tempfile.TemporaryDirectory() as td:
+            outputs = materialize_export(fixture, pathlib.Path(td) / "out")
+            self.assertEqual(len(outputs), 3)
+            artifacts = [normalize_artifact(path) for path in outputs]
+            branch = [a for a in artifacts if a.session_id.startswith("virtual-branch-conversation~branch-")]
+            self.assertEqual(len(branch), 2)
+            self.assertFalse(any(a.session_id == "virtual-branch-conversation" for a in artifacts))
+            fallback = next(a for a in artifacts if a.session_id == "virtual-fallback-conversation")
+            dialogue = [m.text for m in fallback.messages if m.search_class == "dialogue"]
+            self.assertEqual(dialogue, ["fallback text canary", "voice transcript canary"])
+            branch_dialogue = [[m.text for m in a.messages if m.search_class == "dialogue"] for a in branch]
+            self.assertTrue(any("Branch A answer." in row for row in branch_dialogue))
+            self.assertTrue(any("Branch B answer." in row for row in branch_dialogue))
+            content_types = {m.content_type for a in branch for m in a.messages}
+            self.assertIn("claude_thinking", content_types)
+            self.assertIn("claude_tool_use", content_types)
+            self.assertIn("claude_tool_result", content_types)
+            self.assertIn("claude_token_budget", content_types)
+            self.assertIn("claude_attachment", content_types)
+            self.assertIn("claude_file_ref", content_types)
 
     def test_direct_ingest_is_idempotent_and_verifiable(self):
         from session_search.claude_export import ingest_export

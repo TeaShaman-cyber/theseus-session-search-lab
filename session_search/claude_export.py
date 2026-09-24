@@ -20,7 +20,10 @@ SNAPSHOT_SCOPE = "ACCOUNT_EXPORT_SNAPSHOT"
 _FIXED_ZIP_TIME = (1980, 1, 1, 0, 0, 0)
 _SAFE_ID = re.compile(r"[^A-Za-z0-9._~-]+")
 _CONVERSATIONS_MEMBER = re.compile(r"(?:^|/)conversations(?:-\d+)?\.json$")
-_ZERO_UUID = "00000000-0000-0000-0000-000000000000"
+_ROOT_PARENT_SENTINELS = {
+    "00000000-0000-4000-8000-000000000000",
+    "00000000-0000-0000-0000-000000000000",
+}
 
 
 @dataclasses.dataclass(frozen=True)
@@ -169,7 +172,7 @@ def _graph_paths(messages: list[dict]) -> tuple[list[list[dict]], bool]:
     roots: list[str] = []
     for message_id, message in by_id.items():
         parent = message.get("parent_message_uuid")
-        if parent in (None, "", _ZERO_UUID):
+        if parent in (None, "") or parent in _ROOT_PARENT_SENTINELS:
             roots.append(message_id)
             continue
         if not isinstance(parent, str) or parent not in by_id:
@@ -218,37 +221,20 @@ def _graph_paths(messages: list[dict]) -> tuple[list[list[dict]], bool]:
     return paths, True
 
 
-def _default_child(parent: dict, siblings: list[dict]) -> str:
-    if len(siblings) == 1:
-        return _source_message_id(siblings[0])
-    observed: list[tuple[float, str]] = []
-    for message in siblings:
-        value = _message_time(message)
-        if value is None:
-            raise ValueError("BLOCKED_UNSUPPORTED_CLAUDE_EXPORT: ambiguous branch without child timestamps")
-        observed.append((value, _source_message_id(message)))
-    times = [value for value, _ in observed]
-    if len(set(times)) != len(times):
-        raise ValueError("BLOCKED_UNSUPPORTED_CLAUDE_EXPORT: ambiguous branch with tied child timestamps")
-    return min(observed)[1]
-
-
-def _branch_session_id(source_id: str, path: list[dict], all_messages: list[dict]) -> tuple[str, list[list[str]]]:
+def _branch_session_id(source_id: str, path: list[dict], all_messages: list[dict], branch_count: int) -> tuple[str, list[list[str]]]:
+    if branch_count <= 1:
+        return source_id, []
     by_parent: dict[str, list[dict]] = {}
     for message in all_messages:
         parent = message.get("parent_message_uuid")
-        if isinstance(parent, str) and parent not in ("", _ZERO_UUID):
+        if isinstance(parent, str) and parent and parent not in _ROOT_PARENT_SENTINELS:
             by_parent.setdefault(parent, []).append(message)
     choices: list[list[str]] = []
     for parent, child in zip(path, path[1:]):
         parent_id = _source_message_id(parent)
-        siblings = by_parent.get(parent_id, [])
-        child_id = _source_message_id(child)
-        if len(siblings) > 1 and child_id != _default_child(parent, siblings):
-            choices.append([parent_id, child_id])
-    if not choices:
-        return source_id, choices
-    digest = _sha256(_stable_json_bytes(choices))[:12]
+        if len(by_parent.get(parent_id, [])) > 1:
+            choices.append([parent_id, _source_message_id(child)])
+    digest = _sha256(_stable_json_bytes([_source_message_id(m) for m in path]))[:12]
     return f"{source_id}~branch-{digest}", choices
 
 
@@ -260,6 +246,18 @@ def _mapped_role(sender: object) -> str:
     return "unknown"
 
 
+def _trace_projection(message_id: str, sender: object, created: float | None, base_metadata: dict, order: int, content_type: str, payload: dict) -> dict:
+    trace_source = {"source_message_uuid": message_id, "sender": sender, **payload}
+    trace_id = f"{message_id}~{content_type}-{_sha256(_stable_json_bytes(trace_source))[:12]}"
+    return {
+        "id": trace_id,
+        "author": {"role": "unknown"},
+        "create_time": created,
+        "content": {"content_type": content_type, **trace_source},
+        "metadata": {**base_metadata, "claude_projection": content_type, "claude_source_message_uuid": message_id, "session_search_order": order},
+    }
+
+
 def _convert_message(message: dict, order: int) -> tuple[list[dict], int]:
     message_id = _source_message_id(message)
     sender = message.get("sender")
@@ -267,8 +265,9 @@ def _convert_message(message: dict, order: int) -> tuple[list[dict], int]:
     content = message.get("content")
     if not isinstance(content, list):
         raise ValueError("BLOCKED_UNSUPPORTED_CLAUDE_EXPORT: message content must be list")
+
     text_parts: list[str] = []
-    nontext_blocks: list[dict] = []
+    traces: list[tuple[str, dict]] = []
     for block in content:
         if not isinstance(block, dict):
             raise ValueError("BLOCKED_UNSUPPORTED_CLAUDE_EXPORT: content block must be object")
@@ -277,54 +276,59 @@ def _convert_message(message: dict, order: int) -> tuple[list[dict], int]:
             text = block.get("text")
             if not isinstance(text, str):
                 raise ValueError("BLOCKED_UNSUPPORTED_CLAUDE_EXPORT: text block text must be string")
-            text_parts.append(text)
+            if text:
+                text_parts.append(text)
+        elif block_type == "voice_note":
+            transcript = block.get("text")
+            if transcript not in (None, "") and not isinstance(transcript, str):
+                raise ValueError("BLOCKED_UNSUPPORTED_CLAUDE_EXPORT: voice_note text must be string")
+            if role == "user" and transcript:
+                text_parts.append(transcript)
+            traces.append(("claude_voice_note", block))
+        elif block_type in {"thinking", "tool_use", "tool_result", "token_budget"}:
+            traces.append((f"claude_{block_type}", block))
         else:
-            nontext_blocks.append(block)
+            traces.append(("claude_unknown_block", block))
+
+    top_text = message.get("text")
+    if top_text not in (None, "") and not isinstance(top_text, str):
+        raise ValueError("BLOCKED_UNSUPPORTED_CLAUDE_EXPORT: message text must be string")
+    if not text_parts and isinstance(top_text, str) and top_text:
+        text_parts.append(top_text)
 
     attachments = message.get("attachments", [])
     files = message.get("files", [])
     if not isinstance(attachments, list) or not isinstance(files, list):
         raise ValueError("BLOCKED_UNSUPPORTED_CLAUDE_EXPORT: attachments/files must be lists")
+    for attachment in attachments:
+        if not isinstance(attachment, dict):
+            raise ValueError("BLOCKED_UNSUPPORTED_CLAUDE_EXPORT: attachment must be object")
+        traces.append(("claude_attachment", attachment))
+    for file_ref in files:
+        if not isinstance(file_ref, dict):
+            raise ValueError("BLOCKED_UNSUPPORTED_CLAUDE_EXPORT: file reference must be object")
+        traces.append(("claude_file_ref", file_ref))
+
     created = _message_time(message)
-    base_metadata = {
-        "claude_source_sender": sender,
-        "claude_parent_message_uuid": message.get("parent_message_uuid"),
-        "claude_updated_at": message.get("updated_at"),
-    }
+    base_metadata = {"claude_source_sender": sender, "claude_parent_message_uuid": message.get("parent_message_uuid"), "claude_updated_at": message.get("updated_at")}
     converted: list[dict] = []
     if text_parts and role in {"user", "assistant"}:
+        has_text_block = any(isinstance(block, dict) and block.get("type") == "text" for block in content)
         converted.append({
             "id": message_id,
             "author": {"role": role},
             "create_time": created,
             "content": {"content_type": "text", "parts": text_parts},
-            "metadata": {**base_metadata, "claude_projection": "text-blocks", "session_search_order": order},
+            "metadata": {**base_metadata, "claude_projection": "content-text" if has_text_block else "text-fallback", "session_search_order": order},
         })
         order += 1
 
-    needs_trace = bool(nontext_blocks or attachments or files or role == "unknown" or not converted)
-    if needs_trace:
-        trace_source = {
-            "source_message_uuid": message_id,
-            "sender": sender,
-            "content": content if not converted else nontext_blocks,
-            "attachments": attachments,
-            "files": files,
-            "flat_text": message.get("text"),
-        }
-        trace_id = f"{message_id}~claude-trace-{_sha256(_stable_json_bytes(trace_source))[:12]}"
-        converted.append({
-            "id": trace_id,
-            "author": {"role": "unknown"},
-            "create_time": created,
-            "content": {"content_type": "claude_nontext_trace", **trace_source},
-            "metadata": {
-                **base_metadata,
-                "claude_projection": "nontext-trace",
-                "claude_source_message_uuid": message_id,
-                "session_search_order": order,
-            },
-        })
+    for content_type, block in traces:
+        converted.append(_trace_projection(message_id, sender, created, base_metadata, order, content_type, {"block": block}))
+        order += 1
+
+    if not converted:
+        converted.append(_trace_projection(message_id, sender, created, base_metadata, order, "claude_empty_message", {"flat_text": top_text, "content": content}))
         order += 1
     return converted, order
 
@@ -337,7 +341,7 @@ def _conversation_variants(conversation: dict) -> list[dict]:
     variants: list[dict] = []
     for path in paths:
         if graph_mode:
-            session_id, branch_choices = _branch_session_id(source_id, path, messages)
+            session_id, branch_choices = _branch_session_id(source_id, path, messages, len(paths))
         else:
             session_id, branch_choices = source_id, []
         output_messages: list[dict] = []
