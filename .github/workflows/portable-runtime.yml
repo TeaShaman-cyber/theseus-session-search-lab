@@ -113,6 +113,7 @@ jobs:
               assert manifest['source'] == receipt['source']
               assert manifest['dependencies'] == {'python': 'stdlib-only'}
               assert 'python3 -m session_search.chatgpt_export' in manifest['entrypoints']
+              assert 'python3 -m session_search.claude_export' in manifest['entrypoints']
               member_paths = {item['path'] for item in manifest['members']}
               for entrypoint in manifest['entrypoints']:
                   module = entrypoint.removeprefix('python3 -m ')

@@ -218,6 +218,22 @@ The branch-aware projection schema is `session-search-corpus-v2`. An existing v1
 
 Plain user/assistant text is indexed as dialogue. `thoughts` and `reasoning_recap` remain hidden evidence under the existing normalization contract. For `multimodal_text`, textual parts and audio transcriptions are projected into searchable dialogue while the full provider multimodal payload and message metadata are retained in a non-dialogue trace record. Child artifacts bind the parent ZIP SHA-256 and use immutable content-addressed names. Public regression tests use synthetic fixtures only; private export bytes, text, IDs, URLs, and source digests are never committed.
 
+### Official Claude account-export adapter
+
+Official Claude account exports can be transcoded into the same portable Session Search artifact contract. Current Anthropic exports may arrive as a manifest plus category ZIPs; the adapter consumes the downloaded conversations payload (`conversations-000.zip` or a raw `conversations.json`), not the one-time manifest URL itself.
+
+```bash
+python3 -m session_search.claude_export conversations-000.zip --output-dir ./claude-artifacts
+```
+
+Or ingest directly into the cumulative corpus:
+
+```bash
+python3 -m session_search.claude_export conversations-000.zip --corpus /private/path/session-search-corpus
+```
+
+`human` and `assistant` text blocks become searchable dialogue. Thinking, tool-use/tool-result, unknown block types, and file/attachment metadata are retained as non-dialogue trace rather than flattened into visible text. When complete `parent_message_uuid` links are present, the adapter materializes deterministic root-to-leaf branch variants; without graph metadata it preserves the exported message sequence. Account-export snapshots remain conservatively `PARTIAL_SESSION_SLICE`, every child binds the exact parent export SHA-256, and public tests use synthetic fixtures only. Real export bytes, one-time URLs, conversation text, account identifiers, and source digests remain private acceptance evidence.
+
 ### Official xAI/Grok export adapter
 
 Official xAI data-export ZIPs can be transcoded into the same portable Session Search artifact contract without a provider-specific database or search path. The adapter reads the single `prod-grok-backend.json` payload from the official ZIP, binds every child artifact to the parent ZIP SHA-256, and uses content-addressed immutable child names.
