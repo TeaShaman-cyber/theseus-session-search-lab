@@ -194,6 +194,53 @@ class ClaudeExportAdapterTest(unittest.TestCase):
             self.assertIn("claude_attachment", content_types)
             self.assertIn("claude_file_ref", content_types)
 
+    def test_virtual_edge_contract_fixture(self):
+        from session_search.claude_export import materialize_export
+
+        fixture = pathlib.Path(__file__).parent / "fixtures" / "claude_export_virtual" / "edge-cases.json"
+        with tempfile.TemporaryDirectory() as td:
+            outputs = materialize_export(fixture, pathlib.Path(td) / "out")
+            artifacts = [normalize_artifact(path) for path in outputs]
+
+            nested = [a for a in artifacts if a.session_id.startswith("virtual-nested-branches~branch-")]
+            self.assertEqual(len(nested), 3)
+            nested_paths = sorted([m.text for m in a.messages if m.search_class == "dialogue"] for a in nested)
+            self.assertEqual(nested_paths, [
+                ["root", "shared", "left", "followup", "left-a"],
+                ["root", "shared", "left", "followup", "left-b"],
+                ["root", "shared", "right"],
+            ])
+
+            future = next(a for a in artifacts if a.session_id == "virtual-future-block")
+            self.assertEqual([m.text for m in future.messages if m.search_class == "dialogue"], ["future", "visible"])
+            self.assertIn("claude_unknown_block", {m.content_type for m in future.messages})
+
+            tool_path = next(path for path in outputs if normalize_artifact(path).session_id == "virtual-tool-link")
+            _, tool_payload = self.payload(tool_path)
+            tool_records = [m for m in tool_payload["messages"] if m["content"].get("content_type") in {"claude_tool_use", "claude_tool_result"}]
+            self.assertEqual(len(tool_records), 2)
+            use_block = next(m["content"]["block"] for m in tool_records if m["content"]["content_type"] == "claude_tool_use")
+            result_block = next(m["content"]["block"] for m in tool_records if m["content"]["content_type"] == "claude_tool_result")
+            self.assertEqual(result_block["tool_use_id"], use_block["id"])
+
+            attachment_path = next(path for path in outputs if normalize_artifact(path).session_id == "virtual-attachment-only")
+            attachment = normalize_artifact(attachment_path)
+            self.assertEqual([m for m in attachment.messages if m.search_class == "dialogue"], [])
+            self.assertEqual({m.content_type for m in attachment.messages}, {"claude_attachment"})
+            _, attachment_payload = self.payload(attachment_path)
+            block = attachment_payload["messages"][0]["content"]["block"]
+            self.assertEqual(block["extracted_content"], "attachment only canary")
+
+            self.assertFalse(any(a.session_id == "virtual-empty" for a in artifacts))
+
+    def test_virtual_missing_parent_fails_closed(self):
+        from session_search.claude_export import materialize_export
+
+        fixture = pathlib.Path(__file__).parent / "fixtures" / "claude_export_virtual" / "missing-parent.json"
+        with tempfile.TemporaryDirectory() as td:
+            with self.assertRaisesRegex(ValueError, "broken parent link"):
+                materialize_export(fixture, pathlib.Path(td) / "out")
+
     def test_direct_ingest_is_idempotent_and_verifiable(self):
         from session_search.claude_export import ingest_export
         from session_search.corpus_store import verify_corpus

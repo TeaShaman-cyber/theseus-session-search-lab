@@ -337,6 +337,8 @@ def _conversation_variants(conversation: dict) -> list[dict]:
     source_id = _source_conversation_id(conversation)
     title = _source_title(conversation)
     messages = _messages(conversation)
+    if not messages:
+        return []
     paths, graph_mode = _graph_paths(messages)
     variants: list[dict] = []
     for path in paths:

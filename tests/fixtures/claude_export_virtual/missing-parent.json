@@ -1,0 +1,46 @@
+[
+  {
+    "uuid": "virtual-missing-parent",
+    "name": "Missing parent",
+    "summary": "Synthetic only.",
+    "created_at": "2026-06-10T15:00:00Z",
+    "updated_at": "2026-06-10T15:00:01Z",
+    "account": {
+      "uuid": "virtual-account"
+    },
+    "chat_messages": [
+      {
+        "uuid": "mp-u0",
+        "parent_message_uuid": "00000000-0000-4000-8000-000000000000",
+        "sender": "human",
+        "text": "root",
+        "created_at": "2026-06-10T15:00:00Z",
+        "updated_at": "2026-06-10T15:00:00Z",
+        "content": [
+          {
+            "type": "text",
+            "text": "root"
+          }
+        ],
+        "attachments": [],
+        "files": []
+      },
+      {
+        "uuid": "mp-a0",
+        "parent_message_uuid": "does-not-exist",
+        "sender": "assistant",
+        "text": "orphan",
+        "created_at": "2026-06-10T15:00:01Z",
+        "updated_at": "2026-06-10T15:00:01Z",
+        "content": [
+          {
+            "type": "text",
+            "text": "orphan"
+          }
+        ],
+        "attachments": [],
+        "files": []
+      }
+    ]
+  }
+]
