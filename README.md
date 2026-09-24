@@ -4,6 +4,32 @@ Theseus Session Search Lab is a public research line under the [Theseus public-i
 
 **Session history is evidence, not semantic memory. Search indexes are projections, not authority.**
 
+## Why this exists
+
+Session Search exists to reduce how much continuity depends on either the human or the assistant reconstructing the past from memory or from compressed summaries. Human recollection, model recollection, and summaries are all interpretations; when they disagree, confidence is not a substitute for evidence. A preserved dialogue is stronger evidence of **what was actually said, in what order, and in what context**.
+
+That does not make retrieved dialogue an oracle. A historical transcript can establish that a statement, decision, objection, or revision occurred; it does not by itself prove that the statement was true, that one interpretation of it is uniquely correct, or that the old decision is still authoritative now. Current authority and current operational state still require the appropriate live source, such as current Git state, an Issue/PR, a runtime readback, or another domain-specific authority.
+
+The intended epistemic pattern is therefore:
+
+```text
+human remembers A
+assistant remembers B
+        |
+        v
+retrieve the historical record
+        |
+        v
+establish what was actually recorded
+        |
+        +--> interpret scope/meaning carefully
+        +--> verify current authority separately
+```
+
+This matters especially in disagreements. The system should not resolve a factual conflict merely by treating the human as infallible, nor by treating the assistant's reconstruction as infallible. When historical evidence is available, retrieve it first. If the corpus is partial, the search misses, or the evidence remains ambiguous, the correct result may still be `UNKNOWN` or an unresolved conflict.
+
+In short: **Session Search is an evidence-retrieval layer for continuity, not a mechanism for turning memory into authority.**
+
 The lab studies portable, verifiable historical session retrieval for assistants while keeping capture sources, transports, browsers, and development environments replaceable.
 
 ## Runtime boundary
