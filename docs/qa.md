@@ -22,6 +22,12 @@ The gate composes existing checks rather than defining a second verification sys
 
 The live corpus commands operate on private evidence and therefore are not part of public CI. Public CI exercises the same contracts with synthetic fixtures.
 
+## Deployment/promotion claim boundary
+
+A runtime promotion can be implemented by switching an external stable binding (for example `SESSION_SEARCH_CORPUS`, an explicit deployment path, or a symlink) from one versioned corpus candidate to another. The binding itself is not corpus authority and is not part of the repository's hidden defaults.
+
+Readback after promotion should establish only the concrete deployment postconditions being claimed, such as the resolved target plus a bounded projection identity/count check. Those observations do **not** imply `VERIFIED`. The full `corpus verify` path is the mechanism that binds the current projection back to accepted ledger membership and immutable artifact bytes. If that stronger check is not run, is resource-blocked, or fails for an execution reason, report the promotion and verification states separately rather than collapsing them into one success label.
+
 ## Derived-state rule
 
 `corpus.sqlite3` and FTS are disposable projections, never authority. A projection is not `VERIFIED` merely because SQLite integrity, row counts, and ledger metadata agree internally. Verification must bind the searchable semantic/provenance state back to the accepted ledger plus immutable artifact bytes.
