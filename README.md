@@ -92,6 +92,17 @@ python3 -m session_search.handoff --inbox /path/to/inbox --corpus /private/path/
 
 The handoff scans top-level ZIPs in deterministic filename order, delegates all corpus semantics to the existing idempotent ingest primitive, leaves source files untouched, and writes a private durable handoff receipt for every attempted file including `INGESTED`, `ALREADY_INGESTED`, and `FAILED`. A scheduler, Drive adapter, browser helper, or provider integration may invoke this seam; none becomes core authority.
 
+Before mutating a corpus, a source-agnostic readiness probe can compare an inbox with accepted-ledger membership:
+
+```bash
+python3 -m session_search.refresh_readiness \
+  --inbox /path/to/inbox \
+  --corpus /private/path/session-search-corpus \
+  --json
+```
+
+The readiness probe reports `NEW_ARTIFACTS_PENDING` or `NO_NEW_ARTIFACTS` from artifact SHA-256 membership only. It deliberately reports `source_currentness=UNKNOWN_WITHOUT_SOURCE_WATERMARK`: seeing no new inbox artifact is not proof that the live provider has no newer history. `refresh_action=RUN_HANDOFF` means only that the local inbox contains evidence not yet accepted by that corpus.
+
 Search all accepted sessions together:
 
 ```bash
@@ -174,6 +185,28 @@ python3 -m session_search.corpus lock-status
 ```
 
 An explicit `--corpus PATH` always overrides `SESSION_SEARCH_CORPUS`. There is no hidden default corpus directory. `ingest` and `rebuild` serialize through one corpus mutation lock; search remains read-only.
+
+### Operational corpus binding and promotion
+
+The repository intentionally does not own a hidden production corpus path. A deployment may expose a stable **runtime binding** to one versioned corpus directory through `SESSION_SEARCH_CORPUS`, an explicit `--corpus` argument, or an external pointer such as a symlink managed outside this repository. That pointer is operational state, not evidence authority.
+
+A safe deployment pattern is:
+
+```text
+immutable accepted artifacts + ledger
+        |
+        v
+versioned candidate corpus directory
+        |  validate the claim required for this promotion
+        v
+stable runtime binding  ---> search
+        |
+        +--> previous target retained for rollback
+```
+
+Prepare and inspect a candidate separately from the currently served corpus. Promotion changes only the stable runtime binding, then reads back the resolved target and a small identity/postcondition set appropriate to the deployment. Keep the previous target available until the new binding is confirmed, so rollback is a pointer change rather than a corpus rebuild.
+
+**Promotion readback is not full corpus verification.** Proving that the runtime points at the intended candidate, that SQLite opens, or that expected counts are visible establishes only those bounded postconditions. The stronger `session_search.corpus verify` claim still binds the projection back to accepted artifact evidence. Conversely, a failed or unavailable full audit does not turn a runtime pointer into evidence authority; report the weaker observed state explicitly.
 
 Real corpus directories contain raw private evidence and receipts and must never be committed to this public repository.
 
@@ -316,11 +349,11 @@ A sanitized real-world validation observed 13 captured payload pages and 2,034 u
 
 ## Development roadmap
 
-1. Manual browser capture -> manual transport -> local import/search.
-2. Portable importer/index/search without MarcoPolo.
-3. Automated capture transport and index refresh.
-4. Direct session integration without manual ZIP handoff.
-5. Browserless authoritative session source.
+1. **Established:** manual browser capture -> manual transport -> local import/search.
+2. **Established:** portable importer/index/search without MarcoPolo.
+3. **In progress:** source-agnostic one-shot inbox handoff and refresh-readiness probing are implemented; automated source acquisition/scheduling and cheaper incremental refresh remain open work.
+4. **Open:** direct session integration without manual ZIP handoff.
+5. **Open:** browserless authoritative session source.
 
 ## Wiki bootstrap
 
