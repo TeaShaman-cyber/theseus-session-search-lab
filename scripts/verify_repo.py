@@ -18,6 +18,8 @@ REQUIRED = [
     'session_search/search.py',
     'session_search/chatgpt_export.py',
     'tests/test_chatgpt_export.py',
+    'session_search/claude_export.py',
+    'tests/test_claude_export.py',
     'docs/architecture.md',
     'docs/capture-adapter-contract.md',
     'docs/research-lifecycle.md',
