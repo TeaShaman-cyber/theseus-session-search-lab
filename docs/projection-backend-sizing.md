@@ -62,7 +62,7 @@ At 75,000 rows, the `messages` relation family accounted for 733,257,728 bytes (
 - indexes: 393,928,704 bytes (~375.7 MiB);
 - remaining relation storage, primarily TOAST/auxiliary data: ~224.0 MiB.
 
-A linear extrapolation of the measured slope to the current 167,297 searchable-message shape is about 1.53 GiB. Therefore the current searchable corpus does not plausibly fit in one 1-GiB Neon Free project with safe growth headroom.
+A linear extrapolation of the measured slope to the current 167,297 searchable-message shape is about 1.53 GiB. Therefore the current searchable corpus does not plausibly fit in one 1 GB Neon Free project with safe growth headroom.
 
 ### SQLite/FTS5
 
@@ -134,7 +134,7 @@ local SQLite/FTS projection or cache
 
 Shard closure should be driven by observed Postgres logical/database size, not raw export bytes, SQLite file size, or a fixed message count.
 
-For the current ChatGPT searchable density, an initial operational target of roughly **700 MiB per active shard** corresponds to about **70-75k searchable messages** and leaves roughly 30% of the 1-GiB project limit unused for ordinary growth/variance.
+For the current mixed-provider searchable density, an initial operational target of roughly **700 MiB per active shard** corresponds to about **70-75k searchable messages** and leaves roughly 26-27% of the 1 GB project limit unused for ordinary growth/variance.
 
 At that target, the current ~167k searchable-message shape implies approximately three project shards. This row count is descriptive, not a permanent policy; other providers can have different text/index density.
 
@@ -152,7 +152,7 @@ active shard project A
   -> later retire A
 ```
 
-This preserves generation verification without requiring active+replacement copies to fit inside one project's 1-GiB budget.
+This preserves generation verification without requiring active+replacement copies to fit inside one project's 1 GB budget.
 
 ## Still unknown / not authorized
 
