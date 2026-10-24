@@ -16,5 +16,5 @@ REPO=$($GH_BIN repo view --json nameWithOwner --jq .nameWithOwner)
 HEAD=$($GH_BIN pr view "$PR" --repo "$REPO" --json headRefOid --jq .headRefOid)
 TMP=$(mktemp)
 trap 'rm -f "$TMP"' EXIT HUP INT TERM
-$GH_BIN api "/repos/$REPO/issues/$PR/comments?per_page=100" > "$TMP"
+$GH_BIN api --paginate --slurp "/repos/$REPO/issues/$PR/comments?per_page=100" > "$TMP"
 PYTHONPATH="$ROOT" python3 scripts/codex_review_status.py --head "$HEAD" --input "$TMP"
