@@ -1,4 +1,5 @@
 import asyncio
+import ast
 import hashlib
 import json
 import sys
@@ -157,6 +158,17 @@ class ArcadeBundleConsumerTest(unittest.TestCase):
                     )
                 self.assertFalse(dest.exists())
         asyncio.run(run())
+
+    def test_hosted_entrypoint_supports_script_launch(self):
+        server = PKG_SRC / "session_search_arcade_materializer" / "server.py"
+        parsed = ast.parse(server.read_text())
+        imports = [node for node in ast.walk(parsed) if isinstance(node, ast.ImportFrom)]
+        self.assertTrue(any(
+            node.level == 0 and node.module == "session_search_arcade_materializer.bundle_consumer"
+            for node in imports
+        ))
+        workflow = (ROOT / ".github" / "workflows" / "deploy-session-search-arcade-materializer.yml").read_text()
+        self.assertIn("python -m pip install -e .", workflow)
 
     def test_server_surface_is_read_only_inspection_only(self):
         server = (ROOT / "arcade" / "session-search-materializer" / "src" / "session_search_arcade_materializer" / "server.py").read_text()

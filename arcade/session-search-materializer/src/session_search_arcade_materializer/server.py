@@ -5,7 +5,7 @@ from typing import Annotated, Any
 from arcade_mcp_server import Context, MCPApp
 from arcade_mcp_server.auth import Google
 
-from .bundle_consumer import download_drive_bundle, verify_bundle
+from session_search_arcade_materializer.bundle_consumer import download_drive_bundle, verify_bundle
 
 DRIVE_READONLY = "https://www.googleapis.com/auth/drive.readonly"
 app = MCPApp(name="session_search_materializer", version="0.1.0", log_level="INFO")
