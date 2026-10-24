@@ -22,6 +22,8 @@ REQUIRED = [
     'receipts/064-federated-serving-final.public.json',
     'docs/projection-backend-sizing.md',
     'receipts/061-projection-backend-sizing.public.json',
+    'docs/first-neon-promotion-plan.md',
+    'receipts/075-first-neon-promotion-plan.public.json',
     'sql/neon/003_federated_generation_lifecycle.sql',
     'scripts/codex_review_status.py',
     'tools/pr/codex-review-status.sh',
