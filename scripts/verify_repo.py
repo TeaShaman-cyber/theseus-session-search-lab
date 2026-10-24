@@ -43,6 +43,16 @@ for rel in REQUIRED:
     if not (ROOT / rel).is_file():
         raise SystemExit(f'VERIFY FAIL missing {rel}')
 
+FORBIDDEN_PARALLEL_FEDERATION = [
+    'session_search/federation.py',
+    'tests/test_federated_search.py',
+]
+for rel in FORBIDDEN_PARALLEL_FEDERATION:
+    if (ROOT / rel).exists():
+        raise SystemExit(
+            f'VERIFY FAIL unsupported parallel Python federation surface returned: {rel}'
+        )
+
 readme = (ROOT/'README.md').read_text()
 for marker in [
     'MarcoPolo is not a runtime dependency',

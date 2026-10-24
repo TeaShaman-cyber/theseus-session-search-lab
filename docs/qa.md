@@ -37,6 +37,12 @@ Branch routing is derived state under the same rule. Projection schema `session-
 This rule is regression-covered in `tests/test_corpus_store.py` and tracked by Issues #28 and #43.
 
 
+## Federated serving implementation boundary
+
+The supported federated serving implementation is the JavaScript router under `functions/router/`. The earlier Python helper `session_search/federation.py` was used during the synthetic #64 spike but had no live non-test consumer and was removed under #72 rather than maintained as a second parallel callback contract.
+
+Do not reintroduce a separate Python federation implementation merely for symmetry. If a Python consumer is needed later, define one shared contract against the deployed router semantics instead of forking routing/filter behavior again. Historical #64 documentation that records the earlier canary remains valid as point-in-time evidence.
+
 ## Advisory Codex review
 
 Codex review is independent advisory evidence, not merge authority and not a universal promotion gate. Hosted QA, repository verification, risk, scope, and the maintainer promotion decision remain separate claims. A PR may be promoted while Codex is still pending when the normal promotion conditions are otherwise satisfied.
