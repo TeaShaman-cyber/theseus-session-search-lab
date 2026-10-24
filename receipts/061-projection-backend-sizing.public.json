@@ -1,0 +1,70 @@
+{
+  "schema": "theseus.session-search-projection-backend-sizing.v1",
+  "issue": 61,
+  "date": "2026-10-24",
+  "source_main": "5c2056e93e91f49e6c4a189893dcaeffeae021f0",
+  "private_safe_source_aggregates": {
+    "accepted_artifacts": 737,
+    "sessions": 426,
+    "canonical_messages": 257744,
+    "searchable_messages": 167297,
+    "searchable_text_bytes": 296089078,
+    "searchable_text_bytes_average": 1769.8409296042369,
+    "searchable_text_bytes_p50": 532,
+    "searchable_text_bytes_p90": 4376,
+    "searchable_text_bytes_p95": 5757,
+    "searchable_text_bytes_p99": 9838,
+    "hidden_messages_excluded_from_remote_projection": 90447
+  },
+  "synthetic_shape": {
+    "sessions": 426,
+    "messages": 75000,
+    "private_content_used": false,
+    "lexical_payload": "deterministic high-diversity synthetic md5-like lexemes"
+  },
+  "neon": {
+    "postgres_version": 17,
+    "database_bytes_at_25000": 245088256,
+    "database_bytes_at_50000": 492748800,
+    "database_bytes_at_75000": 741236736,
+    "messages_relation_total_bytes_at_75000": 733257728,
+    "messages_heap_bytes_at_75000": 104407040,
+    "messages_index_bytes_at_75000": 393928704,
+    "messages_other_relation_bytes_at_75000": 224921984,
+    "approx_bytes_per_searchable_message": 9789.7,
+    "projected_current_searchable_shape_gib": 1.53,
+    "first_observed_sql_hit_ms": 27.544,
+    "warm_sql_hit_ms": 0.339,
+    "sql_miss_ms": 0.307
+  },
+  "sqlite": {
+    "file_bytes_at_75000": 324173824,
+    "messages_bytes": 163074048,
+    "fts_data_bytes": 147021824,
+    "first_observed_hit_ms": 0.323,
+    "warm_hit_ms_approx": 0.04,
+    "warm_miss_ms_approx": 0.04
+  },
+  "comparison": {
+    "neon_to_sqlite_size_ratio_at_75000": 2.2865,
+    "initial_active_shard_target_mib": 700,
+    "approx_searchable_messages_at_target_for_current_density": "70000-75000",
+    "estimated_projects_for_current_searchable_shape": 3
+  },
+  "serving_http": {
+    "canonical_router_runs": 6,
+    "all_runs_status": "FOUND",
+    "first_observed_total_seconds": 1.654,
+    "subsequent_total_seconds": [0.409, 0.256, 0.306, 0.229, 0.229],
+    "subsequent_median_seconds": 0.256,
+    "ttfb_seconds_range": [0.152, 0.163],
+    "controlled_scale_to_zero_cold_start": "UNKNOWN"
+  },
+  "decision": {
+    "single_project_drop_in": "REJECTED_ON_FREE_PLAN_FOR_CURRENT_SHAPE",
+    "leading_architecture": "HYBRID_FEDERATED",
+    "shard_closure_basis": "OBSERVED_POSTGRES_SIZE_NOT_ROW_COUNT",
+    "free_plan_rebuild_pattern": "SEPARATE_PROJECT_BLUE_GREEN_AND_CATALOG_SWAP",
+    "real_corpus_migration_authorized": false
+  }
+}
