@@ -26,6 +26,24 @@ def _extract_state(body: str) -> dict[str, Any] | None:
     return None
 
 
+def normalize_comments(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        raise ValueError("Codex review evidence must be a JSON list or list of pages")
+
+    if all(isinstance(item, dict) for item in value):
+        return value
+
+    flattened: list[dict[str, Any]] = []
+    for page in value:
+        if not isinstance(page, list):
+            raise ValueError("Codex paginated review evidence must contain JSON arrays")
+        for item in page:
+            if not isinstance(item, dict):
+                raise ValueError("Codex review comment entries must be JSON objects")
+            flattened.append(item)
+    return flattened
+
+
 def classify_codex_review(comments: list[dict[str, Any]], head_sha: str) -> dict[str, Any]:
     observations = []
     for comment in comments:
@@ -100,9 +118,11 @@ def main() -> int:
     parser.add_argument("--input", type=pathlib.Path)
     args = parser.parse_args()
 
-    comments = json.loads(args.input.read_text(encoding="utf-8")) if args.input else json.load(sys.stdin)
-    if not isinstance(comments, list):
-        raise SystemExit("Codex review evidence must be a JSON list of issue comments")
+    raw_comments = json.loads(args.input.read_text(encoding="utf-8")) if args.input else json.load(sys.stdin)
+    try:
+        comments = normalize_comments(raw_comments)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
 
     print(json.dumps(classify_codex_review(comments, args.head), sort_keys=True))
     return 0

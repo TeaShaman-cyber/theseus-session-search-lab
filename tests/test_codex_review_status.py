@@ -1,7 +1,8 @@
 import json
 import unittest
+from pathlib import Path
 
-from scripts.codex_review_status import classify_codex_review
+from scripts.codex_review_status import classify_codex_review, normalize_comments
 
 HEAD = "a" * 40
 
@@ -83,6 +84,30 @@ class CodexReviewStatusTest(unittest.TestCase):
         result = classify_codex_review([], HEAD)
         self.assertEqual(result["status"], "PENDING")
         self.assertEqual(result["reason"], "review-summary-missing")
+
+    def test_paginated_comment_pages_are_flattened(self):
+        first = summary({
+            "commit_sha": "b" * 40,
+            "has_any_findings": False,
+            "has_unresolved_findings": False,
+            "status": "completed",
+        }, updated_at="2026-10-24T19:00:00Z")
+        second = summary({
+            "commit_sha": HEAD,
+            "has_any_findings": True,
+            "has_unresolved_findings": True,
+            "status": "completed",
+        }, updated_at="2026-10-24T21:00:00Z")
+        comments = normalize_comments([[first], [second]])
+        result = classify_codex_review(comments, HEAD)
+        self.assertEqual(result["status"], "FINDINGS")
+        self.assertEqual(result["reviewed_commit"], HEAD)
+
+    def test_wrapper_requests_all_comment_pages(self):
+        root = Path(__file__).resolve().parents[1]
+        text = (root / "tools" / "pr" / "codex-review-status.sh").read_text(encoding="utf-8")
+        self.assertIn("--paginate", text)
+        self.assertIn("--slurp", text)
 
 
 if __name__ == "__main__":
