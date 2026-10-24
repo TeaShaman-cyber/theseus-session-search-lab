@@ -30,6 +30,8 @@ REQUIRED = [
     'session_search/artifact_overlap.py',
     'scripts/audit_corpus_overlap.py',
     'receipts/081-artifact-overlap-guard.public.json',
+    'session_search/neon_materializer.py',
+    'scripts/materialize_neon_shard.py',
     'sql/neon/003_federated_generation_lifecycle.sql',
     'scripts/codex_review_status.py',
     'tools/pr/codex-review-status.sh',
