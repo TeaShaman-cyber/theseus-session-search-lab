@@ -171,8 +171,8 @@ On the Free plan, use separate-project blue/green candidates rather than assumin
 For each candidate shard:
 
 1. create a fresh project with the versioned shard schema/migrations;
-2. materialize only the assigned projected sessions from accepted evidence using the versioned `scripts/materialize_neon_shard.py` BUILDING-only loader;
-3. keep generation state `BUILDING`;
+2. build a deterministic `session-search-shard-bundle.v1` from accepted evidence and stage the exact private bundle in Google Drive;
+3. have the generic Arcade materializer verify that bundle and load only a `BUILDING` generation into the fresh target;
 4. read back actual session/message counts and actual Postgres/project size;
 5. verify accepted-evidence provenance and projection derivation;
 6. transition generation to `READY` only through the validated lifecycle function;
@@ -185,6 +185,13 @@ For each candidate shard:
 13. read back the exact active catalog/shard/generation identities through the serving path;
 14. retain the old catalog/projects for a bounded rollback window;
 15. retire/delete old projects only after explicit cleanup disposition.
+
+
+### Transport transition
+
+Issue #3 now defines the target transport as deterministic bundle -> private Google Drive -> Arcade Hosted materializer -> Neon. The direct `scripts/materialize_neon_shard.py` database-URL path used for the accepted #83 xAI candidate remains historical/transitional until the Arcade consumer proves equivalent BUILDING-load behavior; it is not the long-term multi-shard promotion interface.
+
+The first real xAI bundle is byte-deterministic and reproduces the accepted #83 generation/source projection identity. Its public transport receipt is `receipts/003-xai-drive-bundle.public.json`.
 
 ## Failure semantics
 
