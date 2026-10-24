@@ -171,7 +171,7 @@ On the Free plan, use separate-project blue/green candidates rather than assumin
 For each candidate shard:
 
 1. create a fresh project with the versioned shard schema/migrations;
-2. materialize only the assigned projected sessions from accepted evidence;
+2. materialize only the assigned projected sessions from accepted evidence using the versioned `scripts/materialize_neon_shard.py` BUILDING-only loader;
 3. keep generation state `BUILDING`;
 4. read back actual session/message counts and actual Postgres/project size;
 5. verify accepted-evidence provenance and projection derivation;
