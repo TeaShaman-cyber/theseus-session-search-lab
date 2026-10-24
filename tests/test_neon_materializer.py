@@ -111,6 +111,15 @@ class NeonMaterializerSourceTest(unittest.TestCase):
             self.assertNotIn("private-s1", payload)
             self.assertNotIn("hello", payload)
 
+
+    def test_manifest_capture_respects_corpus_mutation_lock(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = self.make_corpus(Path(td) / "corpus")
+            lock = root / "mutation.lock"
+            lock.mkdir()
+            with self.assertRaisesRegex(RuntimeError, "CORPUS_MUTATION_LOCKED"):
+                build_source_manifest(root, provider="xai", shard_id="xai-0001")
+
     def test_hidden_rows_are_excluded_and_null_message_id_uses_local_identity(self):
         with tempfile.TemporaryDirectory() as td:
             root = self.make_corpus(Path(td))

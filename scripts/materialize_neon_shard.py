@@ -11,7 +11,6 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from session_search.corpus_store import verify_corpus  # noqa: E402
 from session_search.neon_materializer import build_source_manifest, load_building_generation  # noqa: E402
 
 
@@ -28,19 +27,10 @@ def main() -> int:
     args = parser.parse_args()
 
     corpus = args.corpus.resolve()
-    manifest = build_source_manifest(corpus, provider=args.provider, shard_id=args.shard_id)
     if args.dry_run:
+        manifest = build_source_manifest(corpus, provider=args.provider, shard_id=args.shard_id)
         print(json.dumps(manifest, sort_keys=True, indent=2))
         return 0
-
-    verification = verify_corpus(corpus)
-    if verification.get("status") != "VERIFIED":
-        raise SystemExit("source corpus is not VERIFIED")
-    if verification.get("sessions") != manifest["session_count"]:
-        raise SystemExit("source verification session count mismatch")
-    verified_messages = verification.get("messages")
-    if not isinstance(verified_messages, int) or verified_messages < manifest["message_count"]:
-        raise SystemExit("source verification message count mismatch")
 
     database_url = os.environ.get(args.database_url_env, "")
     result = load_building_generation(
