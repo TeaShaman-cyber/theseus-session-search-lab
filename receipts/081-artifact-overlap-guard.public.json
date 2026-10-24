@@ -1,0 +1,58 @@
+{
+  "audit": {
+    "authority_count": 737,
+    "authority_set_sha256": "fc141ede9c047670db9b4b13d77224ab58b0660953ab6211b9cac4c76b08d352",
+    "providers": [
+      {
+        "candidate_count": 303,
+        "candidate_set_sha256": "78191c75fbc17257913c93162902104daa5e6a95ae7337313988df879775ff98",
+        "novel_count": 0,
+        "novel_set_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "overlap_count": 303,
+        "overlap_set_sha256": "78191c75fbc17257913c93162902104daa5e6a95ae7337313988df879775ff98",
+        "provider": "chatgpt",
+        "status": "FULL_OVERLAP"
+      },
+      {
+        "candidate_count": 43,
+        "candidate_set_sha256": "4c2775ce5a23622297239cee896fc53e593f1206abf2cb71d2aa94607a161d17",
+        "novel_count": 0,
+        "novel_set_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "overlap_count": 43,
+        "overlap_set_sha256": "4c2775ce5a23622297239cee896fc53e593f1206abf2cb71d2aa94607a161d17",
+        "provider": "deepseek",
+        "status": "FULL_OVERLAP"
+      },
+      {
+        "candidate_count": 60,
+        "candidate_set_sha256": "125271750e532775057dfcc3c9cb09344723db0fe5551e892d864e9d080b1835",
+        "novel_count": 60,
+        "novel_set_sha256": "125271750e532775057dfcc3c9cb09344723db0fe5551e892d864e9d080b1835",
+        "overlap_count": 0,
+        "overlap_set_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "provider": "xai",
+        "status": "DISJOINT"
+      }
+    ],
+    "schema": "theseus.session-search-artifact-overlap.v1"
+  },
+  "authority": {
+    "artifact_identity": "immutable_portable_artifact_sha256",
+    "individual_artifact_hashes_published": false,
+    "projection_is_authority": false,
+    "real_neon_materialization_authorized": false,
+    "surface": "current_bound_cumulative_accepted_ledger"
+  },
+  "candidate_surface": "frozen_multiprovider_provider_sets",
+  "date": "2026-10-24",
+  "disposition": "OVERLAP_GUARD_VERIFIED_XAI_ONLY_NOVEL_NO_MATERIALIZATION_AUTHORIZED",
+  "interpretation": {
+    "chatgpt": "ALREADY_REPRESENTED_DO_NOT_PROMOTE_AGAIN",
+    "deepseek": "ALREADY_REPRESENTED_DO_NOT_PROMOTE_AGAIN",
+    "partial_overlap_policy": "FAIL_CLOSED_REQUIRE_VERIFIED_RESIDUAL_MANIFEST",
+    "xai": "NOVEL_RELATIVE_TO_CURRENT_CUMULATIVE_ELIGIBLE_FOR_LATER_PLANNING"
+  },
+  "issue": 81,
+  "schema": "theseus.session-search-artifact-overlap-guard.public.v1",
+  "source_main": "d7567c2e953c508e799f3ce3266a0e7cd1e4446f"
+}

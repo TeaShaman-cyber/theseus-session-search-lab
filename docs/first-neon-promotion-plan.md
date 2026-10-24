@@ -15,6 +15,31 @@ The public repository must not contain private session IDs, message text, source
 
 The allocation algorithm may inspect private session identifiers locally only as deterministic tie-break input. The private session-to-shard mapping is operational state and must not be committed to Git or posted in public issue receipts.
 
+
+## Cross-corpus artifact-overlap guard
+
+Before any retained/frozen provider corpus is treated as promotion input, compare its immutable accepted portable artifact identities against the authoritative accepted-ledger set. Directory names, provider labels, projected session IDs, and existence of a separate historical corpus are not novelty evidence.
+
+Use `scripts/audit_corpus_overlap.py` for the read-only comparison. Public output contains only aggregate counts and deterministic set digests; individual artifact hashes and private session mappings are not emitted.
+
+Classification semantics:
+
+- `DISJOINT`: candidate contains no artifact identity already present in authority; it may proceed to later promotion planning, but this does not authorize upload/cutover;
+- `FULL_OVERLAP`: candidate is already represented by accepted authority and is not additional promotion input;
+- `PARTIAL_OVERLAP`: fail closed until a deterministic residual candidate manifest is produced and verified;
+- `EMPTY`: no promotion input;
+- malformed or contradictory evidence: fail closed.
+
+Current read-only audit of the frozen multiprovider source set against the bound cumulative accepted ledger:
+
+| Provider frozen set | Candidate artifacts | Already accepted | Novel | Status |
+| --- | ---: | ---: | ---: | --- |
+| ChatGPT | 303 | 303 | 0 | `FULL_OVERLAP` |
+| DeepSeek | 43 | 43 | 0 | `FULL_OVERLAP` |
+| xAI | 60 | 0 | 60 | `DISJOINT` |
+
+Therefore the frozen ChatGPT and DeepSeek sets must not be promoted as additional corpora. From that frozen multiprovider surface, only the verified xAI set is novel relative to the current cumulative accepted ledger.
+
 ## Atomic allocation unit
 
 The current corpus routes accepted artifacts to `projected_session_id` through `artifact_routes`. The projected session remains the atomic packing unit and is never split across project shards.
@@ -192,6 +217,7 @@ Do not rebuild during an emergency rollback unless the previous verified project
 Before real-corpus materialization/cutover is authorized, a follow-up implementation issue must explicitly define and verify:
 
 - current accepted-evidence snapshot/watermark to promote;
+- immutable-artifact overlap audit across every candidate retained/frozen corpus surface;
 - private source acquisition availability;
 - materializer implementation for the private assignment;
 - actual size readback vs the planning model;

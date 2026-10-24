@@ -27,6 +27,9 @@ REQUIRED = [
     'session_search/shard_allocation.py',
     'scripts/plan_neon_shards.py',
     'receipts/077-provider-aware-shard-allocation.public.json',
+    'session_search/artifact_overlap.py',
+    'scripts/audit_corpus_overlap.py',
+    'receipts/081-artifact-overlap-guard.public.json',
     'sql/neon/003_federated_generation_lifecycle.sql',
     'scripts/codex_review_status.py',
     'tools/pr/codex-review-status.sh',
@@ -92,6 +95,7 @@ json.loads((ROOT/'receipts/001-wiki-bootstrap.json').read_text())
 json.loads((ROOT/'receipts/002-multipage-importer.public.json').read_text())
 json.loads((ROOT/'receipts/003-multi-session-corpus.public.json').read_text())
 json.loads((ROOT/'receipts/077-provider-aware-shard-allocation.public.json').read_text())
+json.loads((ROOT/'receipts/081-artifact-overlap-guard.public.json').read_text())
 tracked = subprocess.check_output(['git','ls-files'], cwd=ROOT, text=True).splitlines()
 for p in tracked:
     lower=p.lower()
