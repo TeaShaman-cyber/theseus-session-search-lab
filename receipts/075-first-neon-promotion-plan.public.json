@@ -1,0 +1,70 @@
+{
+  "schema": "theseus.session-search-first-neon-promotion-plan.v1",
+  "issue": 75,
+  "date": "2026-10-24",
+  "source_main": "19522ba598962cf3b567b43adc6f42610f169809",
+  "authority": {
+    "accepted_evidence": "AUTHORITATIVE",
+    "neon_projection": "DERIVED_REBUILDABLE",
+    "private_session_mapping_published": false,
+    "real_corpus_materialization_authorized": false,
+    "production_cutover_authorized": false
+  },
+  "allocation_model": {
+    "atomic_unit": "projected_session",
+    "sort_primary": "first_accepted_at",
+    "sort_tiebreak": "private_projected_session_id",
+    "target_mib": 700,
+    "per_message_bytes": 9789.7,
+    "per_text_byte_factor": 5.5839,
+    "fixed_overhead_bytes": 4648141,
+    "session_estimate": "max(message_count*9789.7,text_bytes*5.5839)"
+  },
+  "candidate_shards": [
+    {
+      "shard_id": "chatgpt-0001",
+      "sessions": 37,
+      "searchable_messages": 42191,
+      "searchable_text_bytes": 117164455,
+      "estimated_postgres_bytes": 702080888,
+      "estimated_mib": 669.6,
+      "hard_limit_headroom_percent": 34.6,
+      "max_single_session_estimated_mib": 184.3
+    },
+    {
+      "shard_id": "chatgpt-0002",
+      "sessions": 134,
+      "searchable_messages": 67361,
+      "searchable_text_bytes": 117239318,
+      "estimated_postgres_bytes": 733198972,
+      "estimated_mib": 699.2,
+      "hard_limit_headroom_percent": 31.7,
+      "max_single_session_estimated_mib": 41.3
+    },
+    {
+      "shard_id": "chatgpt-0003",
+      "sessions": 255,
+      "searchable_messages": 57745,
+      "searchable_text_bytes": 61685305,
+      "estimated_postgres_bytes": 583121952,
+      "estimated_mib": 556.1,
+      "hard_limit_headroom_percent": 45.7,
+      "max_single_session_estimated_mib": 8.2
+    }
+  ],
+  "totals": {
+    "sessions": 426,
+    "searchable_messages": 167297,
+    "searchable_text_bytes": 296089078,
+    "estimated_postgres_bytes": 2018401812,
+    "estimated_gib": 1.88
+  },
+  "promotion": {
+    "pattern": "SEPARATE_PROJECT_BLUE_GREEN",
+    "catalog_promotion": "ATOMIC_GENERATION_SWAP_AFTER_ALL_SHARDS_READY",
+    "partial_candidate_promotion": "FORBIDDEN",
+    "rollback": "PREVIOUS_VERIFIED_CATALOG_GENERATION",
+    "automatic_rebalance_of_closed_shards": false
+  },
+  "disposition": "PLAN_READY_REAL_MIGRATION_NOT_AUTHORIZED"
+}
