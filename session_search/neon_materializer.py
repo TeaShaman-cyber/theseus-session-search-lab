@@ -8,9 +8,10 @@ from typing import Any
 
 from .artifact_overlap import load_accepted_ledger, set_digest
 from .shard_allocation import ADAPTER_PROVIDERS
+from .corpus_store import CorpusMutationLock, CorpusPaths, verify_corpus
 
 
-MATERIALIZER_CONTRACT_VERSION = "neon-shard-materializer-v1"
+MATERIALIZER_CONTRACT_VERSION = "neon-shard-materializer-v2"
 PROJECTION_SCHEMA_VERSION = "session-search-federated-v1"
 SEARCHABLE_CLASSES = ("dialogue", "evidence", "trace")
 
@@ -99,18 +100,15 @@ def _projection_source_digest(sessions, messages) -> str:
     return h.hexdigest()
 
 
-def build_source_manifest(corpus_root: Path, *, provider: str, shard_id: str) -> dict[str, Any]:
-    corpus_root = Path(corpus_root)
-    accepted = load_accepted_ledger(corpus_root)
-    sessions, messages = load_source_rows(corpus_root, provider=provider)
-    con = _source_connection(corpus_root)
-    try:
-        database_artifacts = {str(r[0]) for r in con.execute("SELECT sha256 FROM artifacts ORDER BY sha256")}
-        adapters = [str(r[0]) for r in con.execute("SELECT DISTINCT source_adapter FROM artifacts ORDER BY source_adapter")]
-    finally:
-        con.close()
-    if database_artifacts != accepted:
-        raise ValueError("ACCEPTED_ARTIFACT_SET_MISMATCH")
+def _manifest_from_snapshot(
+    accepted: set[str],
+    sessions,
+    messages,
+    adapters: list[str],
+    *,
+    provider: str,
+    shard_id: str,
+) -> dict[str, Any]:
     core = {
         "materializer_contract_version": MATERIALIZER_CONTRACT_VERSION,
         "projection_schema_version": PROJECTION_SCHEMA_VERSION,
@@ -132,6 +130,61 @@ def build_source_manifest(corpus_root: Path, *, provider: str, shard_id: str) ->
     return {**core, "source_manifest_sha256": source_manifest_sha256, "generation_id": generation_id}
 
 
+def _capture_source_snapshot(
+    corpus_root: Path,
+    *,
+    provider: str,
+    shard_id: str,
+    require_verified: bool = False,
+):
+    corpus_root = Path(corpus_root)
+    paths = CorpusPaths.from_root(corpus_root)
+    with CorpusMutationLock(paths, "neon-materialize-snapshot"):
+        verification = None
+        if require_verified:
+            verification = verify_corpus(corpus_root)
+            if verification.get("status") != "VERIFIED":
+                raise ValueError("SOURCE_CORPUS_NOT_VERIFIED")
+
+        accepted = load_accepted_ledger(corpus_root)
+        sessions, messages = load_source_rows(corpus_root, provider=provider)
+        con = _source_connection(corpus_root)
+        try:
+            database_artifacts = {
+                str(r[0])
+                for r in con.execute("SELECT sha256 FROM artifacts ORDER BY sha256")
+            }
+            adapters = [
+                str(r[0])
+                for r in con.execute(
+                    "SELECT DISTINCT source_adapter FROM artifacts ORDER BY source_adapter"
+                )
+            ]
+        finally:
+            con.close()
+
+        if database_artifacts != accepted:
+            raise ValueError("ACCEPTED_ARTIFACT_SET_MISMATCH")
+        if verification is not None:
+            if verification.get("sessions") != len(sessions):
+                raise ValueError("SOURCE_VERIFICATION_SESSION_COUNT_MISMATCH")
+            verified_messages = verification.get("messages")
+            if not isinstance(verified_messages, int) or verified_messages < len(messages):
+                raise ValueError("SOURCE_VERIFICATION_MESSAGE_COUNT_MISMATCH")
+
+        manifest = _manifest_from_snapshot(
+            accepted, sessions, messages, adapters, provider=provider, shard_id=shard_id
+        )
+        return manifest, sessions, messages
+
+
+def build_source_manifest(corpus_root: Path, *, provider: str, shard_id: str) -> dict[str, Any]:
+    manifest, _sessions, _messages = _capture_source_snapshot(
+        corpus_root, provider=provider, shard_id=shard_id
+    )
+    return manifest
+
+
 def load_building_generation(
     corpus_root: Path, *, provider: str, shard_id: str, database_url: str, batch_size: int = 500
 ) -> dict[str, Any]:
@@ -139,8 +192,9 @@ def load_building_generation(
         raise ValueError("DATABASE_URL_MISSING")
     if batch_size < 1 or batch_size > 5000:
         raise ValueError("BATCH_SIZE_OUT_OF_BOUNDS")
-    manifest = build_source_manifest(corpus_root, provider=provider, shard_id=shard_id)
-    sessions, messages = load_source_rows(corpus_root, provider=provider)
+    manifest, sessions, messages = _capture_source_snapshot(
+        corpus_root, provider=provider, shard_id=shard_id, require_verified=True
+    )
 
     import psycopg2
     from psycopg2.extras import execute_values
