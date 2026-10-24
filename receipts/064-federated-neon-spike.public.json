@@ -1,0 +1,57 @@
+{
+  "schema": "theseus.session-search-federated-neon-spike.v1",
+  "issue": 64,
+  "date": "2026-10-24",
+  "source_main": "67faf48277602b8e747cd1dc3c938c210a0b56e7",
+  "projection_schema_version": "session-search-federated-v1",
+  "migration_sha256": {
+    "001_federated_shard_v1.sql": "a5de61d7a2aa775b736907f749d4e3f35c359ebcd796284f8da044c66553d94f",
+    "002_federated_shard_privileges.sql": "b0ce1c8631518db69f270e73f3d95c6df567567c96f7a9cb160b932b73a4f217"
+  },
+  "shards": [
+    {
+      "shard_id": "chatgpt-0001",
+      "project_id": "misty-darkness-46441019",
+      "project_name": "theseus-ss64-chatgpt-a",
+      "provider": "chatgpt",
+      "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "state": "READY",
+      "reader_search_execute": true,
+      "reader_messages_select": false,
+      "synthetic_hit_message_id": "c1"
+    },
+    {
+      "shard_id": "hermes-0001",
+      "project_id": "ancient-morning-06623139",
+      "project_name": "theseus-ss64-hermes-b",
+      "provider": "hermes",
+      "generation_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "state": "READY",
+      "reader_search_execute": true,
+      "reader_messages_select": false,
+      "synthetic_hit_message_id": "h1"
+    }
+  ],
+  "live_query": "copper compass",
+  "live_merge": {
+    "status": "FOUND",
+    "queried_shards": ["chatgpt-0001", "hermes-0001"],
+    "unavailable_shards": [],
+    "hit_count": 2,
+    "provenance_preserved": true
+  },
+  "authority": {
+    "raw_source_location": "external durable source authority; not copied into Neon",
+    "neon_role": "derived projection only",
+    "private_source_identifiers_published": false
+  },
+  "acceptance": {
+    "two_project_shards": "VERIFIED",
+    "deterministic_merge": "VERIFIED",
+    "bounded_reader_acl": "VERIFIED",
+    "partial_semantics_unit_contract": "VERIFIED",
+    "live_partial_serving_path": "PENDING",
+    "chatgpt_arcade_no_marcopolo_request_path": "PENDING"
+  },
+  "disposition": "IN_PROGRESS"
+}

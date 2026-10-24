@@ -1,0 +1,40 @@
+import pathlib
+import unittest
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+SCHEMA = ROOT / "sql" / "neon" / "001_federated_shard_v1.sql"
+PRIVILEGES = ROOT / "sql" / "neon" / "002_federated_shard_privileges.sql"
+
+
+class NeonFederatedContractTest(unittest.TestCase):
+    def test_query_plane_migration_exposes_generation_scoped_read_only_surface(self):
+        text = SCHEMA.read_text(encoding="utf-8")
+        self.assertIn("CREATE SCHEMA session_search", text)
+        self.assertIn("CREATE TABLE session_search.generations", text)
+        self.assertIn("CREATE TABLE session_search.sessions", text)
+        self.assertIn("CREATE TABLE session_search.messages", text)
+        self.assertIn("CREATE TABLE session_search.active_generation", text)
+        self.assertIn("CREATE FUNCTION session_search.mark_generation_ready", text)
+        self.assertIn("CREATE FUNCTION session_search.activate_generation", text)
+        self.assertIn("CREATE FUNCTION session_search.search_generation", text)
+        self.assertIn("CREATE FUNCTION session_search.search(", text)
+        self.assertIn("CREATE FUNCTION session_search.generation_status", text)
+        self.assertIn("search generation not READY", text)
+        self.assertIn("query text out of bounds", text)
+        self.assertIn("result limit out of bounds", text)
+        self.assertIn("GENERATED ALWAYS AS", text)
+        self.assertIn("USING GIN", text)
+
+    def test_privilege_migration_keeps_reader_behind_bounded_functions(self):
+        text = PRIVILEGES.read_text(encoding="utf-8")
+        self.assertIn("CREATE ROLE session_search_owner NOLOGIN", text)
+        self.assertIn("CREATE ROLE session_search_reader NOLOGIN", text)
+        self.assertIn("CREATE ROLE session_search_materializer NOLOGIN", text)
+        self.assertIn("REVOKE ALL ON ALL TABLES IN SCHEMA session_search FROM PUBLIC", text)
+        self.assertIn("GRANT EXECUTE ON FUNCTION session_search.search(", text)
+        self.assertIn("TO session_search_reader", text)
+        self.assertNotIn("GRANT SELECT ON ALL TABLES IN SCHEMA session_search TO session_search_reader", text)
+
+
+if __name__ == "__main__":
+    unittest.main()
