@@ -53,7 +53,15 @@ def _member_digest(zf: ZipFile, name: str) -> str:
     return digest.hexdigest()
 
 
-def _read_csv(zf: ZipFile, name: str, columns: tuple[str, ...]) -> list[tuple[str, ...]]:
+def _read_csv(
+    zf: ZipFile,
+    name: str,
+    columns: tuple[str, ...],
+    *,
+    field_limit: int,
+) -> list[tuple[str, ...]]:
+    if csv.field_size_limit() < field_limit:
+        csv.field_size_limit(field_limit)
     with zf.open(name, "r") as raw:
         wrapper = io.TextIOWrapper(raw, encoding="utf-8", newline="")
         reader = csv.reader(wrapper)
@@ -190,8 +198,12 @@ def verify_bundle(
                 if metadata.get("size_bytes") != zf.getinfo(name).file_size:
                     raise BundleVerificationError("BUNDLE_FILE_SIZE_MISMATCH")
 
-            session_raw = _read_csv(zf, "sessions.csv", SESSION_COLUMNS)
-            message_raw = _read_csv(zf, "messages.csv", MESSAGE_COLUMNS)
+            session_raw = _read_csv(
+                zf, "sessions.csv", SESSION_COLUMNS, field_limit=max_bundle_bytes
+            )
+            message_raw = _read_csv(
+                zf, "messages.csv", MESSAGE_COLUMNS, field_limit=max_bundle_bytes
+            )
             if files["sessions.csv"].get("rows") != len(session_raw):
                 raise BundleVerificationError("BUNDLE_ROW_COUNT_MISMATCH")
             if files["messages.csv"].get("rows") != len(message_raw):

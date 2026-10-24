@@ -45,6 +45,31 @@ class ArcadeBundleConsumerTest(unittest.TestCase):
             self.assertNotIn("private-s1", json.dumps(result, sort_keys=True))
             self.assertNotIn("hello", json.dumps(result, sort_keys=True))
 
+    def test_valid_long_message_field_is_inspectable(self):
+        import sqlite3
+
+        with tempfile.TemporaryDirectory() as td:
+            td = Path(td)
+            corpus = NeonMaterializerSourceTest().make_corpus(td / "corpus")
+            long_text = "x" * 140_000
+            con = sqlite3.connect(corpus / "corpus.sqlite3")
+            con.execute("UPDATE messages SET text=? WHERE row_id=1", (long_text,))
+            con.commit()
+            con.close()
+
+            bundle = td / "bundle.zip"
+            build_bundle(
+                corpus,
+                provider="xai",
+                shard_id="xai-0001",
+                output_path=bundle,
+                require_verified=False,
+            )
+            expected = hashlib.sha256(bundle.read_bytes()).hexdigest()
+            result = verify_bundle(bundle, expected_bundle_sha256=expected)
+            self.assertEqual(result["status"], "VERIFIED")
+            self.assertEqual(result["message_count"], 2)
+
     def test_expected_bundle_sha_is_required_and_must_match(self):
         with tempfile.TemporaryDirectory() as td:
             bundle = self.make_bundle(Path(td))
