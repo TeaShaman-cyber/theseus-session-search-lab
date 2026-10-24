@@ -14,6 +14,9 @@ mkdir -p "$PYTHONPYCACHEPREFIX"
 printf '%s\n' '== repository contract =='
 python3 scripts/verify_repo.py
 
+printf '%s\n' '== app-backed Session Search overlay =='
+python3 scripts/verify_session_search_app_overlay.py
+
 printf '%s\n' '== unit and regression tests =='
 PYTHONPATH="$ROOT" python3 -m unittest discover -s tests -p 'test_*.py'
 

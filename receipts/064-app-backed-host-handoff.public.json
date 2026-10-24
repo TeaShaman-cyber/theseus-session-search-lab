@@ -1,0 +1,33 @@
+{
+  "schema": "theseus.session-search-app-backed-host-handoff.v1",
+  "issue": 64,
+  "date": "2026-10-24",
+  "source_main": "20d61f26bc48b39abd88257add9508be5bd2cbe8",
+  "arcade": {
+    "remote_server": "theseus-session-search",
+    "gateway_name": "Session Search",
+    "gateway_id": "gw_3L9SqeBQ5L5Cs2V1GB6yvnKhR8P",
+    "mcp_url": "https://api.arcade.dev/mcp/gw_3L9SqeBQ5L5Cs2V1GB6yvnKhR8P",
+    "authentication": "OAuth",
+    "expected_tool_count": 1,
+    "expected_tool": "TheseusSessionSearch.session_search"
+  },
+  "host_creation": {
+    "route": "ChatGPT Plugins -> + -> Add custom MCP server -> Create as a plugin",
+    "production_packaging": "APP_BACKED",
+    "portable_mcp_json": "FORBIDDEN_FOR_PRODUCTION",
+    "status": "MANUAL_HOST_UI_STEP_REQUIRED"
+  },
+  "post_create_acceptance": {
+    "fresh_runtime": true,
+    "synthetic_query": "copper compass",
+    "expected_status": "FOUND",
+    "expected_shards": ["chatgpt-0001", "hermes-0001"],
+    "plugin_creator_overlay_after_binding": true
+  },
+  "production_boundary": {
+    "real_corpus_cutover": "NOT_AUTHORIZED",
+    "edge_authentication": "MUST_BE_REVERIFIED_BEFORE_REAL_CORPUS"
+  },
+  "disposition": "DOWNSTREAM_READY_HOST_APP_CREATION_PENDING"
+}
