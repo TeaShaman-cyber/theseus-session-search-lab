@@ -24,6 +24,9 @@ REQUIRED = [
     'receipts/061-projection-backend-sizing.public.json',
     'docs/first-neon-promotion-plan.md',
     'receipts/075-first-neon-promotion-plan.public.json',
+    'session_search/shard_allocation.py',
+    'scripts/plan_neon_shards.py',
+    'receipts/077-provider-aware-shard-allocation.public.json',
     'sql/neon/003_federated_generation_lifecycle.sql',
     'scripts/codex_review_status.py',
     'tools/pr/codex-review-status.sh',
@@ -88,6 +91,7 @@ json.loads((ROOT/'receipts/001-development-prototype.public.json').read_text())
 json.loads((ROOT/'receipts/001-wiki-bootstrap.json').read_text())
 json.loads((ROOT/'receipts/002-multipage-importer.public.json').read_text())
 json.loads((ROOT/'receipts/003-multi-session-corpus.public.json').read_text())
+json.loads((ROOT/'receipts/077-provider-aware-shard-allocation.public.json').read_text())
 tracked = subprocess.check_output(['git','ls-files'], cwd=ROOT, text=True).splitlines()
 for p in tracked:
     lower=p.lower()

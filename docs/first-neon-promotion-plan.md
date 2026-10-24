@@ -17,11 +17,18 @@ The allocation algorithm may inspect private session identifiers locally only as
 
 ## Atomic allocation unit
 
-The current corpus routes accepted artifacts to `projected_session_id` through `artifact_routes`. Therefore the initial promotion unit is the projected session.
+The current corpus routes accepted artifacts to `projected_session_id` through `artifact_routes`. The projected session remains the atomic packing unit and is never split across project shards.
 
-A projected session is never split across Neon project shards.
+Provider lineage is an outer routing boundary. Allocation is performed independently per provider family before session packing. Current explicit adapter lineage is:
 
-If a future schema adds an explicit routing/conversation-family identity that is stronger than projected-session identity, the allocator must preserve that stronger atom instead of silently splitting a family.
+- `chatgpt-export`, `barn-doctor`, `barn-doctor-recovery`, `speed-booster-export` -> `chatgpt`;
+- `deepseek-export` -> `deepseek`;
+- `xai-export` -> `xai` when present;
+- unmapped adapters do not imply a provider.
+
+An unknown adapter may inherit a provider only when its projected session is co-routed with exactly one known provider. Multiple different known providers in one projected session are a provenance conflict and fail closed. An unknown-only projected session is `UNRESOLVED_PROVIDER` and receives no production shard ID.
+
+If a future schema adds an explicit routing/conversation-family identity stronger than projected-session identity, the allocator must preserve that stronger atom instead of silently splitting a family.
 
 ## Sizing model
 
@@ -31,12 +38,14 @@ The #61 benchmark observed approximately:
 - 5.5839 Postgres bytes per searchable text byte for the same shape;
 - ~4.65 MiB fixed project/schema overhead in the fitted benchmark.
 
-For each projected session, use the conservative estimate:
+The executable allocator encodes those coefficients as integer ratios (`97897/10` and `55839/10000`) so repeated planning does not depend on floating-point rounding.
+
+For each projected session:
 
 ```text
 session_estimate = max(
-  searchable_message_count * 9789.7,
-  searchable_text_bytes * 5.5839
+  ceil(searchable_message_count * 97897 / 10),
+  ceil(searchable_text_bytes * 55839 / 10000)
 )
 ```
 
@@ -46,38 +55,51 @@ For each shard candidate:
 shard_estimate = fixed_overhead + sum(session_estimate)
 ```
 
-The estimate is a planning model, not a verification result. Real materialization must read back actual Postgres/project size before READY/promotion.
+The working target remains **700 MiB = 734,003,200 bytes**. The current official Neon Free hard project limit is **1 GB = 1,000,000,000 bytes**; headroom calculations use that decimal hard limit rather than 1 GiB.
+
+The estimate is a planning model, not verification. Real materialization must read back actual Postgres/project size before READY/promotion, and provider-specific real-data density may differ from the conservative mixed-corpus model.
 
 ## Deterministic initial packing
 
-For the initial accepted snapshot:
+For a given accepted projection:
 
-1. compute per-projected-session searchable message count and searchable text bytes for `dialogue|evidence|trace` only;
-2. sort sessions by `first_accepted_at` ascending;
-3. break ties deterministically with the private projected session ID;
-4. append whole sessions to the current shard until adding the next session would exceed the working target of 700 MiB estimated Postgres size;
-5. close that shard and continue with the next monotonic shard number.
+1. derive provider from routed adapter lineage using the fail-closed rules above;
+2. leave unknown-only sessions unresolved rather than assigning a guessed shard family;
+3. within each resolved provider, compute per-session searchable message count and searchable UTF-8 text bytes for `dialogue|evidence|trace` rows;
+4. sort by `first_accepted_at` ascending;
+5. break ties deterministically with the private projected session ID;
+6. append whole sessions to the current provider shard until adding the next session would exceed the 700 MiB working target;
+7. close that shard and continue with the next monotonic provider-scoped shard number;
+8. if one atomic session exceeds the working target but remains below the 1 GB hard limit, isolate it in its own over-target shard and require explicit size acceptance;
+9. if one atomic session itself exceeds the hard limit, fail closed rather than splitting it implicitly.
 
-All 426 current projected sessions have a non-null `first_accepted_at`, so no fallback ordering is needed for the present snapshot. A future allocator must define a deterministic fallback before accepting null chronology.
+The public CLI output contains only aggregate counts/sizes. Private session-to-shard membership remains in-process operational state and is not printed in public receipts.
 
 ## Current accepted-snapshot allocation
 
-Using only private-safe aggregate outputs, the current accepted snapshot packs into three candidate project shards:
+A provider-aware read-only run against the current accepted projection yields:
 
-| Shard | Sessions | Searchable messages | Searchable text bytes | Estimated Postgres | Hard-limit headroom |
+| Shard | Sessions | Searchable messages | Searchable text bytes | Estimated Postgres | 1 GB headroom |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `chatgpt-0001` | 37 | 42,191 | 117,164,455 | ~669.6 MiB | ~34.6% |
-| `chatgpt-0002` | 134 | 67,361 | 117,239,318 | ~699.2 MiB | ~31.7% |
-| `chatgpt-0003` | 255 | 57,745 | 61,685,305 | ~556.1 MiB | ~45.7% |
+| `chatgpt-0001` | 136 | 47,156 | 123,811,905 | ~696.7 MiB | 26.9% |
+| `chatgpt-0002` | 246 | 55,161 | 57,438,642 | ~531.9 MiB | 44.2% |
+| `deepseek-0001` | 43 | 64,662 | 114,332,170 | ~693.3 MiB | 27.3% |
 
-Totals:
+Resolved totals:
 
-- sessions: 426;
-- searchable messages: 167,297;
-- searchable text bytes: 296,089,078;
-- conservative estimated Postgres footprint across the three projects: ~1.88 GiB.
+- sessions: 425;
+- searchable messages: 166,979;
+- searchable text bytes: 295,582,717.
 
-The uneven message counts are expected. One session in the first candidate has an estimated footprint of ~184.3 MiB, demonstrating why fixed row-count shard limits are unsafe.
+One additional `third-party-dialogue-bridge`-only projected session is `UNRESOLVED_PROVIDER` and is deliberately not assigned to a production shard:
+
+- sessions: 1;
+- searchable messages: 318;
+- searchable text bytes: 506,361.
+
+Resolved + unresolved totals reconcile to the accepted projection totals of 426 sessions, 167,297 searchable rows, and 296,089,078 searchable text bytes.
+
+This supersedes the candidate allocation in `receipts/075-first-neon-promotion-plan.public.json`, which incorrectly treated the mixed-provider corpus as one ChatGPT shard family and reported headroom against 1 GiB. The historical #75 receipt is retained unchanged as point-in-time evidence; the corrected current allocation is recorded in the #77 receipt.
 
 ## Stable shard identity and future growth
 
@@ -86,7 +108,9 @@ Shard IDs are monotonic and provider-scoped:
 ```text
 chatgpt-0001
 chatgpt-0002
-chatgpt-0003
+...
+deepseek-0001
+deepseek-0002
 ...
 ```
 
@@ -178,6 +202,8 @@ Before real-corpus materialization/cutover is authorized, a follow-up implementa
 
 ## Current disposition
 
-The allocation and promotion procedure are READY AS A PLAN.
+The promotion procedure remains READY AS A PLAN, but its current allocation is the provider-aware #77 contract above.
 
-Real corpus upload/materialization and production cutover remain **NOT AUTHORIZED** by #75.
+`session_search/shard_allocation.py` and `scripts/plan_neon_shards.py` are the executable planning contract. Public output is aggregate-only and unknown-only provider lineage remains unresolved.
+
+Real corpus upload/materialization and production cutover remain **NOT AUTHORIZED** by this plan or #77.

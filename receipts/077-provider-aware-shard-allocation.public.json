@@ -1,0 +1,98 @@
+{
+  "allocation": {
+    "model": {
+      "atomic_unit": "projected_session",
+      "contract_version": "provider-aware-v1",
+      "fixed_overhead_bytes": 4648141,
+      "hard_limit_bytes": 1000000000,
+      "hard_limit_semantics": "decimal_1GB_project_limit",
+      "ordering": "provider,first_accepted_at,private_session_id",
+      "per_message_ratio": "97897/10",
+      "per_text_byte_ratio": "55839/10000",
+      "target_bytes": 734003200
+    },
+    "schema": "theseus.session-search-shard-allocation-public.v1",
+    "shards": [
+      {
+        "estimated_mib": 696.7,
+        "estimated_postgres_bytes": 730567649,
+        "hard_limit_headroom_percent": 26.9,
+        "over_target": false,
+        "provider": "chatgpt",
+        "searchable_messages": 47156,
+        "searchable_text_bytes": 123811905,
+        "sessions": 136,
+        "shard_id": "chatgpt-0001"
+      },
+      {
+        "estimated_mib": 531.9,
+        "estimated_postgres_bytes": 557735584,
+        "hard_limit_headroom_percent": 44.2,
+        "over_target": false,
+        "provider": "chatgpt",
+        "searchable_messages": 55161,
+        "searchable_text_bytes": 57438642,
+        "sessions": 246,
+        "shard_id": "chatgpt-0002"
+      },
+      {
+        "estimated_mib": 693.3,
+        "estimated_postgres_bytes": 726988770,
+        "hard_limit_headroom_percent": 27.3,
+        "over_target": false,
+        "provider": "deepseek",
+        "searchable_messages": 64662,
+        "searchable_text_bytes": 114332170,
+        "sessions": 43,
+        "shard_id": "deepseek-0001"
+      }
+    ],
+    "totals": {
+      "assigned_searchable_messages": 166979,
+      "assigned_searchable_text_bytes": 295582717,
+      "assigned_sessions": 425,
+      "unresolved_sessions": 1
+    },
+    "unresolved_provider": {
+      "adapters": [
+        "third-party-dialogue-bridge"
+      ],
+      "searchable_messages": 318,
+      "searchable_text_bytes": 506361,
+      "sessions": 1
+    }
+  },
+  "authority": {
+    "accepted_evidence": "AUTHORITATIVE",
+    "allocation": "DERIVED_REPRODUCIBLE",
+    "private_session_mapping_published": false,
+    "production_cutover_authorized": false,
+    "real_corpus_materialization_authorized": false
+  },
+  "corrections": {
+    "issue_75_headroom_basis": "SUPERSEDED_GIB_TO_DECIMAL_GB",
+    "issue_75_mixed_provider_allocation": "SUPERSEDED"
+  },
+  "date": "2026-10-24",
+  "disposition": "PROVIDER_AWARE_ALLOCATION_READY_REAL_MIGRATION_NOT_AUTHORIZED",
+  "issue": 77,
+  "provider_lineage": {
+    "chatgpt": [
+      "chatgpt-export",
+      "barn-doctor",
+      "barn-doctor-recovery",
+      "speed-booster-export"
+    ],
+    "conflicting_known_behavior": "FAIL_CLOSED_PROVIDER_CONFLICT",
+    "deepseek": [
+      "deepseek-export"
+    ],
+    "unknown_only_behavior": "UNRESOLVED_PROVIDER_NO_SHARD_ID",
+    "xai": [
+      "xai-export"
+    ]
+  },
+  "schema": "theseus.session-search-provider-aware-allocation.v1",
+  "source_main": "a97708b97a6f2478276b1f30e69c2896916bcf15",
+  "supersedes_plan_receipt": "receipts/075-first-neon-promotion-plan.public.json"
+}
