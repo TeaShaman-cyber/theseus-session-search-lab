@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { buildSearchCall } from '../shard/core.mjs';
-import { mergeShardOutcomes, selectShards, handleMcpRequest } from '../router/core.mjs';
+import { mergeShardOutcomes, selectShards, handleMcpRequest, validateSearchInput } from '../router/core.mjs';
 
 test('shard request becomes one bounded SQL function call', () => {
   const call = buildSearchCall({
@@ -68,4 +68,20 @@ test('MCP exposes one bounded session_search tool', async () => {
     params: { name: 'session_search', arguments: { query: 'copper compass', limit: 8 } },
   }, async () => ({ status: 'FOUND', hits: [] }));
   assert.equal(called.result.structuredContent.status, 'FOUND');
+});
+
+
+test('router rejects invalid routing filters before shard selection', () => {
+  assert.throws(
+    () => validateSearchInput({ query: 'needle', session_id: 42 }),
+    /SESSION_OUT_OF_BOUNDS/,
+  );
+  assert.throws(
+    () => validateSearchInput({ query: 'needle', from_time: Number.NaN }),
+    /TIME_OUT_OF_BOUNDS/,
+  );
+  assert.throws(
+    () => validateSearchInput({ query: 'needle', from_time: 70, to_time: 20 }),
+    /TIME_BOUNDS_INVERTED/,
+  );
 });

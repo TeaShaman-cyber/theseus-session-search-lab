@@ -36,6 +36,15 @@ Branch routing is derived state under the same rule. Projection schema `session-
 
 This rule is regression-covered in `tests/test_corpus_store.py` and tracked by Issues #28 and #43.
 
+
+## Advisory Codex review
+
+Codex review is independent advisory evidence, not merge authority and not a universal promotion gate. Hosted QA, repository verification, risk, scope, and the maintainer promotion decision remain separate claims. A PR may be promoted while Codex is still pending when the normal promotion conditions are otherwise satisfied.
+
+Do not ignore Codex findings when they arrive later. Reconcile them explicitly: fix a confirmed in-scope defect, reject a finding with evidence, or move a valid out-of-scope concern to a narrow follow-up issue. A non-terminal or stale review does not keep a PR open indefinitely.
+
+Use `tools/pr/codex-review-status.sh <pr-number>` to report the current exact-head advisory state as `PENDING`, `FINDINGS`, `CLEAN`, or `STALE`. The command reports evidence; it deliberately does not enforce merge eligibility.
+
 ## Adding QA
 
 Prefer extending an existing layer before adding another checker:

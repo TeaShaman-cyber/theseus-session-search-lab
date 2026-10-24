@@ -7,7 +7,10 @@ function json(value, status = 200) {
   });
 }
 
-export function makeRouterHandler({ catalog, fetchImpl = fetch }) {
+export function makeRouterHandler({ catalog, fetchImpl = fetch, shardTimeoutMs = 5000 }) {
+  if (!Number.isFinite(shardTimeoutMs) || shardTimeoutMs <= 0) {
+    throw new Error('SHARD_TIMEOUT_OUT_OF_BOUNDS');
+  }
   async function searchFederated(rawInput) {
     const input = validateSearchInput(rawInput);
     const selected = selectShards(catalog, input);
@@ -16,23 +19,45 @@ export function makeRouterHandler({ catalog, fetchImpl = fetch }) {
       if (shard.state && shard.state !== 'READY') {
         return { shard, ok: false, reason: 'NOT_READY' };
       }
+      const controller = new AbortController();
+      let timeoutId;
+      const requestOutcome = (async () => {
+        try {
+          const response = await fetchImpl(shard.url, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              query: input.query,
+              scopes: input.scopes,
+              limit: input.limit,
+              session_id: input.session_id ?? null,
+              from_time: input.from_time ?? null,
+              to_time: input.to_time ?? null,
+            }),
+            signal: controller.signal,
+          });
+          if (!response.ok) return { shard, ok: false, reason: 'QUERY_FAILED' };
+          return { shard, ok: true, body: await response.json() };
+        } catch {
+          return {
+            shard,
+            ok: false,
+            reason: controller.signal.aborted ? 'TIMEOUT' : 'QUERY_FAILED',
+          };
+        }
+      })();
+
+      const timeoutOutcome = new Promise((resolve) => {
+        timeoutId = setTimeout(() => {
+          controller.abort();
+          resolve({ shard, ok: false, reason: 'TIMEOUT' });
+        }, shardTimeoutMs);
+      });
+
       try {
-        const response = await fetchImpl(shard.url, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            query: input.query,
-            scopes: input.scopes,
-            limit: input.limit,
-            session_id: input.session_id ?? null,
-            from_time: input.from_time ?? null,
-            to_time: input.to_time ?? null,
-          }),
-        });
-        if (!response.ok) return { shard, ok: false, reason: 'QUERY_FAILED' };
-        return { shard, ok: true, body: await response.json() };
-      } catch {
-        return { shard, ok: false, reason: 'QUERY_FAILED' };
+        return await Promise.race([requestOutcome, timeoutOutcome]);
+      } finally {
+        clearTimeout(timeoutId);
       }
     }));
 
