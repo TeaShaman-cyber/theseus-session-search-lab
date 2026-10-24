@@ -1,0 +1,70 @@
+{
+  "schema": "theseus.session-search-federated-serving-final.v1",
+  "issue": 64,
+  "date": "2026-10-24",
+  "source_main_before_final_receipt": "e15fba8d61d7eaa20266e13cd9ee5be62844aaeb",
+  "disposition": "FEDERATED_SERVING_VERIFIED",
+  "host_plugin": {
+    "app_id": "asdk_app_6adcf7fcb44c8191b4a0da4d734b91da",
+    "plugin_id": "plugin_asdk_app_6adcf7fcb44c8191b4a0da4d734b91da",
+    "version": "1.0.1",
+    "release_id": "pluginrel_6adcf9bf0fc48191a559c3b044dd7192",
+    "app_binding_preserved": true,
+    "skill_overlay": "session-search-usage"
+  },
+  "arcade": {
+    "remote_server": "theseus-session-search",
+    "gateway_name": "Session Search",
+    "gateway_id": "gw_3L9SqeBQ5L5Cs2V1GB6yvnKhR8P",
+    "expected_tool": "TheseusSessionSearch.session_search"
+  },
+  "host_acceptance": {
+    "route": "ChatGPT App-backed plugin -> Arcade_SelectTools -> Arcade_UseTool -> TheseusSessionSearch.session_search -> ssrouter2 -> federated Neon shards",
+    "synthetic_query": "copper compass",
+    "status": "FOUND",
+    "queried_shards": [
+      "chatgpt-0001",
+      "hermes-0001"
+    ],
+    "unavailable_shards": [],
+    "post_overlay_repeat": "VERIFIED"
+  },
+  "shard_credentials": {
+    "chatgpt_0001": {
+      "role": "session_search_serving",
+      "login": true,
+      "neon_superuser_member": false,
+      "reader_member": true,
+      "bounded_search_execute": true,
+      "direct_messages_select": false,
+      "direct_sessions_select": false
+    },
+    "hermes_0001": {
+      "role": "session_search_serving",
+      "login": true,
+      "neon_superuser_member": false,
+      "reader_member": true,
+      "bounded_search_execute": true,
+      "direct_messages_select": false,
+      "direct_sessions_select": false
+    }
+  },
+  "failure_semantics": {
+    "live_partial_canary": "VERIFIED",
+    "failed_shard": "hermes-0001",
+    "healthy_hit_preserved": true,
+    "unavailable_reason": "QUERY_FAILED",
+    "restore_to_found": "VERIFIED"
+  },
+  "authority_boundary": {
+    "raw_source_authority": "external durable accepted source exports",
+    "neon": "rebuildable derived projection",
+    "marcopolo_request_time_dependency": false
+  },
+  "non_goals": {
+    "real_corpus_migration": false,
+    "production_cutover": false,
+    "raw_source_relocation": false,
+    "production_edge_auth_reverification_required": true
+  }
+}

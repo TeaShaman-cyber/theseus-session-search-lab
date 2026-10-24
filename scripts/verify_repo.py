@@ -19,6 +19,7 @@ REQUIRED = [
     'plugin-overlays/session-search-app-backed/skills/session-search-usage/references/gateway.md',
     'scripts/verify_session_search_app_overlay.py',
     'receipts/064-app-backed-host-handoff.public.json',
+    'receipts/064-federated-serving-final.public.json',
     'session_search/importer.py',
     'session_search/search.py',
     'session_search/chatgpt_export.py',

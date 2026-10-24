@@ -58,39 +58,80 @@ A prior router slug retained stale environment behavior after an env-only rollba
 
 The router MCP endpoint is registered as remote server `theseus-session-search`.
 
-A dedicated Arcade gateway named `Session Search` exposes exactly one tool:
+The dedicated Arcade gateway `Session Search` exposes one consumer tool:
 `TheseusSessionSearch.session_search`.
 
-Arcade control-plane discovery is verified. ChatGPT-host execution through the newly created gateway remains pending because the available Arcade admin surface does not expose a gateway execution call; the gateway must be attached to ChatGPT as a web MCP connection before the final host-side smoke.
+The ChatGPT host binding is now an App-backed private plugin:
+- App: `asdk_app_6adcf7fcb44c8191b4a0da4d734b91da`
+- plugin: `plugin_asdk_app_6adcf7fcb44c8191b4a0da4d734b91da`
+- version: `1.0.1`
+- release: `pluginrel_6adcf9bf0fc48191a559c3b044dd7192`
+
+The host-created `.app.json` binding was preserved while the checked-in
+`session-search-usage` skill overlay was added. No production `mcp.json` or
+`.mcp.json` was introduced.
+
+Host execution is VERIFIED. In the selected App-backed ChatGPT plugin:
+1. `Arcade_SelectTools` selected `TheseusSessionSearch.session_search`;
+2. `Arcade_UseTool` executed the synthetic query `copper compass`;
+3. the result was `FOUND` with both `chatgpt-0001` and `hermes-0001`;
+4. `unavailable_shards=[]`;
+5. the same host smoke passed again after the skill overlay update.
 
 ## Credential boundary
 
-The ChatGPT synthetic shard Function uses a dedicated SQL-created `session_search_serving` login that:
-- can execute the bounded search function;
-- cannot directly SELECT the messages table;
-- is not a member of `neon_superuser`.
+Both synthetic shard Functions use dedicated SQL-created
+`session_search_serving` LOGIN roles.
 
-Neon's role-management API automatically adds API-created login roles to `neon_superuser`; such roles are not suitable for this serving boundary.
+Current readback on both shards:
+- `neon_superuser` membership: false;
+- `session_search_reader` membership: true;
+- bounded search/status execution: true;
+- direct `messages` SELECT: false;
+- direct `sessions` SELECT: false.
 
-The Hermes project has the same SQL-created least-privileged serving role and its ACL was verified, but the current synthetic Function deployment uses Neon's injected owner connection because the chat tool safety layer blocked provisioning that role's connection string into Function environment. This is acceptable only for synthetic spike data. Real-corpus promotion is blocked until both shards use least-privileged serving credentials.
+Temporary owner-function grants used during diagnosis were removed. Both shard
+Functions still returned `FOUND` after that cleanup.
 
-A live error-log incident showed that a database driver error can contain a connection URI. The exposed synthetic credential was immediately rotated, and the handler now logs only error class/code with details redacted. A regression test proves connection strings/passwords do not escape through application error logs.
+A discarded API-created serving-role experiment demonstrated that Neon-managed
+API roles inherit broader `neon_superuser` membership and are unsuitable for
+this least-privilege serving boundary. That temporary role was deleted.
 
-## Current boundary
+A diagnostic error once included connection details in a private Function log.
+The affected credential was rotated and application logging was changed to keep
+only bounded error class/code. The bundle regression and handler tests preserve
+that guard.
 
-Verified:
-- independent shard Functions;
-- independent router Function;
-- two-project fan-out and deterministic merge;
-- scoped routing;
-- live PARTIAL semantics;
-- direct MCP tool execution;
-- Arcade remote-server discovery and one-tool gateway composition.
+## Terminal acceptance
 
-Not yet verified:
-- ChatGPT host -> Arcade gateway -> Session Search MCP execution;
-- least-privileged Function credential on the Hermes shard;
-- production authentication for the public MCP/HTTP edge;
-- real-corpus migration or cutover.
+VERIFIED:
+- two independent Neon project shards;
+- generation-scoped rebuildable projections;
+- deterministic federated merge with shard/generation provenance;
+- provider-scoped routing;
+- live `PARTIAL` semantics with healthy-hit preservation;
+- restore from injected failure back to `FOUND`;
+- independent shard Functions using least-privilege serving roles;
+- independent router MCP/HTTP serving plane;
+- Arcade remote server and one-tool gateway;
+- App-backed ChatGPT web/mobile plugin binding;
+- post-overlay ChatGPT -> Arcade -> Session Search -> Neon execution;
+- no MarcoPolo request-time execution.
+
+Historical handoff receipt
+`receipts/064-app-backed-host-handoff.public.json` records the earlier
+pre-creation state and is intentionally retained unchanged. It is superseded by
+`receipts/064-federated-serving-final.public.json`.
+
+## Remaining production boundary
+
+Issue #64 proves the federated serving architecture with synthetic/private-safe
+data. It does **not** authorize:
+- migration of real ChatGPT/Hermes/Codex corpora;
+- production cutover of existing Session Search users;
+- relocation of raw source authority from the durable export store;
+- production exposure before edge authentication/current policy is reverified.
+
+Terminal disposition for issue #64: `FEDERATED_SERVING_VERIFIED`.
 
 No real user corpus content was used in this spike.
