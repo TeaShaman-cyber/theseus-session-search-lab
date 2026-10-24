@@ -96,3 +96,35 @@ test('router MCP tool call reuses federated search', async () => {
   assert.equal(message.result.structuredContent.status, 'FOUND');
   assert.equal(message.result.structuredContent.hits[0].shard_id, 'chatgpt-0001');
 });
+
+
+test('router times out a stalled shard and preserves healthy hits as PARTIAL', async () => {
+  const catalog = [
+    { shard_id: 'chatgpt-0001', provider: 'chatgpt', generation_id: 'a'.repeat(64), state: 'READY', url: 'https://a.test/search' },
+    { shard_id: 'hermes-0001', provider: 'hermes', generation_id: 'b'.repeat(64), state: 'READY', url: 'https://b.test/search' },
+  ];
+  const fakeFetch = async (url) => {
+    if (String(url).includes('a.test')) {
+      return Response.json({
+        status: 'FOUND', generation_id: 'a'.repeat(64),
+        hits: [{ session_id: 'ca', message_id: 'c1', ordinal: 1, text: 'healthy' }],
+      });
+    }
+    return {
+      ok: true,
+      async json() {
+        return await new Promise(() => {});
+      },
+    };
+  };
+  const handler = makeRouterHandler({ catalog, fetchImpl: fakeFetch, shardTimeoutMs: 20 });
+  const response = await handler.fetch(new Request('https://router.test/search', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ query: 'needle', limit: 8 }),
+  }));
+  const result = await response.json();
+  assert.equal(result.status, 'PARTIAL');
+  assert.deepEqual(result.hits.map((x) => x.shard_id), ['chatgpt-0001']);
+  assert.deepEqual(result.unavailable_shards, [{ shard_id: 'hermes-0001', reason: 'TIMEOUT' }]);
+});

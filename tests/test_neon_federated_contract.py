@@ -4,6 +4,7 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SCHEMA = ROOT / "sql" / "neon" / "001_federated_shard_v1.sql"
 PRIVILEGES = ROOT / "sql" / "neon" / "002_federated_shard_privileges.sql"
+LIFECYCLE = ROOT / "sql" / "neon" / "003_federated_generation_lifecycle.sql"
 
 
 class NeonFederatedContractTest(unittest.TestCase):
@@ -34,6 +35,16 @@ class NeonFederatedContractTest(unittest.TestCase):
         self.assertIn("GRANT EXECUTE ON FUNCTION session_search.search(", text)
         self.assertIn("TO session_search_reader", text)
         self.assertNotIn("GRANT SELECT ON ALL TABLES IN SCHEMA session_search TO session_search_reader", text)
+
+    def test_lifecycle_migration_makes_ready_generations_immutable(self):
+        text = LIFECYCLE.read_text(encoding="utf-8")
+        self.assertIn("reject_direct_ready_generation", text)
+        self.assertIn("generation insert must start BUILDING", text)
+        self.assertIn("guard_projection_mutation", text)
+        self.assertIn("projection generation is immutable after READY", text)
+        self.assertIn("child generation_id is immutable", text)
+        self.assertIn("BEFORE INSERT OR UPDATE OR DELETE ON session_search.sessions", text)
+        self.assertIn("BEFORE INSERT OR UPDATE OR DELETE ON session_search.messages", text)
 
 
 if __name__ == "__main__":
