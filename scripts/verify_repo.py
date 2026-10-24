@@ -20,6 +20,8 @@ REQUIRED = [
     'scripts/verify_session_search_app_overlay.py',
     'receipts/064-app-backed-host-handoff.public.json',
     'receipts/064-federated-serving-final.public.json',
+    'docs/projection-backend-sizing.md',
+    'receipts/061-projection-backend-sizing.public.json',
     'sql/neon/003_federated_generation_lifecycle.sql',
     'scripts/codex_review_status.py',
     'tools/pr/codex-review-status.sh',
