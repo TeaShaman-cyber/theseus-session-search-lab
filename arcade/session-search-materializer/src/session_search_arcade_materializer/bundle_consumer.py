@@ -152,7 +152,7 @@ def _source_manifest_digest(manifest: dict[str, Any]) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
-def verify_bundle(
+def read_verified_bundle(
     path: Path,
     *,
     expected_bundle_sha256: str,
@@ -232,7 +232,7 @@ def verify_bundle(
     except BadZipFile as exc:
         raise BundleVerificationError("BUNDLE_ZIP_INVALID") from exc
 
-    return {
+    result = {
         "status": "VERIFIED",
         "schema": BUNDLE_SCHEMA,
         "provider": manifest["provider"],
@@ -247,7 +247,23 @@ def verify_bundle(
         "searchable_text_bytes": manifest["searchable_text_bytes"],
         "bundle_sha256": actual,
         "bundle_size_bytes": size,
+        "projection_schema_version": manifest["projection_schema_version"],
     }
+    return result, sessions, messages
+
+
+def verify_bundle(
+    path: Path,
+    *,
+    expected_bundle_sha256: str,
+    max_bundle_bytes: int = DEFAULT_MAX_BUNDLE_BYTES,
+) -> dict[str, Any]:
+    result, _sessions, _messages = read_verified_bundle(
+        path,
+        expected_bundle_sha256=expected_bundle_sha256,
+        max_bundle_bytes=max_bundle_bytes,
+    )
+    return result
 
 
 async def download_drive_bundle(

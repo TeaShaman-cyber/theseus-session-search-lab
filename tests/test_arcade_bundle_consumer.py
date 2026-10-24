@@ -16,6 +16,7 @@ from session_search.shard_bundle import build_bundle
 from session_search_arcade_materializer.bundle_consumer import (
     BundleVerificationError,
     download_drive_bundle,
+    read_verified_bundle,
     verify_bundle,
 )
 from tests.test_neon_materializer import NeonMaterializerSourceTest
@@ -33,6 +34,18 @@ class ArcadeBundleConsumerTest(unittest.TestCase):
             require_verified=False,
         )
         return bundle
+
+    def test_verified_bundle_rows_are_returned_from_same_verification_pass(self):
+        with tempfile.TemporaryDirectory() as td:
+            bundle = self.make_bundle(Path(td))
+            expected = hashlib.sha256(bundle.read_bytes()).hexdigest()
+            result, sessions, messages = read_verified_bundle(
+                bundle, expected_bundle_sha256=expected
+            )
+            self.assertEqual(result["status"], "VERIFIED")
+            self.assertEqual(len(sessions), result["session_count"])
+            self.assertEqual(len(messages), result["message_count"])
+            self.assertEqual(messages[0][2], "m1")
 
     def test_independent_consumer_accepts_producer_bundle(self):
         with tempfile.TemporaryDirectory() as td:
@@ -170,12 +183,12 @@ class ArcadeBundleConsumerTest(unittest.TestCase):
         workflow = (ROOT / ".github" / "workflows" / "deploy-session-search-arcade-materializer.yml").read_text()
         self.assertIn("python -m pip install -e .", workflow)
 
-    def test_server_surface_is_read_only_inspection_only(self):
+    def test_server_keeps_inspector_read_only_and_materializer_building_only(self):
         server = (ROOT / "arcade" / "session-search-materializer" / "src" / "session_search_arcade_materializer" / "server.py").read_text()
         self.assertIn("drive.readonly", server)
         self.assertIn("inspect_bundle", server)
-        self.assertNotIn("NEON_API_KEY", server)
-        self.assertNotIn("psycopg", server)
+        self.assertIn("NEON_API_KEY", server)
+        self.assertIn("materialize_bundle", server)
         self.assertNotIn("mark_generation_ready", server)
         self.assertNotIn("activate_generation", server)
 
