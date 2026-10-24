@@ -1,0 +1,33 @@
+{
+  "arcade_versions": {
+    "arcade_core": "4.23.0",
+    "arcade_mcp": "1.16.3",
+    "arcade_mcp_server": "1.32.1"
+  },
+  "consumer_verification": {
+    "bundle_sha256": "7ccf184964a3243f99c7d7baebf44f3906886ca70d3a450842291e0e63a9ae63",
+    "generation_id": "6095e643b3fc4f133c94c04db24565dce6bbd456a308860820e94e70f8047835",
+    "message_count": 17790,
+    "real_xai_bundle_verified": true,
+    "session_count": 60
+  },
+  "date": "2026-10-24",
+  "disposition": "ARCADE_CONSUMER_CODE_VERIFIED_DEPLOYMENT_BLOCKED_NO_CLI_AUTH",
+  "google_oauth": {
+    "provider_status": "active",
+    "scope": "https://www.googleapis.com/auth/drive.readonly"
+  },
+  "hosted_deployment": {
+    "attempted": false,
+    "state": "BLOCKED_NO_CLI_AUTH"
+  },
+  "issue": 3,
+  "manual_ci_deploy_workflow": true,
+  "neon_mutation_capability": false,
+  "package_wheel_bytes": 5847,
+  "schema": "theseus.session-search-arcade-bundle-consumer.public.v1",
+  "source_main": "b43717ae87285bd2b0e49710422dae3eb0b67089",
+  "tool_surface": [
+    "inspect_bundle"
+  ]
+}
