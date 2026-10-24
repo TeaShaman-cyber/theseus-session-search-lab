@@ -1,4 +1,8 @@
+import json
+import os
 import random
+import subprocess
+import sys
 import sqlite3
 import tempfile
 import unittest
@@ -154,6 +158,60 @@ class SQLiteExtractionTest(unittest.TestCase):
             self.assertEqual(rows["ds"]["provider"], "deepseek")
             self.assertIsNone(rows["unknown"]["provider"])
             con.close()
+
+
+
+class PlannerCliTest(unittest.TestCase):
+    @staticmethod
+    def clean_env():
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+        return env
+
+    def test_help_works_without_pythonpath(self):
+        root = Path(__file__).resolve().parents[1]
+        result = subprocess.run(
+            [sys.executable, "scripts/plan_neon_shards.py", "--help"],
+            cwd=root,
+            env=self.clean_env(),
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Plan provider-aware Neon shards", result.stdout)
+
+    def test_synthetic_planner_run_works_without_pythonpath(self):
+        root = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as td:
+            db = Path(td) / "corpus.sqlite3"
+            con = sqlite3.connect(db)
+            con.executescript("""
+                CREATE TABLE sessions(session_id TEXT PRIMARY KEY, first_accepted_at TEXT);
+                CREATE TABLE messages(session_id TEXT, search_class TEXT, text TEXT);
+                CREATE TABLE artifacts(artifact_id INTEGER PRIMARY KEY, source_adapter TEXT);
+                CREATE TABLE artifact_routes(artifact_id INTEGER, projected_session_id TEXT);
+                INSERT INTO sessions VALUES ('s1','2026-01-01T00:00:00+00:00');
+                INSERT INTO messages VALUES ('s1','dialogue','hello');
+                INSERT INTO artifacts VALUES (1,'chatgpt-export');
+                INSERT INTO artifact_routes VALUES (1,'s1');
+            """)
+            con.commit()
+            con.close()
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/plan_neon_shards.py",
+                    "--database",
+                    str(db),
+                ],
+                cwd=root,
+                env=self.clean_env(),
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["shards"][0]["shard_id"], "chatgpt-0001")
 
 
 if __name__ == "__main__":
