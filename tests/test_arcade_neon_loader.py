@@ -9,6 +9,7 @@ if str(PKG_SRC) not in sys.path:
     sys.path.insert(0, str(PKG_SRC))
 
 from session_search_arcade_materializer.neon_loader import (
+    CAPABILITY_ROLE,
     LOADER_ROLE,
     TargetMaterializationError,
     classify_existing_generation,
@@ -138,6 +139,8 @@ class ArcadeNeonLoaderTest(unittest.TestCase):
         self.assertEqual(result['loaded_sessions'], 2)
         self.assertEqual(result['loaded_messages'], 2)
         self.assertEqual(conn.commits, 1)
+        first_sql = ' '.join(conn.cursor_obj.executed[0][0].split())
+        self.assertEqual(first_sql, f'SET LOCAL ROLE {CAPABILITY_ROLE}')
 
     def test_exact_building_db_replay_performs_no_insert(self):
         manifest = {

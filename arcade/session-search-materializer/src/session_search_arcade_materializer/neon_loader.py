@@ -6,6 +6,7 @@ from urllib.parse import quote
 
 NEON_API_BASE = 'https://console.neon.tech/api/v2'
 LOADER_ROLE = 'session_search_arcade_loader_sql'
+CAPABILITY_ROLE = 'session_search_building_loader'
 _PROJECT_ID_RE = re.compile(r'^[a-z0-9-]{1,60}$')
 _BRANCH_ID_RE = re.compile(r'^br-[a-z0-9-]{1,60}$')
 _DATABASE_RE = re.compile(r'^[A-Za-z0-9_][A-Za-z0-9_.-]{0,62}$')
@@ -117,6 +118,7 @@ def load_rows_to_building(
     try:
         with conn:
             with conn.cursor() as cur:
+                cur.execute(f"SET LOCAL ROLE {CAPABILITY_ROLE}")
                 cur.execute(
                     "SELECT g.shard_id,g.provider,g.source_manifest_sha256,g.projection_schema_version,g.state,"
                     "(SELECT count(*) FROM session_search.sessions s WHERE s.generation_id=g.generation_id),"

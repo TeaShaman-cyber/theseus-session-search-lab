@@ -25,7 +25,7 @@ The real xAI bundle completed Hosted end-to-end verification on 2026-10-24: 60 s
 
 `materialize_bundle(...)` reuses the same single verification pass and then resolves a Neon connection URI through Neon control plane using Arcade-managed `NEON_API_KEY`. The API key must be scoped to the one target project.
 
-The SQL login role is fixed to `session_search_arcade_loader_sql`; it is not caller-selectable. Its capability is supplied by `sql/neon/004_arcade_building_loader.sql`, which grants only schema usage plus SELECT/INSERT on the three projection tables. It has no UPDATE/DELETE, `mark_generation_ready`, `activate_generation`, or catalog capability.
+The SQL login role is fixed to `session_search_arcade_loader_sql`; it is not caller-selectable. At transaction start the loader executes fixed `SET LOCAL ROLE session_search_building_loader`. That capability is supplied by `sql/neon/004_arcade_building_loader.sql`, which grants only schema usage plus SELECT/INSERT on the three projection tables. It has no UPDATE/DELETE, `mark_generation_ready`, `activate_generation`, or catalog capability.
 
 Materialization is transaction-bound and retry-idempotent:
 
