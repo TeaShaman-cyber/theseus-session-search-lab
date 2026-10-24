@@ -5,3 +5,5 @@ __pycache__/
 *.sqlite3
 *.db
 *.zip
+functions/node_modules/
+functions/dist/

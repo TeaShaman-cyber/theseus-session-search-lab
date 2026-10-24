@@ -1,0 +1,44 @@
+{
+  "schema": "theseus.session-search-serving-plane-receipt.v1",
+  "issue": 64,
+  "date": "2026-10-24",
+  "source_base": "5137fdbb71d21ad50eee872a72c2a81341331d17",
+  "bundles": {
+    "shard_zip_sha256": "d16e5ebb9f8867b6848cf925be7d1861e603dfe68488c9a5153d84525feac8b8",
+    "router_zip_sha256": "dc4eb880172263e58ab589314a6558cc02f8e81f1f2516a60dfd872ed7215561"
+  },
+  "resources": {
+    "chatgpt_shard_project": "misty-darkness-46441019",
+    "hermes_shard_project": "ancient-morning-06623139",
+    "router_project": "royal-cake-29698192",
+    "canonical_router_function": "ssrouter2",
+    "arcade_server": "theseus-session-search",
+    "arcade_gateway": "gw_3L9SqeBQ5L5Cs2V1GB6yvnKhR8P",
+    "arcade_tool": "TheseusSessionSearch.session_search"
+  },
+  "postconditions": {
+    "chatgpt_shard_http_search": "FOUND",
+    "hermes_shard_http_search": "FOUND",
+    "router_two_shard_search": "FOUND",
+    "provider_scoped_routing": "VERIFIED",
+    "live_partial_failure": "VERIFIED",
+    "mcp_initialize": "VERIFIED",
+    "mcp_tools_list": "ONE_TOOL",
+    "mcp_tools_call": "FOUND",
+    "arcade_remote_server_registered": "VERIFIED",
+    "arcade_gateway_one_tool": "VERIFIED",
+    "chatgpt_host_gateway_execution": "PENDING",
+    "chatgpt_shard_least_privilege": "VERIFIED",
+    "hermes_shard_least_privilege_role": "VERIFIED_NOT_WIRED",
+    "hermes_function_current_credential": "DEGRADED_SYNTHETIC_OWNER_FALLBACK",
+    "production_edge_authentication": "PENDING"
+  },
+  "security": {
+    "real_corpus_used": false,
+    "published_private_source_ids": false,
+    "published_credentials": false,
+    "credential_log_incident": "ROTATED_AND_REGRESSION_FIXED",
+    "production_promotion_allowed": false
+  },
+  "disposition": "SERVING_PLANE_VERIFIED_HOST_SMOKE_PENDING"
+}
