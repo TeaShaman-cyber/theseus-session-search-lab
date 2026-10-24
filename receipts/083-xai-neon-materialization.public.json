@@ -1,0 +1,96 @@
+{
+  "schema": "theseus.session-search-xai-neon-materialization.public.v1",
+  "issue": 83,
+  "date": "2026-10-24",
+  "source_main": "195b9ea9719d2c24102a38cd217842052a9f6a90",
+  "authorization": {
+    "materialization_authorized": true,
+    "catalog_cutover_authorized": false,
+    "router_cutover_authorized": false,
+    "app_cutover_authorized": false
+  },
+  "source": {
+    "provider": "xai",
+    "authority_surface": "verified_frozen_xai_corpus",
+    "materializer_contract_version": "neon-shard-materializer-v2",
+    "projection_schema_version": "session-search-federated-v1",
+    "accepted_artifact_count": 60,
+    "accepted_set_sha256": "125271750e532775057dfcc3c9cb09344723db0fe5551e892d864e9d080b1835",
+    "source_projection_sha256": "9beb4ebd74f2ee55717884c11f8232d4227d9a90161ac415ed904d0072757a01",
+    "source_manifest_sha256": "742a353bad9274b346673e8e7ee0035c176e334faf37a2a1561efffd11dde755",
+    "sessions": 60,
+    "searchable_messages": 17790,
+    "searchable_text_bytes": 38339845,
+    "search_classes": {
+      "dialogue": 12057,
+      "trace": 5733
+    },
+    "overlap_vs_current_cumulative": {
+      "status": "DISJOINT",
+      "candidate_artifacts": 60,
+      "overlap_artifacts": 0,
+      "novel_artifacts": 60
+    }
+  },
+  "accepted_candidate": {
+    "project_name": "theseus-ss-xai-0001-v2",
+    "project_id": "royal-wind-39888328",
+    "branch_id": "br-hidden-bonus-b4jntyc6",
+    "region": "aws-us-east-2",
+    "postgres_version": 17,
+    "shard_id": "xai-0001",
+    "generation_id": "6095e643b3fc4f133c94c04db24565dce6bbd456a308860820e94e70f8047835",
+    "state": "READY",
+    "ready_at": "2026-10-24T21:24:12.141Z",
+    "active": false,
+    "database_bytes": 100048896,
+    "messages_total_bytes": 92192768,
+    "messages_heap_bytes": 15671296,
+    "messages_index_bytes": 22421504,
+    "control_plane_branch_logical_size_limit_bytes": 1073741824,
+    "serving_role": {
+      "login": true,
+      "authentication_method": "password",
+      "neon_superuser_member": false,
+      "reader_member": true,
+      "messages_select": false,
+      "sessions_select": false,
+      "search_generation_execute": true
+    },
+    "materializer_role": {
+      "login": true,
+      "authentication_method": "password",
+      "neon_superuser_member": false,
+      "materializer_member": true
+    },
+    "serving_smoke": {
+      "status": "FOUND",
+      "provider": "xai",
+      "shard_id": "xai-0001",
+      "generation_id": "6095e643b3fc4f133c94c04db24565dce6bbd456a308860820e94e70f8047835",
+      "hit_count": 5,
+      "hit_text_published": false
+    }
+  },
+  "superseded_candidate": {
+    "project_name": "theseus-ss-xai-0001",
+    "project_id": "dry-poetry-12579932",
+    "materializer_contract_version": "neon-shard-materializer-v1",
+    "generation_id": "d20ff8a27947c38e3c567f8d8fd77eeca1480be471d47523b9275322ace842b2",
+    "state": "READY",
+    "active": false,
+    "reason": "superseded_after_late_codex_snapshot-binding_finding",
+    "cleanup_requires_explicit_project-deletion_confirmation": true
+  },
+  "follow_up": {
+    "retry_idempotency_issue": 86
+  },
+  "boundary": {
+    "production_catalog_mutated": false,
+    "router_catalog_mutated": false,
+    "arcade_gateway_mutated": false,
+    "app_plugin_mutated": false,
+    "source_authority_moved_to_neon": false
+  },
+  "disposition": "XAI_0001_V2_READY_INACTIVE_VERIFIED_NO_CUTOVER"
+}
