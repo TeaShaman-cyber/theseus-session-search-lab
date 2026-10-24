@@ -23,6 +23,7 @@ REQUIRED = [
     'docs/projection-backend-sizing.md',
     'receipts/061-projection-backend-sizing.public.json',
     'docs/first-neon-promotion-plan.md',
+    'docs/shard-bundle-transport.md',
     'receipts/075-first-neon-promotion-plan.public.json',
     'session_search/shard_allocation.py',
     'scripts/plan_neon_shards.py',
@@ -31,6 +32,9 @@ REQUIRED = [
     'scripts/audit_corpus_overlap.py',
     'receipts/081-artifact-overlap-guard.public.json',
     'receipts/083-xai-neon-materialization.public.json',
+    'receipts/003-xai-drive-bundle.public.json',
+    'session_search/shard_bundle.py',
+    'scripts/shard_bundle.py',
     'session_search/neon_materializer.py',
     'scripts/materialize_neon_shard.py',
     'sql/neon/003_federated_generation_lifecycle.sql',
@@ -100,6 +104,7 @@ json.loads((ROOT/'receipts/003-multi-session-corpus.public.json').read_text())
 json.loads((ROOT/'receipts/077-provider-aware-shard-allocation.public.json').read_text())
 json.loads((ROOT/'receipts/081-artifact-overlap-guard.public.json').read_text())
 json.loads((ROOT/'receipts/083-xai-neon-materialization.public.json').read_text())
+json.loads((ROOT/'receipts/003-xai-drive-bundle.public.json').read_text())
 tracked = subprocess.check_output(['git','ls-files'], cwd=ROOT, text=True).splitlines()
 for p in tracked:
     lower=p.lower()

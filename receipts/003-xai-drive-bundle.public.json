@@ -1,0 +1,47 @@
+{
+  "accepted_artifact_count": 60,
+  "accepted_set_sha256": "125271750e532775057dfcc3c9cb09344723db0fe5551e892d864e9d080b1835",
+  "arcade_consumer_state": "PENDING",
+  "bundle_contract": "theseus.session-search-shard-bundle.v1",
+  "bundle_sha256": "7ccf184964a3243f99c7d7baebf44f3906886ca70d3a450842291e0e63a9ae63",
+  "bundle_size_bytes": 40649490,
+  "date": "2026-10-24",
+  "determinism": {
+    "sequential_rebuild_byte_identical": true
+  },
+  "disposition": "DRIVE_BUNDLE_STAGED_NATIVE_READBACK_VERIFIED_ARCADE_CONSUMER_PENDING",
+  "drive_staging": {
+    "drive_file_id_published": false,
+    "folder": "Theseus Bridge/artifacts",
+    "native_chatgpt_drive_readback_verified": true,
+    "native_download_sha256_verified": true,
+    "native_readback_mime_type": "application/zip",
+    "native_readback_size_bytes": 40649490,
+    "upload_verified": true,
+    "visibility": "private"
+  },
+  "files": {
+    "messages.csv": {
+      "rows": 17790,
+      "sha256": "00a1509eb90edbd0cacfa2cf0eed28046dba5129e1d1fa76be81eaf58479791c",
+      "size_bytes": 40637831
+    },
+    "sessions.csv": {
+      "rows": 60,
+      "sha256": "896ab52390fbe645f11c939d8893f0f1e51af71123fa8a45a2bc3fcf3b4ab8a4",
+      "size_bytes": 10155
+    }
+  },
+  "generation_id": "6095e643b3fc4f133c94c04db24565dce6bbd456a308860820e94e70f8047835",
+  "issue": 3,
+  "message_count": 17790,
+  "neon_mutation_in_this_slice": false,
+  "provider": "xai",
+  "schema": "theseus.session-search-drive-shard-bundle.public.v1",
+  "searchable_text_bytes": 38339845,
+  "session_count": 60,
+  "shard_id": "xai-0001",
+  "source_main": "b6f7efe5f9db2b40d3d702d77558d814b7e06128",
+  "source_manifest_sha256": "742a353bad9274b346673e8e7ee0035c176e334faf37a2a1561efffd11dde755",
+  "source_projection_sha256": "9beb4ebd74f2ee55717884c11f8232d4227d9a90161ac415ed904d0072757a01"
+}
