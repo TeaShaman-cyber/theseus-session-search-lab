@@ -1,0 +1,38 @@
+name: Deploy Session Search Arcade materializer
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: arcade/session-search-materializer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install Arcade CLI
+        run: python -m pip install 'arcade-mcp>=1.16.0'
+      - name: Require deployment credentials
+        env:
+          ARCADE_URL: ${{ secrets.ARCADE_URL }}
+          ARCADE_API_KEY: ${{ secrets.ARCADE_API_KEY }}
+        run: |
+          python - <<'PY'
+          import os
+          missing = [name for name in ('ARCADE_URL', 'ARCADE_API_KEY') if not os.environ.get(name)]
+          if missing:
+              raise SystemExit('missing required Arcade deployment secrets: ' + ','.join(missing))
+          print('ARCADE_DEPLOY_CREDENTIALS_PRESENT')
+          PY
+      - name: Deploy read-only bundle inspector
+        env:
+          ARCADE_URL: ${{ secrets.ARCADE_URL }}
+          ARCADE_API_KEY: ${{ secrets.ARCADE_API_KEY }}
+        run: arcade deploy -e src/session_search_arcade_materializer/server.py --secrets skip

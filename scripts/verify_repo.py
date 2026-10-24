@@ -24,6 +24,7 @@ REQUIRED = [
     'receipts/061-projection-backend-sizing.public.json',
     'docs/first-neon-promotion-plan.md',
     'docs/shard-bundle-transport.md',
+    'docs/arcade-bundle-consumer.md',
     'receipts/075-first-neon-promotion-plan.public.json',
     'session_search/shard_allocation.py',
     'scripts/plan_neon_shards.py',
@@ -33,6 +34,13 @@ REQUIRED = [
     'receipts/081-artifact-overlap-guard.public.json',
     'receipts/083-xai-neon-materialization.public.json',
     'receipts/003-xai-drive-bundle.public.json',
+    'receipts/003-arcade-bundle-consumer.public.json',
+    'arcade/session-search-materializer/pyproject.toml',
+    'arcade/session-search-materializer/README.md',
+    'arcade/session-search-materializer/src/session_search_arcade_materializer/__init__.py',
+    'arcade/session-search-materializer/src/session_search_arcade_materializer/bundle_consumer.py',
+    'arcade/session-search-materializer/src/session_search_arcade_materializer/server.py',
+    '.github/workflows/deploy-session-search-arcade-materializer.yml',
     'session_search/shard_bundle.py',
     'scripts/shard_bundle.py',
     'session_search/neon_materializer.py',
@@ -105,6 +113,7 @@ json.loads((ROOT/'receipts/077-provider-aware-shard-allocation.public.json').rea
 json.loads((ROOT/'receipts/081-artifact-overlap-guard.public.json').read_text())
 json.loads((ROOT/'receipts/083-xai-neon-materialization.public.json').read_text())
 json.loads((ROOT/'receipts/003-xai-drive-bundle.public.json').read_text())
+json.loads((ROOT/'receipts/003-arcade-bundle-consumer.public.json').read_text())
 tracked = subprocess.check_output(['git','ls-files'], cwd=ROOT, text=True).splitlines()
 for p in tracked:
     lower=p.lower()
