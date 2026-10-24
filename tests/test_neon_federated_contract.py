@@ -5,6 +5,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 SCHEMA = ROOT / "sql" / "neon" / "001_federated_shard_v1.sql"
 PRIVILEGES = ROOT / "sql" / "neon" / "002_federated_shard_privileges.sql"
 LIFECYCLE = ROOT / "sql" / "neon" / "003_federated_generation_lifecycle.sql"
+BUILDING_LOADER = ROOT / "sql" / "neon" / "004_arcade_building_loader.sql"
 
 
 class NeonFederatedContractTest(unittest.TestCase):
@@ -35,6 +36,17 @@ class NeonFederatedContractTest(unittest.TestCase):
         self.assertIn("GRANT EXECUTE ON FUNCTION session_search.search(", text)
         self.assertIn("TO session_search_reader", text)
         self.assertNotIn("GRANT SELECT ON ALL TABLES IN SCHEMA session_search TO session_search_reader", text)
+
+    def test_arcade_building_loader_migration_is_insert_only(self):
+        text = BUILDING_LOADER.read_text(encoding="utf-8")
+        self.assertIn("CREATE ROLE session_search_building_loader NOLOGIN", text)
+        self.assertIn("GRANT SELECT,INSERT ON session_search.generations", text)
+        self.assertIn("GRANT SELECT,INSERT ON session_search.sessions", text)
+        self.assertIn("GRANT SELECT,INSERT ON session_search.messages", text)
+        self.assertNotIn("mark_generation_ready", text)
+        self.assertNotIn("activate_generation", text)
+        self.assertNotIn("UPDATE", text)
+        self.assertNotIn("DELETE", text)
 
     def test_lifecycle_migration_makes_ready_generations_immutable(self):
         text = LIFECYCLE.read_text(encoding="utf-8")
