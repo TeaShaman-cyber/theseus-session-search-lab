@@ -226,6 +226,26 @@ Before real-corpus materialization/cutover is authorized, a follow-up implementa
 - rollback retention window and cleanup authority;
 - current local fallback/runtime status.
 
+
+## First real provider candidate checkpoint
+
+Issue #83 materialized the verified, overlap-disjoint xAI corpus into a dedicated Neon candidate using materializer contract `neon-shard-materializer-v2`. The accepted candidate is `xai-0001` generation `6095e643...` in project `theseus-ss-xai-0001-v2`.
+
+Observed acceptance:
+
+- source: 60 accepted xAI artifacts / 60 sessions / 17,790 searchable messages;
+- source projection digest and accepted-set digest reproduce the frozen authority;
+- generation state: `READY`;
+- active generation: `NULL` (not activated);
+- actual database size: 100,048,896 bytes, materially below the conservative synthetic sizing estimate;
+- least-privilege serving role has bounded search execution but no direct `sessions` or `messages` table SELECT;
+- bounded serving-role `search_generation` smoke returned `FOUND` with correct xAI shard/generation provenance;
+- production router/catalog, Arcade gateway, and App-backed plugin were not changed.
+
+A prior v1 candidate was superseded after late Codex review found that manifest construction and upload rows could come from different source reads. Materializer v2 captures verification, manifest inputs, and upload rows under the repository-native corpus mutation lock. The superseded v1 project remains inactive pending separate explicit cleanup authorization.
+
+The public acceptance receipt is `receipts/083-xai-neon-materialization.public.json`.
+
 ## Current disposition
 
 The promotion procedure remains READY AS A PLAN, but its current allocation is the provider-aware #77 contract above.
