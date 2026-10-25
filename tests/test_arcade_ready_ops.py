@@ -11,15 +11,20 @@ from arcade_mark_bundle_ready import ReadyOpsError, discover_mark_bundle_ready, 
 
 
 class FakeTools:
-    def __init__(self, *, names, output=None, auth_status='completed', success=True):
+    def __init__(self, *, names, output=None, auth_status='completed', success=True, scoped_names=None):
         self.names = names
+        self.scoped_names = scoped_names or {}
         self.output = output
         self.auth_status = auth_status
         self.success = success
         self.executed = None
+        self.list_calls = []
 
-    def list(self, **_kwargs):
-        items = [SimpleNamespace(qualified_name=name) for name in self.names]
+    def list(self, **kwargs):
+        self.list_calls.append(kwargs)
+        toolkit = kwargs.get('toolkit')
+        names = self.scoped_names.get(toolkit, self.names if toolkit is None else [])
+        items = [SimpleNamespace(qualified_name=name) for name in names]
         return SimpleNamespace(items=items, next_offset=None)
 
     def authorize(self, *, tool_name, user_id):
@@ -44,6 +49,15 @@ class ArcadeReadyOpsTest(unittest.TestCase):
     def test_discovers_exactly_one_ready_tool(self):
         client = FakeClient(FakeTools(names=['Other.Tool', 'SessionSearchMaterializer.MarkBundleReady']))
         self.assertEqual(discover_mark_bundle_ready(client), 'SessionSearchMaterializer.MarkBundleReady')
+
+    def test_discovers_ready_tool_from_hosted_server_scope(self):
+        tools = FakeTools(
+            names=[],
+            scoped_names={'session_search_materializer': ['SessionSearchMaterializer.MarkBundleReady']},
+        )
+        client = FakeClient(tools)
+        self.assertEqual(discover_mark_bundle_ready(client), 'SessionSearchMaterializer.MarkBundleReady')
+        self.assertEqual(tools.list_calls[0]['toolkit'], 'session_search_materializer')
 
     def test_ambiguous_ready_tool_discovery_fails_closed(self):
         client = FakeClient(FakeTools(names=['A.MarkBundleReady', 'B.mark_bundle_ready']))

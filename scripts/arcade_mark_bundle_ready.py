@@ -30,14 +30,26 @@ def _is_mark_bundle_ready(name: str) -> bool:
     return compact.endswith('markbundleready')
 
 
-def discover_mark_bundle_ready(client: Any) -> str:
+READY_TOOLKITS = (
+    'session_search_materializer',
+    'SessionSearchMaterializer',
+    'session-search-materializer',
+)
+
+
+def _collect_ready_matches(client: Any, *, toolkit: str | None) -> list[str]:
     matches: list[str] = []
     offset = None
     while True:
         kwargs: dict[str, Any] = {'limit': 100}
+        if toolkit is not None:
+            kwargs['toolkit'] = toolkit
         if offset:
             kwargs['offset'] = offset
-        page = client.tools.list(**kwargs)
+        try:
+            page = client.tools.list(**kwargs)
+        except Exception:
+            return matches
         for tool in page.items:
             name = _qualified_name(tool)
             if name and _is_mark_bundle_ready(name):
@@ -45,6 +57,15 @@ def discover_mark_bundle_ready(client: Any) -> str:
         offset = getattr(page, 'next_offset', None)
         if not offset:
             break
+    return matches
+
+
+def discover_mark_bundle_ready(client: Any) -> str:
+    matches: list[str] = []
+    for toolkit in READY_TOOLKITS:
+        matches.extend(_collect_ready_matches(client, toolkit=toolkit))
+    if not matches:
+        matches.extend(_collect_ready_matches(client, toolkit=None))
     unique = sorted(set(matches))
     if len(unique) != 1:
         raise ReadyOpsError(
