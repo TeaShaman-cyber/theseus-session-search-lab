@@ -11,10 +11,14 @@ if str(PKG_SRC) not in sys.path:
 from session_search_arcade_materializer.neon_loader import (
     CAPABILITY_ROLE,
     LOADER_ROLE,
+    READY_CAPABILITY_ROLE,
+    READY_ROLE,
     TargetMaterializationError,
     classify_existing_generation,
     load_rows_to_building,
+    mark_generation_ready,
     resolve_neon_connection_uri,
+    resolve_neon_ready_connection_uri,
 )
 
 
@@ -43,6 +47,63 @@ class ArcadeNeonLoaderTest(unittest.TestCase):
             self.assertEqual(client.headers['Authorization'], 'Bearer private-neon-key')
             self.assertNotIn('private-neon-key', uri)
         asyncio.run(run())
+
+    def test_ready_connection_uri_uses_fixed_ready_role(self):
+        class Response:
+            def raise_for_status(self): return None
+            def json(self): return {'uri': 'postgresql://ready:secret@example/neondb'}
+
+        class Client:
+            async def get(self, url, *, headers, params):
+                self.params = params
+                return Response()
+
+        async def run():
+            client = Client()
+            uri = await resolve_neon_ready_connection_uri(
+                neon_api_key='private-neon-key',
+                project_id='wild-surf-61625738',
+                branch_id='br-floral-morning-b5kactgx',
+                database_name='neondb',
+                client=client,
+            )
+            self.assertTrue(uri.startswith('postgresql://'))
+            self.assertEqual(client.params['role_name'], READY_ROLE)
+        asyncio.run(run())
+
+    def test_ready_transition_uses_ready_capability_only(self):
+        executed = []
+
+        class Cursor:
+            def __enter__(self): return self
+            def __exit__(self, *_args): return False
+            def execute(self, sql, params=None): executed.append((sql, params))
+
+        class Connection:
+            def __init__(self): self.commits = 0
+            def __enter__(self): return self
+            def __exit__(self, exc_type, *_args):
+                if exc_type is None: self.commits += 1
+                return False
+            def cursor(self): return Cursor()
+            def close(self): pass
+
+        conn = Connection()
+        result = mark_generation_ready(
+            database_url='postgresql://private',
+            generation_id='a' * 64,
+            expected_source_manifest_sha256='b' * 64,
+            expected_session_count=60,
+            expected_message_count=17790,
+            connect=lambda _url: conn,
+        )
+        self.assertEqual(result['status'], 'READY')
+        self.assertEqual(result['target_state'], 'READY')
+        self.assertEqual(conn.commits, 1)
+        self.assertEqual(' '.join(executed[0][0].split()), f'SET LOCAL ROLE {READY_CAPABILITY_ROLE}')
+        self.assertIn('session_search.mark_generation_ready', executed[1][0])
+        self.assertEqual(executed[1][1], ('a' * 64, 'b' * 64, 60, 17790))
+        self.assertFalse(any('activate_generation' in sql for sql, _ in executed))
 
     def test_exact_building_replay_is_idempotent(self):
         expected = {
@@ -168,18 +229,22 @@ class ArcadeNeonLoaderTest(unittest.TestCase):
         self.assertEqual(result['loaded_sessions'], 60)
         self.assertEqual(result['loaded_messages'], 17790)
 
-    def test_server_exposes_building_only_materializer(self):
+    def test_server_separates_building_and_ready_capabilities(self):
         server = (PKG_SRC / 'session_search_arcade_materializer' / 'server.py').read_text()
         self.assertIn('materialize_bundle', server)
+        self.assertIn('mark_bundle_ready', server)
         self.assertIn('NEON_API_KEY', server)
         self.assertIn('LOADER_ROLE', server)
+        self.assertIn('READY_ROLE', server)
         loader = (PKG_SRC / 'session_search_arcade_materializer' / 'neon_loader.py').read_text()
         self.assertIn("LOADER_ROLE = 'session_search_arcade_loader_sql'", loader)
+        self.assertIn("READY_ROLE = 'session_search_arcade_ready_sql'", loader)
+        self.assertIn("READY_CAPABILITY_ROLE = 'session_search_ready_marker'", loader)
         self.assertNotIn('role_name: Annotated', server)
         self.assertIn('read_verified_bundle', server)
         self.assertIn('load_rows_to_building', server)
+        self.assertIn('mark_generation_ready', server)
         self.assertNotIn('VERIFIED_NOT_LOADED', server)
-        self.assertNotIn('mark_generation_ready', server)
         self.assertNotIn('activate_generation', server)
 
 

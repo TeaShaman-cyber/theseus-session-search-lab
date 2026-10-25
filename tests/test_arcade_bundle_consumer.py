@@ -183,13 +183,13 @@ class ArcadeBundleConsumerTest(unittest.TestCase):
         workflow = (ROOT / ".github" / "workflows" / "deploy-session-search-arcade-materializer.yml").read_text()
         self.assertIn("python -m pip install -e .", workflow)
 
-    def test_server_keeps_inspector_read_only_and_materializer_building_only(self):
+    def test_server_separates_inspect_building_ready_and_activation(self):
         server = (ROOT / "arcade" / "session-search-materializer" / "src" / "session_search_arcade_materializer" / "server.py").read_text()
         self.assertIn("drive.readonly", server)
         self.assertIn("inspect_bundle", server)
         self.assertIn("NEON_API_KEY", server)
         self.assertIn("materialize_bundle", server)
-        self.assertNotIn("mark_generation_ready", server)
+        self.assertIn("mark_bundle_ready", server)
         self.assertNotIn("activate_generation", server)
 
 

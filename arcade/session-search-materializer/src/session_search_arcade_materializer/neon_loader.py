@@ -7,6 +7,8 @@ from urllib.parse import quote
 NEON_API_BASE = 'https://console.neon.tech/api/v2'
 LOADER_ROLE = 'session_search_arcade_loader_sql'
 CAPABILITY_ROLE = 'session_search_building_loader'
+READY_ROLE = 'session_search_arcade_ready_sql'
+READY_CAPABILITY_ROLE = 'session_search_ready_marker'
 _PROJECT_ID_RE = re.compile(r'^[a-z0-9-]{1,60}$')
 _BRANCH_ID_RE = re.compile(r'^br-[a-z0-9-]{1,60}$')
 _DATABASE_RE = re.compile(r'^[A-Za-z0-9_][A-Za-z0-9_.-]{0,62}$')
@@ -25,12 +27,13 @@ def _validate_target(project_id: str, branch_id: str, database_name: str) -> Non
         raise TargetMaterializationError('NEON_DATABASE_NAME_INVALID')
 
 
-async def resolve_neon_connection_uri(
+async def _resolve_neon_connection_uri_for_role(
     *,
     neon_api_key: str,
     project_id: str,
     branch_id: str,
-    database_name: str = 'neondb',
+    database_name: str,
+    role_name: str,
     client: Any | None = None,
 ) -> str:
     if not neon_api_key:
@@ -47,7 +50,7 @@ async def resolve_neon_connection_uri(
             params={
                 'branch_id': branch_id,
                 'database_name': database_name,
-                'role_name': LOADER_ROLE,
+                'role_name': role_name,
                 'pooled': 'false',
             },
         )
@@ -60,6 +63,34 @@ async def resolve_neon_connection_uri(
     finally:
         if own_client:
             await client.aclose()
+
+
+async def resolve_neon_connection_uri(
+    *,
+    neon_api_key: str,
+    project_id: str,
+    branch_id: str,
+    database_name: str = 'neondb',
+    client: Any | None = None,
+) -> str:
+    return await _resolve_neon_connection_uri_for_role(
+        neon_api_key=neon_api_key, project_id=project_id, branch_id=branch_id,
+        database_name=database_name, role_name=LOADER_ROLE, client=client,
+    )
+
+
+async def resolve_neon_ready_connection_uri(
+    *,
+    neon_api_key: str,
+    project_id: str,
+    branch_id: str,
+    database_name: str = 'neondb',
+    client: Any | None = None,
+) -> str:
+    return await _resolve_neon_connection_uri_for_role(
+        neon_api_key=neon_api_key, project_id=project_id, branch_id=branch_id,
+        database_name=database_name, role_name=READY_ROLE, client=client,
+    )
 
 
 def classify_existing_generation(row: tuple[Any, ...] | None, expected: dict[str, Any]) -> str | None:
@@ -198,4 +229,50 @@ def load_rows_to_building(
         'target_state': 'BUILDING',
         'loaded_sessions': int(manifest['session_count']),
         'loaded_messages': int(manifest['message_count']),
+    }
+
+
+def mark_generation_ready(
+    *,
+    database_url: str,
+    generation_id: str,
+    expected_source_manifest_sha256: str,
+    expected_session_count: int,
+    expected_message_count: int,
+    connect: Any | None = None,
+) -> dict[str, Any]:
+    if not database_url:
+        raise TargetMaterializationError('NEON_CONNECTION_URI_MISSING')
+    if not isinstance(generation_id, str) or not re.fullmatch(r'[0-9a-f]{64}', generation_id):
+        raise TargetMaterializationError('GENERATION_ID_INVALID')
+    if not isinstance(expected_source_manifest_sha256, str) or not re.fullmatch(r'[0-9a-f]{64}', expected_source_manifest_sha256):
+        raise TargetMaterializationError('SOURCE_MANIFEST_SHA256_INVALID')
+    if not isinstance(expected_session_count, int) or expected_session_count < 1:
+        raise TargetMaterializationError('EXPECTED_SESSION_COUNT_INVALID')
+    if not isinstance(expected_message_count, int) or expected_message_count < 1:
+        raise TargetMaterializationError('EXPECTED_MESSAGE_COUNT_INVALID')
+
+    if connect is None:
+        import psycopg2
+        connect = psycopg2.connect
+
+    conn = connect(database_url)
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(f"SET LOCAL ROLE {READY_CAPABILITY_ROLE}")
+                cur.execute(
+                    "SELECT session_search.mark_generation_ready(%s,%s,%s,%s)",
+                    (generation_id, expected_source_manifest_sha256, expected_session_count, expected_message_count),
+                )
+    finally:
+        conn.close()
+
+    return {
+        'status': 'READY',
+        'target_state': 'READY',
+        'generation_id': generation_id,
+        'source_manifest_sha256': expected_source_manifest_sha256,
+        'session_count': expected_session_count,
+        'message_count': expected_message_count,
     }

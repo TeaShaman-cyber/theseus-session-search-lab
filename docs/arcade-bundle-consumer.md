@@ -1,4 +1,4 @@
-# Arcade bundle consumer and BUILDING loader
+# Arcade bundle consumer and lifecycle materializer
 
 ## Purpose
 
@@ -36,8 +36,16 @@ Materialization is transaction-bound and retry-idempotent:
 
 The public tool contract never accepts or returns `DATABASE_URL`; the connection URI is resolved at invocation time and retained only in process memory. OAuth tokens, Neon API keys, connection URIs, and private message text are never returned.
 
+## READY-only slice
+
+`mark_bundle_ready(...)` is intentionally separate from `materialize_bundle(...)`. It accepts only the exact target identity plus already verified generation/manifest/count evidence and resolves a Neon connection using the fixed SQL login `session_search_arcade_ready_sql`.
+
+At transaction start it executes fixed `SET LOCAL ROLE session_search_ready_marker`. The versioned `sql/neon/005_ready_marker_capability.sql` grants that capability only schema usage plus EXECUTE on `mark_generation_ready(...)`. The database function independently requires the generation to still be BUILDING, checks the source-manifest digest and exact session/message counts, and only then writes READY/`ready_at`.
+
+The READY tool has no table DML privilege and no `activate_generation` capability. Activation, router/catalog updates, and production cutover remain separate protected operations.
+
 ## Deployment boundary
 
-Arcade Hosted deployment is manual-only through `.github/workflows/deploy-session-search-arcade-materializer.yml`. The already deployed `0.1.0` read-only server remains distinct from the `0.2.0` BUILDING-capable code until an explicit redeploy with the required Arcade-managed Neon secret.
+Arcade Hosted deployment is manual-only through `.github/workflows/deploy-session-search-arcade-materializer.yml`. The currently deployed `0.2.0` BUILDING-capable server remains distinct from the `0.3.0` READY-capable code until an explicit redeploy. The same Arcade-managed project-scoped Neon secret is used only to resolve fixed-role connection URIs.
 
-READY transition, generation activation, router/catalog updates, and production cutover remain separate protected operations.
+Generation activation, router/catalog updates, and production cutover remain separate protected operations; READY is exposed only through the dedicated least-privilege tool above.
