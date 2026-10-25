@@ -33,7 +33,7 @@ jobs:
         env:
           ARCADE_URL: ${{ secrets.ARCADE_URL }}
           ARCADE_API_KEY: ${{ secrets.ARCADE_API_KEY }}
-          ARCADE_USER_ID: ${{ github.actor }}
+          ARCADE_USER_ID: ${{ vars.ARCADE_USER_ID }}
           DRIVE_FILE_ID: ${{ inputs.drive_file_id }}
           EXPECTED_BUNDLE_SHA256: ${{ inputs.expected_bundle_sha256 }}
         run: |
