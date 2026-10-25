@@ -9,6 +9,8 @@ LOADER_ROLE = 'session_search_arcade_loader_sql'
 CAPABILITY_ROLE = 'session_search_building_loader'
 READY_ROLE = 'session_search_arcade_ready_sql'
 READY_CAPABILITY_ROLE = 'session_search_ready_marker'
+ACTIVATOR_ROLE = 'session_search_arcade_activator_sql'
+ACTIVATION_CAPABILITY_ROLE = 'session_search_activation_marker'
 _PROJECT_ID_RE = re.compile(r'^[a-z0-9-]{1,60}$')
 _BRANCH_ID_RE = re.compile(r'^br-[a-z0-9-]{1,60}$')
 _DATABASE_RE = re.compile(r'^[A-Za-z0-9_][A-Za-z0-9_.-]{0,62}$')
@@ -90,6 +92,20 @@ async def resolve_neon_ready_connection_uri(
     return await _resolve_neon_connection_uri_for_role(
         neon_api_key=neon_api_key, project_id=project_id, branch_id=branch_id,
         database_name=database_name, role_name=READY_ROLE, client=client,
+    )
+
+
+async def resolve_neon_activation_connection_uri(
+    *,
+    neon_api_key: str,
+    project_id: str,
+    branch_id: str,
+    database_name: str = 'neondb',
+    client: Any | None = None,
+) -> str:
+    return await _resolve_neon_connection_uri_for_role(
+        neon_api_key=neon_api_key, project_id=project_id, branch_id=branch_id,
+        database_name=database_name, role_name=ACTIVATOR_ROLE, client=client,
     )
 
 
@@ -275,4 +291,45 @@ def mark_generation_ready(
         'source_manifest_sha256': expected_source_manifest_sha256,
         'session_count': expected_session_count,
         'message_count': expected_message_count,
+    }
+
+
+def activate_ready_generation(
+    *,
+    database_url: str,
+    generation_id: str,
+    expected_previous_generation_id: str | None,
+    connect: Any | None = None,
+) -> dict[str, Any]:
+    if not database_url:
+        raise TargetMaterializationError('NEON_CONNECTION_URI_MISSING')
+    if not isinstance(generation_id, str) or not re.fullmatch(r'[0-9a-f]{64}', generation_id):
+        raise TargetMaterializationError('GENERATION_ID_INVALID')
+    if expected_previous_generation_id is not None and (
+        not isinstance(expected_previous_generation_id, str)
+        or not re.fullmatch(r'[0-9a-f]{64}', expected_previous_generation_id)
+    ):
+        raise TargetMaterializationError('EXPECTED_PREVIOUS_GENERATION_ID_INVALID')
+
+    if connect is None:
+        import psycopg2
+        connect = psycopg2.connect
+
+    conn = connect(database_url)
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(f"SET LOCAL ROLE {ACTIVATION_CAPABILITY_ROLE}")
+                cur.execute(
+                    "SELECT session_search.activate_generation(%s,%s)",
+                    (generation_id, expected_previous_generation_id),
+                )
+    finally:
+        conn.close()
+
+    return {
+        'status': 'ACTIVATED',
+        'generation_id': generation_id,
+        'expected_previous_generation_id': expected_previous_generation_id,
+        'active_generation': generation_id,
     }
