@@ -148,3 +148,79 @@ test('shard extracts router traceparent and continues the same distributed trace
     await Promise.all([routerRuntime.telemetry.shutdown(), shardTelemetry.shutdown()]);
   }
 });
+
+test('untrusted inbound tracestate is not exported or propagated to shards', async () => {
+  const { telemetry, spanExporter } = runtime();
+  try {
+    let outboundHeaders;
+    const handler = makeRouterHandler({
+      catalog: [{
+        shard_id: 'deepseek-0001', provider: 'deepseek', generation_id: 'c'.repeat(64),
+        state: 'READY', url: 'https://deepseek.test/search',
+      }],
+      telemetry,
+      fetchImpl: async (_url, init) => {
+        outboundHeaders = new Headers(init.headers);
+        return Response.json({
+          status: 'FOUND', generation_id: 'c'.repeat(64), provider: 'deepseek', shard_id: 'deepseek-0001', hits: [],
+        });
+      },
+    });
+    const response = await handler.fetch(new Request('https://router.test/search', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        traceparent: '00-11111111111111111111111111111111-2222222222222222-01',
+        tracestate: 'client=private-query-or-token',
+      },
+      body: JSON.stringify({ query: 'safe-test-query', provider: 'deepseek' }),
+    }));
+    assert.equal(response.status, 200);
+    assert.equal(outboundHeaders?.get('tracestate'), null);
+    const server = spanExporter.getFinishedSpans().find((span) => span.name === 'session_search.search');
+    assert.ok(server);
+    assert.equal(server.parentSpanContext?.traceId, '11111111111111111111111111111111');
+    assert.equal(server.parentSpanContext?.spanId, '2222222222222222');
+    assert.equal(server.parentSpanContext?.traceState, undefined);
+  } finally {
+    await telemetry.shutdown();
+  }
+});
+
+class DelayedSpanExporter {
+  constructor(delayMs) {
+    this.delayMs = delayMs;
+  }
+
+  export(_spans, resultCallback) {
+    setTimeout(() => resultCallback({ code: 0 }), this.delayMs);
+  }
+
+  async shutdown() {}
+}
+
+test('telemetry flush budget cannot consume the shard dispatch deadline', async () => {
+  const metricExporter = new InMemoryMetricExporter(AggregationTemporality.CUMULATIVE);
+  const telemetry = createTelemetryRuntime({
+    serviceName: 'session-search-shard',
+    serviceVersion: 'test',
+    environment: 'candidate',
+    traceExporter: new DelayedSpanExporter(160),
+    metricExporter,
+    metricExportIntervalMs: 60000,
+    flushTimeoutMs: 20,
+  });
+  try {
+    const started = performance.now();
+    const response = await telemetry.withRequest(
+      new Request('https://shard.test/search'),
+      'search',
+      async () => Response.json({ status: 'FOUND' }),
+    );
+    const elapsedMs = performance.now() - started;
+    assert.equal(response.status, 200);
+    assert.ok(elapsedMs < 100, `telemetry delayed response by ${elapsedMs.toFixed(1)}ms`);
+  } finally {
+    await telemetry.shutdown();
+  }
+});

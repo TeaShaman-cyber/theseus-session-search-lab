@@ -17,6 +17,7 @@ const ROUTES = new Set(['health', 'search', 'mcp', 'not_found']);
 const RESULT_STATUSES = new Set(['OK', 'FOUND', 'NO_SIGNAL', 'PARTIAL', 'READY', 'BUILDING', 'ACTIVATED', 'ERROR', 'UNKNOWN']);
 const SAFE_ID = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const GENERATION_ID = /^[0-9a-f]{64}$/;
+const DEFAULT_FLUSH_TIMEOUT_MS = 250;
 
 const headerGetter = {
   keys(carrier) {
@@ -32,6 +33,18 @@ const headerSetter = {
     carrier.set(key, String(value));
   },
 };
+
+function extractSanitizedParentContext(request) {
+  const extracted = propagator.extract(ROOT_CONTEXT, request.headers, headerGetter);
+  const spanContext = trace.getSpanContext(extracted);
+  if (!spanContext) return ROOT_CONTEXT;
+  return trace.setSpanContext(ROOT_CONTEXT, {
+    traceId: spanContext.traceId,
+    spanId: spanContext.spanId,
+    traceFlags: spanContext.traceFlags,
+    isRemote: spanContext.isRemote,
+  });
+}
 
 function statusClass(status) {
   if (!Number.isInteger(status)) return 'unknown';
@@ -127,9 +140,13 @@ export function createTelemetryRuntime({
   traceExporter,
   metricExporter,
   metricExportIntervalMs = 60000,
+  flushTimeoutMs = DEFAULT_FLUSH_TIMEOUT_MS,
 }) {
   if (!serviceName || !traceExporter || !metricExporter) {
     throw new Error('TELEMETRY_RUNTIME_CONFIG_INVALID');
+  }
+  if (!Number.isFinite(flushTimeoutMs) || flushTimeoutMs <= 0) {
+    throw new Error('TELEMETRY_FLUSH_TIMEOUT_INVALID');
   }
 
   const resource = resourceFromAttributes({
@@ -141,7 +158,7 @@ export function createTelemetryRuntime({
   const metricReader = new PeriodicExportingMetricReader({
     exporter: metricExporter,
     exportIntervalMillis: metricExportIntervalMs,
-    exportTimeoutMillis: 5000,
+    exportTimeoutMillis: flushTimeoutMs,
   });
   const meterProvider = new MeterProvider({ resource, readers: [metricReader] });
   const tracerProvider = new TracerProvider({
@@ -157,10 +174,20 @@ export function createTelemetryRuntime({
   const dispatchDuration = meter.createHistogram('session_search_shard_dispatch_duration_ms', { unit: 'ms' });
 
   async function forceFlush() {
-    const results = await Promise.allSettled([
-      tracerProvider.forceFlush({ timeoutMillis: 5000 }),
+    const pending = Promise.allSettled([
+      tracerProvider.forceFlush({ timeoutMillis: flushTimeoutMs }),
       meterProvider.forceFlush(),
     ]);
+    let timeoutId;
+    const timeout = new Promise((resolve) => {
+      timeoutId = setTimeout(() => resolve(null), flushTimeoutMs);
+    });
+    const results = await Promise.race([pending, timeout]);
+    clearTimeout(timeoutId);
+    if (results === null) {
+      console.error(JSON.stringify({ event: 'session_search_telemetry_flush_timeout' }));
+      return;
+    }
     if (results.some((item) => item.status === 'rejected')) {
       console.error(JSON.stringify({ event: 'session_search_telemetry_flush_failed' }));
     }
@@ -168,7 +195,7 @@ export function createTelemetryRuntime({
 
   async function withRequest(request, route, fn) {
     const routeName = safeRoute(route);
-    const parentContext = propagator.extract(ROOT_CONTEXT, request.headers, headerGetter);
+    const parentContext = extractSanitizedParentContext(request);
     const span = tracer.startSpan(`session_search.${routeName}`, {
       kind: SpanKind.SERVER,
       attributes: { 'session_search.route': routeName },
@@ -286,7 +313,16 @@ export function createTelemetryFromEnv({ serviceName }) {
     serviceName,
     serviceVersion,
     environment,
-    traceExporter: new OTLPTraceExporter({ url: `${endpoint}/v1/traces`, headers }),
-    metricExporter: new OTLPMetricExporter({ url: `${endpoint}/v1/metrics`, headers }),
+    flushTimeoutMs: DEFAULT_FLUSH_TIMEOUT_MS,
+    traceExporter: new OTLPTraceExporter({
+      url: `${endpoint}/v1/traces`,
+      headers,
+      timeoutMillis: DEFAULT_FLUSH_TIMEOUT_MS,
+    }),
+    metricExporter: new OTLPMetricExporter({
+      url: `${endpoint}/v1/metrics`,
+      headers,
+      timeoutMillis: DEFAULT_FLUSH_TIMEOUT_MS,
+    }),
   });
 }
