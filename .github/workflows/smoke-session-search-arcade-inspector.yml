@@ -2,52 +2,41 @@ name: Smoke Session Search Arcade inspector
 
 on:
   workflow_dispatch:
+    inputs:
+      drive_file_id:
+        description: Exact private Google Drive shard-bundle file ID
+        required: true
+        type: string
+      expected_bundle_sha256:
+        description: Expected bundle SHA-256 from accepted source authority
+        required: true
+        type: string
 
 permissions:
   contents: read
 
+concurrency:
+  group: session-search-inspect-${{ inputs.drive_file_id }}
+  cancel-in-progress: false
+
 jobs:
-  smoke:
+  inspect:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
       - name: Install Arcade SDK
-        run: python -m pip install 'arcadepy>=1.7.0'
-      - name: Discover inspector and request authorization
+        run: python -m pip install 'arcadepy>=1.7.0,<2'
+      - name: Inspect exact Drive bundle
         env:
           ARCADE_URL: ${{ secrets.ARCADE_URL }}
           ARCADE_API_KEY: ${{ secrets.ARCADE_API_KEY }}
           ARCADE_USER_ID: ${{ github.actor }}
+          DRIVE_FILE_ID: ${{ inputs.drive_file_id }}
+          EXPECTED_BUNDLE_SHA256: ${{ inputs.expected_bundle_sha256 }}
         run: |
-          python - <<'PY'
-          import os
-          from arcadepy import Arcade
-
-          client = Arcade(api_key=os.environ['ARCADE_API_KEY'], base_url=os.environ['ARCADE_URL'])
-          matches = []
-          offset = None
-          while True:
-              kwargs = {'limit': 100}
-              if offset:
-                  kwargs['offset'] = offset
-              page = client.tools.list(**kwargs)
-              for tool in page.items:
-                  qn = getattr(tool, 'qualified_name', '') or getattr(tool, 'fully_qualified_name', '')
-                  if 'inspect_bundle' in qn.lower() or qn.lower().endswith('.inspectbundle'):
-                      matches.append(qn)
-              offset = getattr(page, 'next_offset', None)
-              if not offset:
-                  break
-          if len(matches) != 1:
-              raise SystemExit(f'INSPECT_BUNDLE_DISCOVERY_FAILED count={len(matches)} names={matches}')
-          tool_name = matches[0]
-          print(f'INSPECT_BUNDLE_TOOL={tool_name}')
-          auth = client.tools.authorize(tool_name=tool_name, user_id=os.environ['ARCADE_USER_ID'])
-          print(f'AUTH_STATUS={auth.status}')
-          if auth.status != 'completed':
-              print(f'AUTH_URL={auth.url}')
-              raise SystemExit(78)
-          print('AUTH_ALREADY_COMPLETED')
-          PY
+          python scripts/arcade_inspect_bundle.py \
+            --drive-file-id "$DRIVE_FILE_ID" \
+            --expected-bundle-sha256 "$EXPECTED_BUNDLE_SHA256"
