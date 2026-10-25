@@ -23,6 +23,8 @@ class FakeTools:
     def list(self, **kwargs):
         self.list_calls.append(kwargs)
         toolkit = kwargs.get('toolkit')
+        if getattr(self, 'fail_on_offset', False) and kwargs.get('offset'):
+            raise RuntimeError('page failure')
         names = self.scoped_names.get(toolkit, self.names if toolkit is None else [])
         return SimpleNamespace(items=[SimpleNamespace(qualified_name=n) for n in names], next_offset=None)
 
@@ -53,6 +55,20 @@ class ArcadeInspectOpsTest(unittest.TestCase):
             'SessionSearchMaterializer.InspectBundle',
         )
         self.assertEqual(tools.list_calls[0]['toolkit'], 'session_search_materializer')
+
+    def test_partial_paginated_discovery_fails_closed(self):
+        tools = FakeTools(names=[])
+        calls = 0
+        original_list = tools.list
+        def paged_list(**kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                return SimpleNamespace(items=[SimpleNamespace(qualified_name='SessionSearchMaterializer.InspectBundle')], next_offset='next')
+            raise RuntimeError('page failure')
+        tools.list = paged_list
+        with self.assertRaisesRegex(InspectOpsError, 'INSPECT_BUNDLE_DISCOVERY_INCOMPLETE'):
+            discover_inspect_bundle(FakeClient(tools))
 
     def test_ambiguous_discovery_fails_closed(self):
         tools = FakeTools(names=['A.InspectBundle', 'B.inspect_bundle'])
