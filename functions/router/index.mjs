@@ -1,3 +1,4 @@
+import { createTelemetryFromEnv } from '../telemetry.mjs';
 import { makeRouterHandler } from './handler.mjs';
 
 const rawCatalog = process.env.SESSION_SEARCH_CATALOG;
@@ -13,4 +14,6 @@ if (!Array.isArray(catalog) || catalog.length < 1) {
   throw new Error('SESSION_SEARCH_CATALOG_EMPTY');
 }
 
-export default makeRouterHandler({ catalog });
+const telemetry = createTelemetryFromEnv({ serviceName: 'session-search-router' });
+
+export default makeRouterHandler({ catalog, telemetry });
