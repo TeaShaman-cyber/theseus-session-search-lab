@@ -46,6 +46,46 @@ class ShardSourceIntegrityTest(unittest.TestCase):
             self.assertNotIn("session-one", payload)
             self.assertNotIn("alpha signal", payload)
 
+    def test_missing_direct_route_fails_before_replay_subset_selection(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            corpus = root / "corpus"
+            first = _write_capture(
+                root / "first.zip",
+                "shared-session",
+                [_message("m1", "first accepted message", 1.0, role="user")],
+                complete=False,
+            )
+            second = _write_capture(
+                root / "second.zip",
+                "shared-session",
+                [_message("m2", "second accepted message", 2.0, role="assistant")],
+                complete=True,
+            )
+            ingest_artifact(first, corpus)
+            ingest_artifact(second, corpus)
+            before = verify_shard_source_integrity(
+                corpus, provider="chatgpt", shard_id="chatgpt-0001"
+            )
+            self.assertEqual(before["status"], "VERIFIED")
+            self.assertEqual(before["shard_artifact_count"], 2)
+            self.assertEqual(before["message_count"], 2)
+
+            with sqlite3.connect(CorpusPaths.from_root(corpus).db) as con:
+                con.execute(
+                    "DELETE FROM artifact_routes WHERE artifact_id=(SELECT max(artifact_id) FROM artifacts)"
+                )
+
+            result = verify_shard_source_integrity(
+                corpus, provider="chatgpt", shard_id="chatgpt-0001"
+            )
+            self.assertEqual(result["status"], "RECONCILIATION_REQUIRED")
+            self.assertEqual(result["reason"], "artifact route membership disagreement")
+            self.assertEqual(result["projection_artifact_count"], 2)
+            self.assertEqual(result["route_count"], 1)
+            self.assertEqual(result["missing_route_count"], 1)
+            self.assertEqual(result["orphan_route_count"], 0)
+
     def test_projection_tamper_is_detected_by_source_replay(self):
         with tempfile.TemporaryDirectory() as td:
             corpus = self.make_corpus(Path(td))
