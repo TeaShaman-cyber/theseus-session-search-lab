@@ -54,8 +54,6 @@ def discover_inspect_bundle(client: Any) -> str:
     matches: list[str] = []
     for toolkit in TOOLKITS:
         matches.extend(_collect(client, toolkit))
-    if not matches:
-        matches.extend(_collect(client, None))
     unique = sorted(set(matches))
     if len(unique) != 1:
         raise InspectOpsError(

@@ -56,6 +56,12 @@ class ArcadeInspectOpsTest(unittest.TestCase):
         )
         self.assertEqual(tools.list_calls[0]['toolkit'], 'session_search_materializer')
 
+    def test_unscoped_lookalike_is_never_selected(self):
+        tools = FakeTools(names=['OtherToolkit.InspectBundle'])
+        with self.assertRaisesRegex(InspectOpsError, 'INSPECT_BUNDLE_DISCOVERY_FAILED'):
+            discover_inspect_bundle(FakeClient(tools))
+        self.assertFalse(any(call.get('toolkit') is None for call in tools.list_calls))
+
     def test_partial_paginated_discovery_fails_closed(self):
         tools = FakeTools(names=[])
         calls = 0

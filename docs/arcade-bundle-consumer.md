@@ -38,6 +38,8 @@ Materialization is transaction-bound and retry-idempotent:
 
 The public tool contract never accepts or returns `DATABASE_URL`; the connection URI is resolved at invocation time and retained only in process memory. OAuth tokens, Neon API keys, connection URIs, and private message text are never returned.
 
+The reusable BUILDING operator is `.github/workflows/materialize-session-search-building.yml`, backed by `scripts/arcade_materialize_bundle.py`. It accepts only exact Drive bundle identity plus one Neon project/branch/database target, uses the stable repository Arcade user identity, discovers exactly one Hosted `MaterializeBundle` tool, and validates returned bundle/target/loader identity plus the documented idempotent status. It exposes no READY, activation, router, or catalog inputs.
+
 ## READY-only slice
 
 `mark_bundle_ready(...)` is intentionally separate from `materialize_bundle(...)`. It accepts only the exact target identity plus already verified generation/manifest/count evidence and resolves a Neon connection using the fixed SQL login `session_search_arcade_ready_sql`.

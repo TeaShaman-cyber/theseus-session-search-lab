@@ -66,8 +66,6 @@ def discover_mark_bundle_ready(client: Any) -> str:
     matches: list[str] = []
     for toolkit in READY_TOOLKITS:
         matches.extend(_collect_ready_matches(client, toolkit=toolkit))
-    if not matches:
-        matches.extend(_collect_ready_matches(client, toolkit=None))
     unique = sorted(set(matches))
     if len(unique) != 1:
         raise ReadyOpsError(
