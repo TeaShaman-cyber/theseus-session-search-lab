@@ -1,8 +1,18 @@
 import json
+import os
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.codex_review_status import classify_codex_review, normalize_comments
+from scripts.codex_review_status import (
+    classify_codex_review,
+    bounded_poll_sleep_seconds,
+    classify_codex_wait,
+    classify_pr_head_currentness,
+    normalize_comments,
+    status_request_timeout_result,
+)
 
 HEAD = "a" * 40
 
@@ -103,11 +113,115 @@ class CodexReviewStatusTest(unittest.TestCase):
         self.assertEqual(result["status"], "FINDINGS")
         self.assertEqual(result["reviewed_commit"], HEAD)
 
+    def test_expected_head_mismatch_is_pending_currentness(self):
+        observed = "b" * 40
+        result = classify_pr_head_currentness(observed, HEAD)
+        self.assertIsNotNone(result)
+        self.assertEqual(result["status"], "PENDING")
+        self.assertEqual(result["reason"], "pr-head-not-current")
+        self.assertEqual(result["head_sha"], HEAD)
+        self.assertEqual(result["observed_head_sha"], observed)
+        self.assertIsNone(result["reviewed_commit"])
+        self.assertIsNone(classify_pr_head_currentness(HEAD, HEAD))
+
+    def test_wait_clean_is_terminal_immediately(self):
+        state = {"status": "CLEAN", "head_sha": HEAD, "advisory": True}
+        result = classify_codex_wait(state, elapsed_seconds=1, timeout_seconds=120)
+        self.assertEqual(result["wait_disposition"], "TERMINAL")
+
+    def test_wait_findings_is_terminal_evidence_not_merge_decision(self):
+        state = {"status": "FINDINGS", "head_sha": HEAD, "advisory": True}
+        result = classify_codex_wait(state, elapsed_seconds=2, timeout_seconds=120)
+        self.assertEqual(result["wait_disposition"], "TERMINAL")
+        self.assertEqual(result["status"], "FINDINGS")
+
+    def test_wait_pending_becomes_timeout_at_bound(self):
+        state = {"status": "PENDING", "head_sha": HEAD, "advisory": True}
+        before = classify_codex_wait(state, elapsed_seconds=119, timeout_seconds=120)
+        at_bound = classify_codex_wait(state, elapsed_seconds=120, timeout_seconds=120)
+        self.assertEqual(before["wait_disposition"], "WAIT")
+        self.assertEqual(at_bound["wait_disposition"], "TIMEOUT")
+
+    def test_wait_stale_becomes_timeout_at_bound(self):
+        state = {"status": "STALE", "head_sha": HEAD, "advisory": True}
+        before = classify_codex_wait(state, elapsed_seconds=10, timeout_seconds=20)
+        at_bound = classify_codex_wait(state, elapsed_seconds=20, timeout_seconds=20)
+        self.assertEqual(before["wait_disposition"], "WAIT")
+        self.assertEqual(at_bound["wait_disposition"], "TIMEOUT")
+
+    def test_status_request_timeout_result_is_explicit(self):
+        result = status_request_timeout_result(
+            HEAD, elapsed_seconds=1, timeout_seconds=1
+        )
+        self.assertEqual(result["status"], "PENDING")
+        self.assertEqual(result["reason"], "status-request-timeout")
+        self.assertEqual(result["head_sha"], HEAD)
+        self.assertEqual(result["wait_disposition"], "TIMEOUT")
+
+    def test_wait_wrapper_bounds_slow_status_subprocess(self):
+        root = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as td:
+            stub = Path(td) / "slow-status.sh"
+            stub.write_text(
+                "#!/bin/sh\nsleep 5\nprintf '%s\n' '{\"status\":\"PENDING\",\"advisory\":true}'\n",
+                encoding="utf-8",
+            )
+            stub.chmod(0o755)
+            env = dict(os.environ)
+            env["CODEX_REVIEW_STATUS_CMD"] = str(stub)
+            proc = subprocess.run(
+                [
+                    str(root / "tools" / "pr" / "codex-review-wait.sh"),
+                    "999",
+                    HEAD,
+                    "1",
+                    "3",
+                ],
+                cwd=root,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=2.5,
+            )
+            self.assertEqual(proc.returncode, 3, proc.stderr)
+            result = json.loads(proc.stdout)
+            self.assertEqual(result["reason"], "status-request-timeout")
+            self.assertEqual(result["wait_disposition"], "TIMEOUT")
+            self.assertEqual(result["head_sha"], HEAD)
+
+    def test_poll_sleep_is_capped_at_remaining_timeout(self):
+        self.assertEqual(
+            bounded_poll_sleep_seconds(
+                elapsed_seconds=0, timeout_seconds=1, poll_seconds=3
+            ),
+            1,
+        )
+        self.assertEqual(
+            bounded_poll_sleep_seconds(
+                elapsed_seconds=119, timeout_seconds=120, poll_seconds=10
+            ),
+            1,
+        )
+        self.assertEqual(
+            bounded_poll_sleep_seconds(
+                elapsed_seconds=120, timeout_seconds=120, poll_seconds=10
+            ),
+            0,
+        )
+
     def test_wrapper_requests_all_comment_pages(self):
         root = Path(__file__).resolve().parents[1]
         text = (root / "tools" / "pr" / "codex-review-status.sh").read_text(encoding="utf-8")
         self.assertIn("--paginate", text)
         self.assertIn("--slurp", text)
+
+        wait = (root / "tools" / "pr" / "codex-review-wait.sh").read_text(encoding="utf-8")
+        self.assertIn("classify_codex_wait", wait)
+        self.assertIn("EXPECTED_HEAD=${2:-}", wait)
+        self.assertIn("TIMEOUT=${3:-120}", wait)
+        self.assertIn('STATUS_CMD=${CODEX_REVIEW_STATUS_CMD:-$ROOT/tools/pr/codex-review-status.sh}', wait)
+        self.assertIn('timeout --signal=KILL "$REMAINING" "$STATUS_CMD" "$PR" "$EXPECTED_HEAD"', wait)
+        self.assertNotIn("pr merge", wait)
 
 
 if __name__ == "__main__":

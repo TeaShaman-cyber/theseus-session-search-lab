@@ -112,6 +112,71 @@ def classify_codex_review(comments: list[dict[str, Any]], head_sha: str) -> dict
     }
 
 
+def classify_pr_head_currentness(observed_head: str, expected_head: str) -> dict[str, Any] | None:
+    if not expected_head:
+        raise ValueError("expected_head must be non-empty")
+    if observed_head == expected_head:
+        return None
+    return {
+        "advisory": True,
+        "status": "PENDING",
+        "reason": "pr-head-not-current",
+        "head_sha": expected_head,
+        "observed_head_sha": observed_head,
+        "reviewed_commit": None,
+    }
+
+
+def classify_codex_wait(
+    review_state: dict[str, Any], *, elapsed_seconds: int, timeout_seconds: int
+) -> dict[str, Any]:
+    if elapsed_seconds < 0:
+        raise ValueError("elapsed_seconds must be non-negative")
+    if timeout_seconds < 0:
+        raise ValueError("timeout_seconds must be non-negative")
+    status = str(review_state.get("status") or "")
+    if status in {"CLEAN", "FINDINGS"}:
+        disposition = "TERMINAL"
+    elif elapsed_seconds >= timeout_seconds:
+        disposition = "TIMEOUT"
+    else:
+        disposition = "WAIT"
+    return {
+        **review_state,
+        "wait_disposition": disposition,
+        "wait_elapsed_seconds": elapsed_seconds,
+        "wait_timeout_seconds": timeout_seconds,
+    }
+
+
+def status_request_timeout_result(
+    expected_head: str, *, elapsed_seconds: int, timeout_seconds: int
+) -> dict[str, Any]:
+    return {
+        "advisory": True,
+        "status": "PENDING",
+        "reason": "status-request-timeout",
+        "head_sha": expected_head,
+        "reviewed_commit": None,
+        "wait_disposition": "TIMEOUT",
+        "wait_elapsed_seconds": elapsed_seconds,
+        "wait_timeout_seconds": timeout_seconds,
+    }
+
+
+def bounded_poll_sleep_seconds(
+    *, elapsed_seconds: int, timeout_seconds: int, poll_seconds: int
+) -> int:
+    if elapsed_seconds < 0:
+        raise ValueError("elapsed_seconds must be non-negative")
+    if timeout_seconds < 0:
+        raise ValueError("timeout_seconds must be non-negative")
+    if poll_seconds <= 0:
+        raise ValueError("poll_seconds must be positive")
+    remaining = max(0, timeout_seconds - elapsed_seconds)
+    return min(poll_seconds, remaining)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--head", required=True)
