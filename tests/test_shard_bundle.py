@@ -47,6 +47,53 @@ class ShardBundleTest(unittest.TestCase):
                 self.assertNotIn("hidden-id", messages)
                 self.assertNotIn("secret", messages)
 
+    def test_mixed_provider_corpus_selects_exact_deepseek_shard(self):
+        with tempfile.TemporaryDirectory() as td:
+            td = Path(td)
+            corpus = self.make_corpus(td / "corpus")
+            deep_sha = "c" * 64
+            accepted = corpus / "ledger" / "accepted"
+            (accepted / f"{deep_sha}.json").write_text(
+                json.dumps({"artifact_sha256": deep_sha})
+            )
+            import sqlite3
+            con = sqlite3.connect(corpus / "corpus.sqlite3")
+            con.execute(
+                "INSERT INTO sessions(session_id,title,coverage_state,coverage_reason,first_message_time,last_message_time,first_accepted_at) VALUES (?,?,?,?,?,?,?)",
+                ("deep-private", "Deep", "COMPLETE_EXPOSED_CONVERSATION", "ok", 5.0, 6.0, "2026-01-03T00:00:00+00:00"),
+            )
+            con.execute(
+                "INSERT INTO messages(row_id,session_id,ordinal,message_id,local_identity,canonical_message_sha256,role,content_type,search_class,create_time,provider_order,text) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (4, "deep-private", 0, "dm1", "dl1", deep_sha, "user", "text", "dialogue", 5.0, 0, "deep signal"),
+            )
+            con.execute(
+                "INSERT INTO artifacts(artifact_id,sha256,size_bytes,source_schema,source_adapter,observed_title,accepted_at,coverage_state,session_id,ledger_sha256,observed_message_count) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (3, deep_sha, 1, "portable", "deepseek-export", "deep", "2026-01-03T00:00:00+00:00", "COMPLETE_EXPOSED_CONVERSATION", "deep-private", deep_sha, 1),
+            )
+            con.execute(
+                "INSERT INTO artifact_routes(artifact_id,accepted_session_id,projected_session_id,route_state,route_reason,route_version) VALUES (?,?,?,?,?,?)",
+                (3, "deep-private", "deep-private", "DIRECT", "fixture", "v1"),
+            )
+            con.commit(); con.close()
+
+            path = td / "deep.zip"
+            built = build_bundle(
+                corpus, provider="deepseek", shard_id="deepseek-0001",
+                output_path=path, require_verified=False,
+            )
+            self.assertEqual(built["session_count"], 1)
+            self.assertEqual(built["message_count"], 1)
+            self.assertEqual(built["accepted_artifact_count"], 3)
+            with ZipFile(path) as zf:
+                manifest = json.loads(zf.read("manifest.json"))
+                sessions = zf.read("sessions.csv").decode("utf-8")
+                messages = zf.read("messages.csv").decode("utf-8")
+            self.assertEqual(manifest["source_adapters"], ["deepseek-export"])
+            self.assertIn("deep-private", sessions)
+            self.assertIn("deep signal", messages)
+            self.assertNotIn("private-s1", sessions)
+            self.assertNotIn("hello", messages)
+
     def test_verify_rejects_tampered_member(self):
         with tempfile.TemporaryDirectory() as td:
             td = Path(td)

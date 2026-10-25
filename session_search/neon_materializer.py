@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .artifact_overlap import load_accepted_ledger, set_digest
-from .shard_allocation import ADAPTER_PROVIDERS
+from .shard_allocation import ADAPTER_PROVIDERS, allocate_sessions, load_session_rows
 from .corpus_store import CorpusMutationLock, CorpusPaths, verify_corpus
 
 
@@ -34,61 +34,76 @@ def _source_connection(corpus_root: Path) -> sqlite3.Connection:
 
 
 def _validate_source_provider(con: sqlite3.Connection, provider: str) -> set[str]:
-    rows = con.execute(
-        "SELECT DISTINCT source_adapter FROM artifacts ORDER BY source_adapter"
-    ).fetchall()
+    rows = con.execute("SELECT DISTINCT source_adapter FROM artifacts ORDER BY source_adapter").fetchall()
     adapters = {str(row[0]) for row in rows}
     if not adapters:
         raise ValueError("SOURCE_ARTIFACTS_EMPTY")
-    resolved = set()
+    resolved = {ADAPTER_PROVIDERS[a] for a in adapters if a in ADAPTER_PROVIDERS}
     for adapter in adapters:
-        mapped = ADAPTER_PROVIDERS.get(adapter)
-        if mapped is None:
+        if adapter not in ADAPTER_PROVIDERS:
             raise ValueError(f"SOURCE_PROVIDER_UNRESOLVED:{adapter}")
-        resolved.add(mapped)
     if resolved != {provider}:
         raise ValueError("SOURCE_PROVIDER_MISMATCH")
     return adapters
 
 
-def load_source_rows(corpus_root: Path, *, provider: str):
+def _select_shard_assignment(con: sqlite3.Connection, *, provider: str, shard_id: str):
+    allocation = allocate_sessions(load_session_rows(con))
+    matches = [x for x in allocation["shards"] if x["shard_id"] == shard_id]
+    if len(matches) != 1:
+        raise ValueError("SOURCE_SHARD_NOT_FOUND")
+    shard = matches[0]
+    if shard["provider"] != provider:
+        raise ValueError("SOURCE_SHARD_PROVIDER_MISMATCH")
+    session_ids = tuple(str(x) for x in shard["session_ids"])
+    if not session_ids:
+        raise ValueError("SOURCE_SHARD_EMPTY")
+    marks = ",".join("?" for _ in session_ids)
+    adapters = [str(r[0]) for r in con.execute(
+        "SELECT DISTINCT a.source_adapter FROM artifact_routes r JOIN artifacts a ON a.artifact_id=r.artifact_id "
+        f"WHERE r.projected_session_id IN ({marks}) ORDER BY a.source_adapter", session_ids
+    )]
+    if not adapters:
+        raise ValueError("SOURCE_SHARD_PROVENANCE_MISSING")
+    return shard, session_ids, adapters
+
+
+def _load_rows_for_sessions(con: sqlite3.Connection, session_ids: tuple[str, ...]):
+    marks = ",".join("?" for _ in session_ids)
+    sessions = [(str(r[0]), str(r[1]), str(r[2]), r[3], r[4]) for r in con.execute(
+        "SELECT session_id,title,coverage_state,first_message_time,last_message_time "
+        f"FROM sessions WHERE session_id IN ({marks}) ORDER BY session_id", session_ids
+    )]
+    if not sessions:
+        raise ValueError("SOURCE_SESSIONS_EMPTY")
+    classes = ",".join("?" for _ in SEARCHABLE_CLASSES)
+    q = ("SELECT session_id,ordinal,message_id,local_identity,role,search_class,create_time,text "
+         f"FROM messages WHERE session_id IN ({marks}) AND search_class IN ({classes}) "
+         "ORDER BY session_id,ordinal,row_id")
+    messages=[]; seen=set()
+    for r in con.execute(q, (*session_ids, *SEARCHABLE_CLASSES)):
+        sid=str(r[0]); mid=r[2] if r[2] is not None else r[3]
+        if mid is None or str(mid)=="": raise ValueError("TARGET_MESSAGE_ID_MISSING")
+        mid=str(mid); key=(sid,mid)
+        if key in seen: raise ValueError("TARGET_MESSAGE_ID_COLLISION")
+        seen.add(key)
+        messages.append((sid,int(r[1]),mid,str(r[4]),str(r[5]),r[6],str(r[7])))
+    if not messages:
+        raise ValueError("SOURCE_SEARCHABLE_MESSAGES_EMPTY")
+    return sessions, messages
+
+
+def load_source_rows(corpus_root: Path, *, provider: str, shard_id: str | None = None):
     con = _source_connection(corpus_root)
     try:
-        _validate_source_provider(con, provider)
-        sessions = [
-            (str(r[0]), str(r[1]), str(r[2]), r[3], r[4])
-            for r in con.execute(
-                "SELECT session_id,title,coverage_state,first_message_time,last_message_time "
-                "FROM sessions ORDER BY session_id"
-            )
-        ]
-        if not sessions:
-            raise ValueError("SOURCE_SESSIONS_EMPTY")
-        messages = []
-        seen_target_ids = set()
-        placeholders = ",".join("?" for _ in SEARCHABLE_CLASSES)
-        q = (
-            "SELECT session_id,ordinal,message_id,local_identity,role,search_class,create_time,text "
-            f"FROM messages WHERE search_class IN ({placeholders}) "
-            "ORDER BY session_id,ordinal,row_id"
-        )
-        for r in con.execute(q, SEARCHABLE_CLASSES):
-            sid = str(r[0])
-            mid = r[2] if r[2] is not None else r[3]
-            if mid is None or str(mid) == "":
-                raise ValueError("TARGET_MESSAGE_ID_MISSING")
-            mid = str(mid)
-            key = (sid, mid)
-            if key in seen_target_ids:
-                raise ValueError("TARGET_MESSAGE_ID_COLLISION")
-            seen_target_ids.add(key)
-            messages.append((sid, int(r[1]), mid, str(r[4]), str(r[5]), r[6], str(r[7])))
-        if not messages:
-            raise ValueError("SOURCE_SEARCHABLE_MESSAGES_EMPTY")
-        return sessions, messages
+        if shard_id is None:
+            _validate_source_provider(con, provider)
+            session_ids = tuple(str(r[0]) for r in con.execute("SELECT session_id FROM sessions ORDER BY session_id"))
+        else:
+            _shard, session_ids, _adapters = _select_shard_assignment(con, provider=provider, shard_id=shard_id)
+        return _load_rows_for_sessions(con, session_ids)
     finally:
         con.close()
-
 
 def _projection_source_digest(sessions, messages) -> str:
     h = hashlib.sha256()
@@ -147,26 +162,25 @@ def _capture_source_snapshot(
                 raise ValueError("SOURCE_CORPUS_NOT_VERIFIED")
 
         accepted = load_accepted_ledger(corpus_root)
-        sessions, messages = load_source_rows(corpus_root, provider=provider)
         con = _source_connection(corpus_root)
         try:
-            database_artifacts = {
-                str(r[0])
-                for r in con.execute("SELECT sha256 FROM artifacts ORDER BY sha256")
-            }
-            adapters = [
-                str(r[0])
-                for r in con.execute(
-                    "SELECT DISTINCT source_adapter FROM artifacts ORDER BY source_adapter"
-                )
-            ]
+            database_artifacts = {str(r[0]) for r in con.execute("SELECT sha256 FROM artifacts ORDER BY sha256")}
+            shard, session_ids, adapters = _select_shard_assignment(con, provider=provider, shard_id=shard_id)
+            sessions, messages = _load_rows_for_sessions(con, session_ids)
         finally:
             con.close()
 
         if database_artifacts != accepted:
             raise ValueError("ACCEPTED_ARTIFACT_SET_MISMATCH")
+        if len(sessions) != int(shard["sessions"]):
+            raise ValueError("SOURCE_SHARD_SESSION_COUNT_MISMATCH")
+        if len(messages) != int(shard["searchable_messages"]):
+            raise ValueError("SOURCE_SHARD_MESSAGE_COUNT_MISMATCH")
+        if sum(len(r[6].encode("utf-8")) for r in messages) != int(shard["searchable_text_bytes"]):
+            raise ValueError("SOURCE_SHARD_TEXT_BYTES_MISMATCH")
         if verification is not None:
-            if verification.get("sessions") != len(sessions):
+            verified_sessions = verification.get("sessions")
+            if not isinstance(verified_sessions, int) or verified_sessions < len(sessions):
                 raise ValueError("SOURCE_VERIFICATION_SESSION_COUNT_MISMATCH")
             verified_messages = verification.get("messages")
             if not isinstance(verified_messages, int) or verified_messages < len(messages):

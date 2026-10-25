@@ -69,12 +69,20 @@ class NeonMaterializerSourceTest(unittest.TestCase):
                 observed_max_time REAL,
                 observed_message_count INTEGER NOT NULL
             );
+            CREATE TABLE artifact_routes(
+                artifact_id INTEGER PRIMARY KEY,
+                accepted_session_id TEXT NOT NULL,
+                projected_session_id TEXT NOT NULL,
+                route_state TEXT NOT NULL,
+                route_reason TEXT NOT NULL,
+                route_version TEXT NOT NULL
+            );
         """)
         con.executemany(
-            "INSERT INTO sessions(session_id,title,coverage_state,coverage_reason,first_message_time,last_message_time) VALUES (?,?,?,?,?,?)",
+            "INSERT INTO sessions(session_id,title,coverage_state,coverage_reason,first_message_time,last_message_time,first_accepted_at) VALUES (?,?,?,?,?,?,?)",
             [
-                ("private-s1", "One", "COMPLETE_EXPOSED_CONVERSATION", "ok", 1.0, 2.0),
-                ("private-s2", "Two", "PARTIAL_SESSION_SLICE", "partial", 3.0, 4.0),
+                ("private-s1", "One", "COMPLETE_EXPOSED_CONVERSATION", "ok", 1.0, 2.0, "2026-01-01T00:00:00+00:00"),
+                ("private-s2", "Two", "PARTIAL_SESSION_SLICE", "partial", 3.0, 4.0, "2026-01-02T00:00:00+00:00"),
             ],
         )
         con.executemany(
@@ -90,6 +98,13 @@ class NeonMaterializerSourceTest(unittest.TestCase):
             [
                 (1, SHA_A, 1, "portable", "xai-export", "a", "2026-01-01T00:00:00+00:00", "COMPLETE_EXPOSED_CONVERSATION", "private-s1", SHA_A, 2),
                 (2, SHA_B, 1, "portable", "xai-export", "b", "2026-01-02T00:00:00+00:00", "PARTIAL_SESSION_SLICE", "private-s2", SHA_B, 1),
+            ],
+        )
+        con.executemany(
+            "INSERT INTO artifact_routes(artifact_id,accepted_session_id,projected_session_id,route_state,route_reason,route_version) VALUES (?,?,?,?,?,?)",
+            [
+                (1, "private-s1", "private-s1", "DIRECT", "fixture", "v1"),
+                (2, "private-s2", "private-s2", "DIRECT", "fixture", "v1"),
             ],
         )
         con.commit()
@@ -123,20 +138,17 @@ class NeonMaterializerSourceTest(unittest.TestCase):
     def test_hidden_rows_are_excluded_and_null_message_id_uses_local_identity(self):
         with tempfile.TemporaryDirectory() as td:
             root = self.make_corpus(Path(td))
-            sessions, messages = load_source_rows(root, provider="xai")
+            sessions, messages = load_source_rows(root, provider="xai", shard_id="xai-0001")
             self.assertEqual(len(sessions), 2)
             self.assertEqual(len(messages), 2)
             self.assertEqual([row[2] for row in messages], ["m1", "fallback-2"])
             self.assertNotIn("hidden-id", [row[2] for row in messages])
 
-    def test_provider_mismatch_fails_closed(self):
+    def test_shard_provider_mismatch_fails_closed(self):
         with tempfile.TemporaryDirectory() as td:
             root = self.make_corpus(Path(td))
-            con = sqlite3.connect(root / "corpus.sqlite3")
-            con.execute("UPDATE artifacts SET source_adapter='deepseek-export' WHERE artifact_id=2")
-            con.commit(); con.close()
-            with self.assertRaisesRegex(ValueError, "SOURCE_PROVIDER_MISMATCH"):
-                build_source_manifest(root, provider="xai", shard_id="xai-0001")
+            with self.assertRaisesRegex(ValueError, "SOURCE_SHARD_PROVIDER_MISMATCH"):
+                build_source_manifest(root, provider="deepseek", shard_id="xai-0001")
 
     def test_target_message_id_collision_fails_closed(self):
         with tempfile.TemporaryDirectory() as td:
@@ -146,7 +158,7 @@ class NeonMaterializerSourceTest(unittest.TestCase):
             con.execute("UPDATE messages SET message_id=NULL WHERE row_id=2")
             con.commit(); con.close()
             with self.assertRaisesRegex(ValueError, "TARGET_MESSAGE_ID_COLLISION"):
-                load_source_rows(root, provider="xai")
+                load_source_rows(root, provider="xai", shard_id="xai-0001")
 
 
 class NeonMaterializerCliTest(unittest.TestCase):
