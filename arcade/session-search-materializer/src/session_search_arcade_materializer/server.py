@@ -13,12 +13,15 @@ from session_search_arcade_materializer.bundle_consumer import (
 )
 from session_search_arcade_materializer.neon_loader import (
     LOADER_ROLE,
+    READY_ROLE,
     load_rows_to_building,
+    mark_generation_ready,
     resolve_neon_connection_uri,
+    resolve_neon_ready_connection_uri,
 )
 
 DRIVE_READONLY = "https://www.googleapis.com/auth/drive.readonly"
-app = MCPApp(name="session_search_materializer", version="0.2.0", log_level="INFO")
+app = MCPApp(name="session_search_materializer", version="0.3.0", log_level="INFO")
 
 
 @app.tool(requires_auth=Google(scopes=[DRIVE_READONLY]))
@@ -86,6 +89,42 @@ async def materialize_bundle(
             "neon_database_name": neon_database_name,
             "loader_role": LOADER_ROLE,
         }
+
+
+@app.tool(requires_secrets=["NEON_API_KEY"])
+async def mark_bundle_ready(
+    context: Context,
+    neon_project_id: Annotated[str, "Project-scoped Neon target project ID."],
+    neon_branch_id: Annotated[str, "Exact Neon target branch ID."],
+    generation_id: Annotated[str, "Exact BUILDING generation ID already verified after materialization."],
+    expected_source_manifest_sha256: Annotated[str, "Expected source manifest SHA-256 from accepted authority."],
+    expected_session_count: Annotated[int, "Expected verified session count."],
+    expected_message_count: Annotated[int, "Expected verified searchable-message count."],
+    neon_database_name: Annotated[str, "Neon database name."] = "neondb",
+) -> Annotated[dict[str, Any], "READY transition result without activation or catalog mutation."]:
+    """Promote one verified BUILDING generation to READY through the READY-only database gate."""
+    neon_api_key = context.get_secret("NEON_API_KEY")
+    if not neon_api_key:
+        raise ValueError("NEON_API_KEY is required")
+    database_url = await resolve_neon_ready_connection_uri(
+        neon_api_key=neon_api_key, project_id=neon_project_id,
+        branch_id=neon_branch_id, database_name=neon_database_name,
+    )
+    ready = await asyncio.to_thread(
+        mark_generation_ready,
+        database_url=database_url,
+        generation_id=generation_id,
+        expected_source_manifest_sha256=expected_source_manifest_sha256,
+        expected_session_count=expected_session_count,
+        expected_message_count=expected_message_count,
+    )
+    return {
+        **ready,
+        "neon_project_id": neon_project_id,
+        "neon_branch_id": neon_branch_id,
+        "neon_database_name": neon_database_name,
+        "ready_role": READY_ROLE,
+    }
 
 
 if __name__ == "__main__":
