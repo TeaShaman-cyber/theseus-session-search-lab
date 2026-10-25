@@ -1,0 +1,244 @@
+from __future__ import annotations
+
+import sqlite3
+import tempfile
+from pathlib import Path
+from typing import Any
+
+from .artifact_overlap import set_digest
+from .corpus_store import (
+    CorpusMutationLock,
+    CorpusPaths,
+    _populate_projection_from_entries,
+    read_accepted_ledger,
+)
+from .neon_materializer import (
+    _load_rows_for_sessions,
+    _manifest_from_snapshot,
+    _select_shard_assignment,
+    _source_connection,
+)
+
+SCHEMA = "theseus.session-search-shard-source-integrity.v1"
+MODE = "SHARD_LOCAL_REPLAY_DIRECT_ONLY"
+
+
+def _result(status: str, provider: str, shard_id: str, **extra: Any) -> dict[str, Any]:
+    return {
+        "schema": SCHEMA,
+        "status": status,
+        "verification_mode": MODE,
+        "provider": provider,
+        "shard_id": shard_id,
+        **extra,
+    }
+
+
+def _route_rows(con: sqlite3.Connection, session_ids: tuple[str, ...]) -> list[tuple[str, ...]]:
+    marks = ",".join("?" for _ in session_ids)
+    return [
+        tuple(str(value) for value in row)
+        for row in con.execute(
+            "SELECT a.sha256,r.accepted_session_id,r.projected_session_id,"
+            "r.route_state,r.route_reason,r.route_version,a.source_adapter "
+            "FROM artifact_routes r JOIN artifacts a ON a.artifact_id=r.artifact_id "
+            f"WHERE r.projected_session_id IN ({marks}) ORDER BY a.sha256",
+            session_ids,
+        )
+    ]
+
+
+def verify_shard_source_integrity(
+    corpus_root: Path, *, provider: str, shard_id: str
+) -> dict[str, Any]:
+    corpus_root = Path(corpus_root)
+    paths = CorpusPaths.from_root(corpus_root)
+    with CorpusMutationLock(paths, "verify-shard-source"):
+        accepted = read_accepted_ledger(paths)
+        accepted_shas = set(accepted)
+        con = _source_connection(corpus_root)
+        try:
+            database_shas = {
+                str(row[0])
+                for row in con.execute("SELECT sha256 FROM artifacts ORDER BY sha256")
+            }
+            if database_shas != accepted_shas:
+                return _result(
+                    "RECONCILIATION_REQUIRED",
+                    provider,
+                    shard_id,
+                    reason="accepted ledger/projection membership disagreement",
+                    accepted_artifact_count=len(accepted_shas),
+                    projection_artifact_count=len(database_shas),
+                )
+
+            shard, session_ids, adapters = _select_shard_assignment(
+                con, provider=provider, shard_id=shard_id
+            )
+            current_routes = _route_rows(con, session_ids)
+            if not current_routes:
+                return _result(
+                    "RECONCILIATION_REQUIRED",
+                    provider,
+                    shard_id,
+                    reason="shard has no routed artifacts",
+                )
+            route_states = sorted({row[3] for row in current_routes})
+            if route_states != ["DIRECT"]:
+                return _result(
+                    "UNSUPPORTED_ROUTE_CLOSURE",
+                    provider,
+                    shard_id,
+                    route_states=route_states,
+                    reason="shard-local replay is only authoritative for DIRECT routes",
+                )
+            artifact_shas = tuple(row[0] for row in current_routes)
+            if len(set(artifact_shas)) != len(artifact_shas):
+                return _result(
+                    "RECONCILIATION_REQUIRED",
+                    provider,
+                    shard_id,
+                    reason="duplicate routed artifact identity",
+                )
+            missing = [sha for sha in artifact_shas if sha not in accepted]
+            if missing:
+                return _result(
+                    "RECONCILIATION_REQUIRED",
+                    provider,
+                    shard_id,
+                    reason="routed artifact missing from accepted ledger",
+                    missing_artifacts=len(missing),
+                )
+            selected_entries = {sha: accepted[sha] for sha in artifact_shas}
+            current_sessions, current_messages = _load_rows_for_sessions(con, session_ids)
+        finally:
+            con.close()
+
+        current_manifest = _manifest_from_snapshot(
+            accepted_shas,
+            current_sessions,
+            current_messages,
+            adapters,
+            provider=provider,
+            shard_id=shard_id,
+        )
+        if len(current_sessions) != int(shard["sessions"]):
+            return _result("RECONCILIATION_REQUIRED", provider, shard_id, reason="allocator/session mismatch")
+        if len(current_messages) != int(shard["searchable_messages"]):
+            return _result("RECONCILIATION_REQUIRED", provider, shard_id, reason="allocator/message mismatch")
+        if sum(len(row[6].encode("utf-8")) for row in current_messages) != int(shard["searchable_text_bytes"]):
+            return _result("RECONCILIATION_REQUIRED", provider, shard_id, reason="allocator/text-byte mismatch")
+
+        with tempfile.TemporaryDirectory(prefix="session-search-shard-verify-") as td:
+            candidate = Path(td) / "derived.sqlite3"
+            try:
+                _populate_projection_from_entries(paths, candidate, selected_entries)
+            except RuntimeError:
+                return _result(
+                    "FAILED_INTEGRITY",
+                    provider,
+                    shard_id,
+                    reason="selected accepted artifact replay failed",
+                    shard_artifact_count=len(selected_entries),
+                )
+
+            replay = sqlite3.connect(candidate)
+            try:
+                integrity = str(replay.execute("PRAGMA integrity_check").fetchone()[0])
+                if integrity != "ok":
+                    return _result(
+                        "FAILED_INTEGRITY",
+                        provider,
+                        shard_id,
+                        reason="replayed shard sqlite integrity failure",
+                        sqlite_integrity=integrity,
+                    )
+                foreign_keys = replay.execute("PRAGMA foreign_key_check").fetchall()
+                if foreign_keys:
+                    return _result(
+                        "FAILED_INTEGRITY",
+                        provider,
+                        shard_id,
+                        reason="replayed shard foreign key failure",
+                        foreign_key_rows=len(foreign_keys),
+                    )
+                replay_session_ids = tuple(
+                    str(row[0])
+                    for row in replay.execute("SELECT session_id FROM sessions ORDER BY session_id")
+                )
+                if set(replay_session_ids) != set(session_ids):
+                    return _result(
+                        "RECONCILIATION_REQUIRED",
+                        provider,
+                        shard_id,
+                        reason="replayed session membership mismatch",
+                    )
+                replay_sessions, replay_messages = _load_rows_for_sessions(replay, session_ids)
+                replay_routes = _route_rows(replay, session_ids)
+            finally:
+                replay.close()
+
+        if replay_routes != current_routes:
+            return _result(
+                "RECONCILIATION_REQUIRED",
+                provider,
+                shard_id,
+                reason="routed artifact replay mismatch",
+            )
+        if replay_sessions != current_sessions:
+            return _result(
+                "RECONCILIATION_REQUIRED",
+                provider,
+                shard_id,
+                reason="session projection replay mismatch",
+            )
+        if replay_messages != current_messages:
+            return _result(
+                "RECONCILIATION_REQUIRED",
+                provider,
+                shard_id,
+                reason="searchable message projection replay mismatch",
+            )
+
+        replay_manifest = _manifest_from_snapshot(
+            accepted_shas,
+            replay_sessions,
+            replay_messages,
+            adapters,
+            provider=provider,
+            shard_id=shard_id,
+        )
+        if replay_manifest != current_manifest:
+            return _result(
+                "RECONCILIATION_REQUIRED",
+                provider,
+                shard_id,
+                reason="source manifest replay mismatch",
+            )
+
+        return _result(
+            "VERIFIED",
+            provider,
+            shard_id,
+            accepted_artifact_count=len(accepted_shas),
+            accepted_set_sha256=set_digest(accepted_shas),
+            shard_artifact_count=len(selected_entries),
+            route_states=["DIRECT"],
+            session_count=len(current_sessions),
+            message_count=len(current_messages),
+            searchable_text_bytes=current_manifest["searchable_text_bytes"],
+            source_projection_sha256=current_manifest["source_projection_sha256"],
+            source_manifest_sha256=current_manifest["source_manifest_sha256"],
+            generation_id=current_manifest["generation_id"],
+            sqlite_integrity="ok",
+            foreign_key_rows=0,
+            verified_components=[
+                "global_accepted_projection_membership",
+                "selected_accepted_blob_hash_and_metadata",
+                "provider_aware_allocator_membership",
+                "direct_route_replay",
+                "session_projection_replay",
+                "searchable_message_projection_replay",
+                "source_manifest_identity",
+            ],
+        )

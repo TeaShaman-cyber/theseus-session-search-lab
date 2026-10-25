@@ -59,6 +59,10 @@ The bundle contains private session/message data. Public receipts expose only ag
 
 A bundle is not authoritative merely because it is internally valid. Promotion also requires an externally recorded/expected bundle digest derived from accepted authority.
 
+For provider-aware shards extracted from a mixed accepted corpus, `scripts/verify_shard_source.py` provides a bounded source-integrity gate. It reuses the canonical allocator to select the exact private shard membership, verifies global accepted-ledger/projection membership, replays only the selected accepted artifacts into a temporary projection, and compares the exact session/searchable-message rows and route identity that feed the bundle manifest. The current contract is deliberately fail-closed for non-`DIRECT` routes (`UNSUPPORTED_ROUTE_CLOSURE`) rather than guessing missing routing context. A `VERIFIED` result binds the same accepted-set, source-projection, source-manifest, and generation identities used by the bundle.
+
+This shard-scoped gate is not a replacement for full-corpus verification. It is a narrower promotion proof for the selected bundle projection when full reconstruction of the entire corpus is operationally unavailable or unnecessarily expensive.
+
 ## Drive staging
 
 The first real bundle acceptance used the verified frozen xAI corpus and produced:
