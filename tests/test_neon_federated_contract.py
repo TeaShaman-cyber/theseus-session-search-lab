@@ -7,6 +7,7 @@ PRIVILEGES = ROOT / "sql" / "neon" / "002_federated_shard_privileges.sql"
 LIFECYCLE = ROOT / "sql" / "neon" / "003_federated_generation_lifecycle.sql"
 BUILDING_LOADER = ROOT / "sql" / "neon" / "004_arcade_building_loader.sql"
 READY_MARKER = ROOT / "sql" / "neon" / "005_ready_marker_capability.sql"
+ACTIVATION_MARKER = ROOT / "sql" / "neon" / "006_activation_marker_capability.sql"
 
 
 class NeonFederatedContractTest(unittest.TestCase):
@@ -59,6 +60,21 @@ class NeonFederatedContractTest(unittest.TestCase):
             text,
         )
         self.assertNotIn("activate_generation", text)
+        self.assertNotIn("GRANT SELECT", text)
+        self.assertNotIn("GRANT INSERT", text)
+        self.assertNotIn("GRANT UPDATE", text)
+        self.assertNotIn("GRANT DELETE", text)
+
+    def test_activation_marker_capability_can_only_activate(self):
+        text = ACTIVATION_MARKER.read_text(encoding="utf-8")
+        self.assertIn("CREATE ROLE session_search_activation_marker NOLOGIN", text)
+        self.assertIn("GRANT USAGE ON SCHEMA session_search TO session_search_activation_marker", text)
+        self.assertIn(
+            "GRANT EXECUTE ON FUNCTION session_search.activate_generation(text,text) "
+            "TO session_search_activation_marker",
+            text,
+        )
+        self.assertNotIn("mark_generation_ready", text)
         self.assertNotIn("GRANT SELECT", text)
         self.assertNotIn("GRANT INSERT", text)
         self.assertNotIn("GRANT UPDATE", text)

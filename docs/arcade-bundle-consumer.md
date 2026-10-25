@@ -51,3 +51,11 @@ Arcade Hosted deployment is manual-only through `.github/workflows/deploy-sessio
 Generation activation, router/catalog updates, and production cutover remain separate protected operations; READY is exposed only through the dedicated least-privilege tool above.
 
 The versioned operator path for this READY boundary is `.github/workflows/promote-session-search-ready.yml`, which calls `scripts/arcade_mark_bundle_ready.py` with exact project/branch/generation/manifest/count inputs. The entrypoint discovers exactly one Hosted `MarkBundleReady` tool, fails closed on ambiguity or unexpected interactive authorization, and validates the returned READY postcondition. It has no activation or catalog parameters. Independent Neon readback remains the acceptance check after a successful run.
+
+## Activation-only slice
+
+`activate_ready_generation(...)` is a fourth, separately privileged Hosted tool. It resolves Neon using the fixed login `session_search_arcade_activator_sql`, then executes fixed `SET LOCAL ROLE session_search_activation_marker`. The versioned `sql/neon/006_activation_marker_capability.sql` grants only schema usage plus EXECUTE on `activate_generation(text,text)`. It cannot materialize, mark READY, or mutate projection tables directly.
+
+Activation is compare-and-set: callers must provide the exact currently active generation ID, or literal `NULL` when the pointer is empty. The database function locks the singleton active-pointer row, rejects stale expectations, requires the candidate generation to be READY, and only then changes `active_generation`.
+
+The versioned operator path is `.github/workflows/activate-session-search-generation.yml`, backed by `scripts/arcade_activate_generation.py`. It has no router, external serving catalog, publication, or production-cutover parameter. Independent Neon readback of the active pointer remains the acceptance check.

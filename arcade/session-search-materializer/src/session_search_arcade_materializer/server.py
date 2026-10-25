@@ -12,16 +12,19 @@ from session_search_arcade_materializer.bundle_consumer import (
     verify_bundle,
 )
 from session_search_arcade_materializer.neon_loader import (
+    ACTIVATOR_ROLE,
     LOADER_ROLE,
     READY_ROLE,
+    activate_ready_generation as activate_ready_generation_db,
     load_rows_to_building,
     mark_generation_ready,
+    resolve_neon_activation_connection_uri,
     resolve_neon_connection_uri,
     resolve_neon_ready_connection_uri,
 )
 
 DRIVE_READONLY = "https://www.googleapis.com/auth/drive.readonly"
-app = MCPApp(name="session_search_materializer", version="0.3.0", log_level="INFO")
+app = MCPApp(name="session_search_materializer", version="0.4.0", log_level="INFO")
 
 
 @app.tool(requires_auth=Google(scopes=[DRIVE_READONLY]))
@@ -124,6 +127,39 @@ async def mark_bundle_ready(
         "neon_branch_id": neon_branch_id,
         "neon_database_name": neon_database_name,
         "ready_role": READY_ROLE,
+    }
+
+
+@app.tool(requires_secrets=["NEON_API_KEY"])
+async def activate_ready_generation(
+    context: Context,
+    neon_project_id: Annotated[str, "Project-scoped Neon target project ID."],
+    neon_branch_id: Annotated[str, "Exact Neon target branch ID."],
+    generation_id: Annotated[str, "Exact READY generation ID to activate."],
+    expected_previous_generation_id: Annotated[str, "Exact previously active generation ID, or literal NULL when no generation is active."],
+    neon_database_name: Annotated[str, "Neon database name."] = "neondb",
+) -> Annotated[dict[str, Any], "CAS-style active-generation transition result for one READY generation."]:
+    """Activate one READY generation only when the current active pointer exactly matches the caller's expectation."""
+    neon_api_key = context.get_secret("NEON_API_KEY")
+    if not neon_api_key:
+        raise ValueError("NEON_API_KEY is required")
+    previous = None if expected_previous_generation_id == "NULL" else expected_previous_generation_id
+    database_url = await resolve_neon_activation_connection_uri(
+        neon_api_key=neon_api_key, project_id=neon_project_id,
+        branch_id=neon_branch_id, database_name=neon_database_name,
+    )
+    activated = await asyncio.to_thread(
+        activate_ready_generation_db,
+        database_url=database_url,
+        generation_id=generation_id,
+        expected_previous_generation_id=previous,
+    )
+    return {
+        **activated,
+        "neon_project_id": neon_project_id,
+        "neon_branch_id": neon_branch_id,
+        "neon_database_name": neon_database_name,
+        "activator_role": ACTIVATOR_ROLE,
     }
 
 

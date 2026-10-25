@@ -9,14 +9,18 @@ if str(PKG_SRC) not in sys.path:
     sys.path.insert(0, str(PKG_SRC))
 
 from session_search_arcade_materializer.neon_loader import (
+    ACTIVATION_CAPABILITY_ROLE,
+    ACTIVATOR_ROLE,
     CAPABILITY_ROLE,
     LOADER_ROLE,
     READY_CAPABILITY_ROLE,
     READY_ROLE,
     TargetMaterializationError,
+    activate_ready_generation,
     classify_existing_generation,
     load_rows_to_building,
     mark_generation_ready,
+    resolve_neon_activation_connection_uri,
     resolve_neon_connection_uri,
     resolve_neon_ready_connection_uri,
 )
@@ -70,6 +74,62 @@ class ArcadeNeonLoaderTest(unittest.TestCase):
             self.assertTrue(uri.startswith('postgresql://'))
             self.assertEqual(client.params['role_name'], READY_ROLE)
         asyncio.run(run())
+
+    def test_activation_connection_uri_uses_fixed_activator_role(self):
+        class Response:
+            def raise_for_status(self): return None
+            def json(self): return {'uri': 'postgresql://activator:secret@example/neondb'}
+
+        class Client:
+            async def get(self, url, *, headers, params):
+                self.params = params
+                return Response()
+
+        async def run():
+            client = Client()
+            uri = await resolve_neon_activation_connection_uri(
+                neon_api_key='private-neon-key',
+                project_id='wild-surf-61625738',
+                branch_id='br-floral-morning-b5kactgx',
+                database_name='neondb',
+                client=client,
+            )
+            self.assertTrue(uri.startswith('postgresql://'))
+            self.assertEqual(client.params['role_name'], ACTIVATOR_ROLE)
+        asyncio.run(run())
+
+    def test_activation_transition_uses_activation_capability_only(self):
+        executed = []
+
+        class Cursor:
+            def __enter__(self): return self
+            def __exit__(self, *_args): return False
+            def execute(self, sql, params=None): executed.append((sql, params))
+
+        class Connection:
+            def __init__(self): self.commits = 0
+            def __enter__(self): return self
+            def __exit__(self, exc_type, *_args):
+                if exc_type is None: self.commits += 1
+                return False
+            def cursor(self): return Cursor()
+            def close(self): pass
+
+        conn = Connection()
+        result = activate_ready_generation(
+            database_url='postgresql://private',
+            generation_id='a' * 64,
+            expected_previous_generation_id=None,
+            connect=lambda _url: conn,
+        )
+        self.assertEqual(result['status'], 'ACTIVATED')
+        self.assertEqual(result['active_generation'], 'a' * 64)
+        self.assertIsNone(result['expected_previous_generation_id'])
+        self.assertEqual(conn.commits, 1)
+        self.assertEqual(' '.join(executed[0][0].split()), f'SET LOCAL ROLE {ACTIVATION_CAPABILITY_ROLE}')
+        self.assertIn('session_search.activate_generation', executed[1][0])
+        self.assertEqual(executed[1][1], ('a' * 64, None))
+        self.assertFalse(any('mark_generation_ready' in sql for sql, _ in executed))
 
     def test_ready_transition_uses_ready_capability_only(self):
         executed = []
@@ -229,23 +289,27 @@ class ArcadeNeonLoaderTest(unittest.TestCase):
         self.assertEqual(result['loaded_sessions'], 60)
         self.assertEqual(result['loaded_messages'], 17790)
 
-    def test_server_separates_building_and_ready_capabilities(self):
+    def test_server_separates_building_ready_and_activation_capabilities(self):
         server = (PKG_SRC / 'session_search_arcade_materializer' / 'server.py').read_text()
         self.assertIn('materialize_bundle', server)
         self.assertIn('mark_bundle_ready', server)
+        self.assertIn('activate_ready_generation', server)
         self.assertIn('NEON_API_KEY', server)
         self.assertIn('LOADER_ROLE', server)
         self.assertIn('READY_ROLE', server)
+        self.assertIn('ACTIVATOR_ROLE', server)
         loader = (PKG_SRC / 'session_search_arcade_materializer' / 'neon_loader.py').read_text()
         self.assertIn("LOADER_ROLE = 'session_search_arcade_loader_sql'", loader)
         self.assertIn("READY_ROLE = 'session_search_arcade_ready_sql'", loader)
         self.assertIn("READY_CAPABILITY_ROLE = 'session_search_ready_marker'", loader)
+        self.assertIn("ACTIVATOR_ROLE = 'session_search_arcade_activator_sql'", loader)
+        self.assertIn("ACTIVATION_CAPABILITY_ROLE = 'session_search_activation_marker'", loader)
         self.assertNotIn('role_name: Annotated', server)
         self.assertIn('read_verified_bundle', server)
         self.assertIn('load_rows_to_building', server)
         self.assertIn('mark_generation_ready', server)
         self.assertNotIn('VERIFIED_NOT_LOADED', server)
-        self.assertNotIn('activate_generation', server)
+        self.assertIn('activate_ready_generation_db', server)
 
 
 if __name__ == '__main__':

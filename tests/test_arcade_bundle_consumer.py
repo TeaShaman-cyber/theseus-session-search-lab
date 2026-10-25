@@ -190,7 +190,12 @@ class ArcadeBundleConsumerTest(unittest.TestCase):
         self.assertIn("NEON_API_KEY", server)
         self.assertIn("materialize_bundle", server)
         self.assertIn("mark_bundle_ready", server)
-        self.assertNotIn("activate_generation", server)
+        self.assertIn("activate_ready_generation", server)
+        activation = server.split("async def activate_ready_generation(", 1)[1]
+        self.assertNotIn("catalog_id", activation)
+        self.assertNotIn("catalog_generation", activation)
+        self.assertNotIn("cutover", activation.lower())
+        self.assertNotIn("router", activation.lower())
 
 
 if __name__ == "__main__":

@@ -2,11 +2,12 @@
 
 This package is the Arcade Hosted consumer for `theseus.session-search-shard-bundle.v1`.
 
-Current surface has three deliberately separate tools:
+Current surface has four deliberately separate tools:
 
 - `inspect_bundle(...)` — Drive `read-only` download plus independent bundle verification;
 - `materialize_bundle(...)` — the same verification followed by a BUILDING-only load into Neon;
-- `mark_bundle_ready(...)` — a READY-only lifecycle transition for one already verified BUILDING generation.
+- `mark_bundle_ready(...)` — a READY-only lifecycle transition for one already verified BUILDING generation;
+- `activate_ready_generation(...)` — a CAS-style active-pointer transition for one READY generation.
 
 `inspect_bundle` requires Google OAuth `drive.readonly` and returns aggregate evidence only.
 
@@ -16,10 +17,12 @@ The BUILDING login receives SET-only membership in the versioned `session_search
 
 The READY login is separately fixed to `session_search_arcade_ready_sql`. It receives SET-only membership in `session_search_ready_marker` from `sql/neon/005_ready_marker_capability.sql`, which grants only schema usage plus EXECUTE on `mark_generation_ready(...)`. It has no table DML and no `activate_generation` capability.
 
+The activation login is separately fixed to `session_search_arcade_activator_sql`. It receives SET-only membership in `session_search_activation_marker` from `sql/neon/006_activation_marker_capability.sql`, which grants only schema usage plus EXECUTE on `activate_generation(...)`. The database function requires the caller's exact expected previous active generation and only accepts a READY candidate, making activation a compare-and-set boundary. It has no table DML or READY-marking capability.
+
 Exact replay is idempotent: an identical existing BUILDING generation returns `ALREADY_BUILDING`, identical READY returns `ALREADY_READY`, and any identity/count mismatch fails closed. A fresh successful load returns `LOADED` with target state `BUILDING`.
 
 ## Deployment
 
 The GitHub deployment workflow remains manual-only. `ARCADE_URL` and `ARCADE_API_KEY` authenticate deployment; `NEON_API_KEY` belongs in Arcade's secret store for the Hosted server and is never returned by the tool.
 
-Activation and serving-catalog mutation are not part of this package surface. READY is an explicit separate tool/capability and never occurs during materialization.
+Activation is an explicit separate tool/capability and never occurs during materialization or READY marking. Router/catalog mutation and production cutover are not part of this package surface.

@@ -1,0 +1,61 @@
+name: Activate Session Search generation
+
+on:
+  workflow_dispatch:
+    inputs:
+      neon_project_id:
+        description: Exact isolated Neon project ID
+        required: true
+        type: string
+      neon_branch_id:
+        description: Exact isolated Neon branch ID
+        required: true
+        type: string
+      generation_id:
+        description: Exact READY generation ID to activate
+        required: true
+        type: string
+      expected_previous_generation_id:
+        description: Exact previously active generation ID, or literal NULL
+        required: true
+        type: string
+      neon_database_name:
+        description: Neon database name
+        required: true
+        default: neondb
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: session-search-activation-${{ inputs.neon_project_id }}-${{ inputs.neon_branch_id }}
+  cancel-in-progress: false
+
+jobs:
+  activate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install Arcade SDK
+        run: python -m pip install 'arcadepy>=1.7.0,<2'
+      - name: CAS-activate exact READY generation
+        env:
+          ARCADE_URL: ${{ secrets.ARCADE_URL }}
+          ARCADE_API_KEY: ${{ secrets.ARCADE_API_KEY }}
+          ARCADE_USER_ID: ${{ github.actor }}
+          NEON_PROJECT_ID: ${{ inputs.neon_project_id }}
+          NEON_BRANCH_ID: ${{ inputs.neon_branch_id }}
+          GENERATION_ID: ${{ inputs.generation_id }}
+          EXPECTED_PREVIOUS_GENERATION_ID: ${{ inputs.expected_previous_generation_id }}
+          DATABASE_NAME: ${{ inputs.neon_database_name }}
+        run: |
+          python scripts/arcade_activate_generation.py \
+            --neon-project-id "$NEON_PROJECT_ID" \
+            --neon-branch-id "$NEON_BRANCH_ID" \
+            --generation-id "$GENERATION_ID" \
+            --expected-previous-generation-id "$EXPECTED_PREVIOUS_GENERATION_ID" \
+            --neon-database-name "$DATABASE_NAME"
