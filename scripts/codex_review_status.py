@@ -134,6 +134,19 @@ def classify_codex_wait(
     }
 
 
+def bounded_poll_sleep_seconds(
+    *, elapsed_seconds: int, timeout_seconds: int, poll_seconds: int
+) -> int:
+    if elapsed_seconds < 0:
+        raise ValueError("elapsed_seconds must be non-negative")
+    if timeout_seconds < 0:
+        raise ValueError("timeout_seconds must be non-negative")
+    if poll_seconds <= 0:
+        raise ValueError("poll_seconds must be positive")
+    remaining = max(0, timeout_seconds - elapsed_seconds)
+    return min(poll_seconds, remaining)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--head", required=True)

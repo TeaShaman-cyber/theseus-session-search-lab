@@ -4,6 +4,7 @@ from pathlib import Path
 
 from scripts.codex_review_status import (
     classify_codex_review,
+    bounded_poll_sleep_seconds,
     classify_codex_wait,
     normalize_comments,
 )
@@ -131,6 +132,26 @@ class CodexReviewStatusTest(unittest.TestCase):
         at_bound = classify_codex_wait(state, elapsed_seconds=20, timeout_seconds=20)
         self.assertEqual(before["wait_disposition"], "WAIT")
         self.assertEqual(at_bound["wait_disposition"], "TIMEOUT")
+
+    def test_poll_sleep_is_capped_at_remaining_timeout(self):
+        self.assertEqual(
+            bounded_poll_sleep_seconds(
+                elapsed_seconds=0, timeout_seconds=1, poll_seconds=3
+            ),
+            1,
+        )
+        self.assertEqual(
+            bounded_poll_sleep_seconds(
+                elapsed_seconds=119, timeout_seconds=120, poll_seconds=10
+            ),
+            1,
+        )
+        self.assertEqual(
+            bounded_poll_sleep_seconds(
+                elapsed_seconds=120, timeout_seconds=120, poll_seconds=10
+            ),
+            0,
+        )
 
     def test_wrapper_requests_all_comment_pages(self):
         root = Path(__file__).resolve().parents[1]

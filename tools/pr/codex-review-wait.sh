@@ -18,7 +18,21 @@ case "$TIMEOUT:$POLL" in
 esac
 
 START=$(date +%s)
+LAST_STATE=
 while :; do
+    NOW=$(date +%s)
+    ELAPSED=$((NOW - START))
+    if [ -n "$LAST_STATE" ] && [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+        DECISION=$(printf '%s\n' "$LAST_STATE" | PYTHONPATH="$ROOT" python3 -c '
+import json, sys
+from scripts.codex_review_status import classify_codex_wait
+state = json.load(sys.stdin)
+print(json.dumps(classify_codex_wait(state, elapsed_seconds=int(sys.argv[1]), timeout_seconds=int(sys.argv[2])), sort_keys=True))
+' "$ELAPSED" "$TIMEOUT")
+        printf '%s\n' "$DECISION"
+        exit 3
+    fi
+
     STATE=$("$ROOT/tools/pr/codex-review-status.sh" "$PR")
     NOW=$(date +%s)
     ELAPSED=$((NOW - START))
@@ -32,7 +46,16 @@ print(json.dumps(classify_codex_wait(state, elapsed_seconds=int(sys.argv[1]), ti
     case "$DISPOSITION" in
         TERMINAL) printf '%s\n' "$DECISION"; exit 0 ;;
         TIMEOUT) printf '%s\n' "$DECISION"; exit 3 ;;
-        WAIT) sleep "$POLL" ;;
+        WAIT)
+            LAST_STATE=$STATE
+            SLEEP_SECONDS=$(PYTHONPATH="$ROOT" python3 -c '
+import sys
+from scripts.codex_review_status import bounded_poll_sleep_seconds
+print(bounded_poll_sleep_seconds(elapsed_seconds=int(sys.argv[1]), timeout_seconds=int(sys.argv[2]), poll_seconds=int(sys.argv[3])))
+' "$ELAPSED" "$TIMEOUT" "$POLL")
+            [ "$SLEEP_SECONDS" -gt 0 ] || { printf '%s\n' "$DECISION"; exit 3; }
+            sleep "$SLEEP_SECONDS"
+            ;;
         *) printf '%s\n' "codex-review-wait: invalid disposition $DISPOSITION" >&2; exit 2 ;;
     esac
 done
