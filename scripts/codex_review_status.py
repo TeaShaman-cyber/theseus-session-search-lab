@@ -112,6 +112,21 @@ def classify_codex_review(comments: list[dict[str, Any]], head_sha: str) -> dict
     }
 
 
+def classify_pr_head_currentness(observed_head: str, expected_head: str) -> dict[str, Any] | None:
+    if not expected_head:
+        raise ValueError("expected_head must be non-empty")
+    if observed_head == expected_head:
+        return None
+    return {
+        "advisory": True,
+        "status": "PENDING",
+        "reason": "pr-head-not-current",
+        "head_sha": expected_head,
+        "observed_head_sha": observed_head,
+        "reviewed_commit": None,
+    }
+
+
 def classify_codex_wait(
     review_state: dict[str, Any], *, elapsed_seconds: int, timeout_seconds: int
 ) -> dict[str, Any]:

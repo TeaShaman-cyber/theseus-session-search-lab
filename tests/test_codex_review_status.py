@@ -6,6 +6,7 @@ from scripts.codex_review_status import (
     classify_codex_review,
     bounded_poll_sleep_seconds,
     classify_codex_wait,
+    classify_pr_head_currentness,
     normalize_comments,
 )
 
@@ -108,6 +109,17 @@ class CodexReviewStatusTest(unittest.TestCase):
         self.assertEqual(result["status"], "FINDINGS")
         self.assertEqual(result["reviewed_commit"], HEAD)
 
+    def test_expected_head_mismatch_is_pending_currentness(self):
+        observed = "b" * 40
+        result = classify_pr_head_currentness(observed, HEAD)
+        self.assertIsNotNone(result)
+        self.assertEqual(result["status"], "PENDING")
+        self.assertEqual(result["reason"], "pr-head-not-current")
+        self.assertEqual(result["head_sha"], HEAD)
+        self.assertEqual(result["observed_head_sha"], observed)
+        self.assertIsNone(result["reviewed_commit"])
+        self.assertIsNone(classify_pr_head_currentness(HEAD, HEAD))
+
     def test_wait_clean_is_terminal_immediately(self):
         state = {"status": "CLEAN", "head_sha": HEAD, "advisory": True}
         result = classify_codex_wait(state, elapsed_seconds=1, timeout_seconds=120)
@@ -161,7 +173,9 @@ class CodexReviewStatusTest(unittest.TestCase):
 
         wait = (root / "tools" / "pr" / "codex-review-wait.sh").read_text(encoding="utf-8")
         self.assertIn("classify_codex_wait", wait)
-        self.assertIn("TIMEOUT=${2:-120}", wait)
+        self.assertIn("EXPECTED_HEAD=${2:-}", wait)
+        self.assertIn("TIMEOUT=${3:-120}", wait)
+        self.assertIn('codex-review-status.sh" "$PR" "$EXPECTED_HEAD"', wait)
         self.assertNotIn("pr merge", wait)
 
 

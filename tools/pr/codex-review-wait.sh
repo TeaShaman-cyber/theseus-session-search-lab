@@ -7,10 +7,11 @@ ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || {
 }
 cd "$ROOT"
 PR=${1:-}
-TIMEOUT=${2:-120}
-POLL=${3:-10}
-if [ -z "$PR" ]; then
-    printf '%s\n' 'usage: tools/pr/codex-review-wait.sh <pr-number> [timeout-seconds] [poll-seconds]' >&2
+EXPECTED_HEAD=${2:-}
+TIMEOUT=${3:-120}
+POLL=${4:-10}
+if [ -z "$PR" ] || [ -z "$EXPECTED_HEAD" ]; then
+    printf '%s\n' 'usage: tools/pr/codex-review-wait.sh <pr-number> <expected-head> [timeout-seconds] [poll-seconds]' >&2
     exit 2
 fi
 case "$TIMEOUT:$POLL" in
@@ -33,7 +34,7 @@ print(json.dumps(classify_codex_wait(state, elapsed_seconds=int(sys.argv[1]), ti
         exit 3
     fi
 
-    STATE=$("$ROOT/tools/pr/codex-review-status.sh" "$PR")
+    STATE=$("$ROOT/tools/pr/codex-review-status.sh" "$PR" "$EXPECTED_HEAD")
     NOW=$(date +%s)
     ELAPSED=$((NOW - START))
     DECISION=$(printf '%s\n' "$STATE" | PYTHONPATH="$ROOT" python3 -c '
