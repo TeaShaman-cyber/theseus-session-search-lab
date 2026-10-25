@@ -59,6 +59,20 @@ class ArcadeMaterializeOpsTest(unittest.TestCase):
             'SessionSearchMaterializer.MaterializeBundle',
         )
 
+    def test_unscoped_lookalike_is_never_selected(self):
+        class Tools(FakeTools):
+            def __init__(self):
+                super().__init__(); self.toolkits = []
+            def list(self, **kwargs):
+                self.toolkits.append(kwargs.get('toolkit'))
+                if kwargs.get('toolkit') is None:
+                    return SimpleNamespace(items=[SimpleNamespace(qualified_name='OtherToolkit.MaterializeBundle')], next_offset=None)
+                return SimpleNamespace(items=[], next_offset=None)
+        tools = Tools()
+        with self.assertRaisesRegex(MaterializeOpsError, 'MATERIALIZE_BUNDLE_DISCOVERY_FAILED'):
+            discover_materialize_bundle(FakeClient(tools))
+        self.assertNotIn(None, tools.toolkits)
+
     def test_partial_paginated_discovery_fails_closed(self):
         tools = FakeTools(); tools.fail_second_page = True
         with self.assertRaisesRegex(MaterializeOpsError, 'MATERIALIZE_BUNDLE_DISCOVERY_INCOMPLETE'):

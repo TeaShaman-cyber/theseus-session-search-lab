@@ -49,7 +49,7 @@ class FakeClient:
 
 class ArcadeReadyOpsTest(unittest.TestCase):
     def test_discovers_exactly_one_ready_tool(self):
-        client = FakeClient(FakeTools(names=['Other.Tool', 'SessionSearchMaterializer.MarkBundleReady']))
+        client = FakeClient(FakeTools(names=['Other.Tool'], scoped_names={'session_search_materializer': ['SessionSearchMaterializer.MarkBundleReady']}))
         self.assertEqual(discover_mark_bundle_ready(client), 'SessionSearchMaterializer.MarkBundleReady')
 
     def test_discovers_ready_tool_from_hosted_server_scope(self):
@@ -60,6 +60,12 @@ class ArcadeReadyOpsTest(unittest.TestCase):
         client = FakeClient(tools)
         self.assertEqual(discover_mark_bundle_ready(client), 'SessionSearchMaterializer.MarkBundleReady')
         self.assertEqual(tools.list_calls[0]['toolkit'], 'session_search_materializer')
+
+    def test_unscoped_lookalike_is_never_selected(self):
+        tools = FakeTools(names=['OtherToolkit.MarkBundleReady'])
+        with self.assertRaisesRegex(ReadyOpsError, 'MARK_BUNDLE_READY_DISCOVERY_FAILED'):
+            discover_mark_bundle_ready(FakeClient(tools))
+        self.assertFalse(any(call.get('toolkit') is None for call in tools.list_calls))
 
     def test_partial_paginated_discovery_fails_closed(self):
         tools = FakeTools(names=[])
@@ -95,7 +101,7 @@ class ArcadeReadyOpsTest(unittest.TestCase):
             'neon_database_name': 'neondb',
             'ready_role': 'session_search_arcade_ready_sql',
         }
-        tools = FakeTools(names=['SessionSearchMaterializer.MarkBundleReady'], output=output)
+        tools = FakeTools(names=[], scoped_names={'session_search_materializer': ['SessionSearchMaterializer.MarkBundleReady']}, output=output)
         result = execute_mark_bundle_ready(
             FakeClient(tools), user_id='operator',
             neon_project_id='wild-surf-61625738', neon_branch_id='br-floral-morning-b5kactgx',
@@ -111,7 +117,7 @@ class ArcadeReadyOpsTest(unittest.TestCase):
         self.assertEqual(sent['generation_id'], generation)
 
     def test_unexpected_oauth_requirement_fails_without_manual_flow(self):
-        tools = FakeTools(names=['SessionSearchMaterializer.MarkBundleReady'], auth_status='pending')
+        tools = FakeTools(names=[], scoped_names={'session_search_materializer': ['SessionSearchMaterializer.MarkBundleReady']}, auth_status='pending')
         with self.assertRaisesRegex(ReadyOpsError, 'READY_TOOL_UNEXPECTED_AUTH_REQUIREMENT'):
             execute_mark_bundle_ready(
                 FakeClient(tools), user_id='operator',

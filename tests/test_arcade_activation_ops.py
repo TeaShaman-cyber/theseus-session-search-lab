@@ -18,8 +18,10 @@ class FakeTools:
         self.auth_status = auth_status
         self.success = success
         self.executed = None
+        self.list_calls = []
 
     def list(self, **kwargs):
+        self.list_calls.append(kwargs)
         toolkit = kwargs.get('toolkit')
         if getattr(self, 'fail_on_offset', False) and kwargs.get('offset'):
             raise RuntimeError('page failure')
@@ -51,6 +53,12 @@ class ArcadeActivationOpsTest(unittest.TestCase):
             discover_activation_tool(FakeClient(tools)),
             'SessionSearchMaterializer.ActivateReadyGeneration',
         )
+
+    def test_unscoped_lookalike_is_never_selected(self):
+        tools = FakeTools(names=['OtherToolkit.ActivateReadyGeneration'])
+        with self.assertRaisesRegex(ActivationOpsError, 'ACTIVATION_TOOL_DISCOVERY_FAILED'):
+            discover_activation_tool(FakeClient(tools))
+        self.assertFalse(any(call.get('toolkit') is None for call in tools.list_calls))
 
     def test_partial_paginated_discovery_fails_closed(self):
         tools = FakeTools(names=[])
