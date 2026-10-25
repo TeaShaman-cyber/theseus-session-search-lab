@@ -72,6 +72,31 @@ def verify_shard_source_integrity(
                     projection_artifact_count=len(database_shas),
                 )
 
+            route_count = int(con.execute("SELECT count(*) FROM artifact_routes").fetchone()[0])
+            missing_route_count = int(con.execute(
+                "SELECT count(*) FROM artifacts a LEFT JOIN artifact_routes r "
+                "ON r.artifact_id=a.artifact_id WHERE r.artifact_id IS NULL"
+            ).fetchone()[0])
+            orphan_route_count = int(con.execute(
+                "SELECT count(*) FROM artifact_routes r LEFT JOIN artifacts a "
+                "ON a.artifact_id=r.artifact_id WHERE a.artifact_id IS NULL"
+            ).fetchone()[0])
+            if (
+                route_count != len(database_shas)
+                or missing_route_count != 0
+                or orphan_route_count != 0
+            ):
+                return _result(
+                    "RECONCILIATION_REQUIRED",
+                    provider,
+                    shard_id,
+                    reason="artifact route membership disagreement",
+                    projection_artifact_count=len(database_shas),
+                    route_count=route_count,
+                    missing_route_count=missing_route_count,
+                    orphan_route_count=orphan_route_count,
+                )
+
             shard, session_ids, adapters = _select_shard_assignment(
                 con, provider=provider, shard_id=shard_id
             )
@@ -234,6 +259,7 @@ def verify_shard_source_integrity(
             foreign_key_rows=0,
             verified_components=[
                 "global_accepted_projection_membership",
+                "global_artifact_route_membership",
                 "selected_accepted_blob_hash_and_metadata",
                 "provider_aware_allocator_membership",
                 "direct_route_replay",
