@@ -15,6 +15,13 @@ class NeonTransferWorkflowTest(unittest.TestCase):
         self.assertNotIn('echo $NEON_API_KEY', text)
         self.assertNotIn('print(api_key)', text)
 
+    def test_ambiguous_post_response_read_failure_is_reconciled(self):
+        text = WF.read_text(encoding='utf-8')
+        self.assertIn('import http.client', text)
+        self.assertIn('http.client.HTTPException', text)
+        self.assertIn('transfer_error = type(exc).__name__', text)
+        self.assertIn('after = project_readback()', text)
+
     def test_fail_closed_exact_transfer_contract(self):
         text = WF.read_text(encoding='utf-8')
         for token in (

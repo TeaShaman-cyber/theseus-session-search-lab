@@ -40,6 +40,7 @@ jobs:
           EXPECTED_PROJECT_NAME: ${{ inputs.expected_project_name }}
         run: |
           python - <<'PY'
+          import http.client
           import json
           import os
           import re
@@ -115,7 +116,7 @@ jobs:
           except urllib.error.HTTPError as exc:
               # HTTP responses are authoritative failures; print only status/reason.
               raise SystemExit(f'TRANSFER_HTTP_ERROR status={exc.code} reason={exc.reason}') from None
-          except (urllib.error.URLError, TimeoutError) as exc:
+          except (urllib.error.URLError, TimeoutError, http.client.HTTPException) as exc:
               # A POST may have committed even if its response was lost. Resolve by readback.
               transfer_error = type(exc).__name__
 
