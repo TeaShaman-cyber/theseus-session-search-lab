@@ -49,3 +49,5 @@ The READY tool has no table DML privilege and no `activate_generation` capabilit
 Arcade Hosted deployment is manual-only through `.github/workflows/deploy-session-search-arcade-materializer.yml`. The currently deployed `0.2.0` BUILDING-capable server remains distinct from the `0.3.0` READY-capable code until an explicit redeploy. The same Arcade-managed project-scoped Neon secret is used only to resolve fixed-role connection URIs.
 
 Generation activation, router/catalog updates, and production cutover remain separate protected operations; READY is exposed only through the dedicated least-privilege tool above.
+
+The versioned operator path for this READY boundary is `.github/workflows/promote-session-search-ready.yml`, which calls `scripts/arcade_mark_bundle_ready.py` with exact project/branch/generation/manifest/count inputs. The entrypoint discovers exactly one Hosted `MarkBundleReady` tool, fails closed on ambiguity or unexpected interactive authorization, and validates the returned READY postcondition. It has no activation or catalog parameters. Independent Neon readback remains the acceptance check after a successful run.
