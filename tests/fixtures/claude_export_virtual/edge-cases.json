@@ -1,0 +1,290 @@
+[
+  {
+    "uuid": "virtual-nested-branches",
+    "name": "Nested branches",
+    "summary": "Synthetic only.",
+    "created_at": "2026-06-10T10:00:00Z",
+    "updated_at": "2026-06-10T10:00:08Z",
+    "account": {
+      "uuid": "virtual-account"
+    },
+    "chat_messages": [
+      {
+        "uuid": "nb-u0",
+        "parent_message_uuid": "00000000-0000-4000-8000-000000000000",
+        "sender": "human",
+        "text": "root",
+        "created_at": "2026-06-10T10:00:00Z",
+        "updated_at": "2026-06-10T10:00:00Z",
+        "content": [
+          {
+            "type": "text",
+            "text": "root"
+          }
+        ],
+        "attachments": [],
+        "files": []
+      },
+      {
+        "uuid": "nb-a0",
+        "parent_message_uuid": "nb-u0",
+        "sender": "assistant",
+        "text": "shared",
+        "created_at": "2026-06-10T10:00:01Z",
+        "updated_at": "2026-06-10T10:00:01Z",
+        "content": [
+          {
+            "type": "text",
+            "text": "shared"
+          }
+        ],
+        "attachments": [],
+        "files": []
+      },
+      {
+        "uuid": "nb-a1",
+        "parent_message_uuid": "nb-a0",
+        "sender": "assistant",
+        "text": "left",
+        "created_at": "2026-06-10T10:00:02Z",
+        "updated_at": "2026-06-10T10:00:02Z",
+        "content": [
+          {
+            "type": "text",
+            "text": "left"
+          }
+        ],
+        "attachments": [],
+        "files": []
+      },
+      {
+        "uuid": "nb-a2",
+        "parent_message_uuid": "nb-a0",
+        "sender": "assistant",
+        "text": "right",
+        "created_at": "2026-06-10T10:00:03Z",
+        "updated_at": "2026-06-10T10:00:03Z",
+        "content": [
+          {
+            "type": "text",
+            "text": "right"
+          }
+        ],
+        "attachments": [],
+        "files": []
+      },
+      {
+        "uuid": "nb-u1",
+        "parent_message_uuid": "nb-a1",
+        "sender": "human",
+        "text": "followup",
+        "created_at": "2026-06-10T10:00:04Z",
+        "updated_at": "2026-06-10T10:00:04Z",
+        "content": [
+          {
+            "type": "text",
+            "text": "followup"
+          }
+        ],
+        "attachments": [],
+        "files": []
+      },
+      {
+        "uuid": "nb-a3",
+        "parent_message_uuid": "nb-u1",
+        "sender": "assistant",
+        "text": "left-a",
+        "created_at": "2026-06-10T10:00:05Z",
+        "updated_at": "2026-06-10T10:00:05Z",
+        "content": [
+          {
+            "type": "text",
+            "text": "left-a"
+          }
+        ],
+        "attachments": [],
+        "files": []
+      },
+      {
+        "uuid": "nb-a4",
+        "parent_message_uuid": "nb-u1",
+        "sender": "assistant",
+        "text": "left-b",
+        "created_at": "2026-06-10T10:00:06Z",
+        "updated_at": "2026-06-10T10:00:06Z",
+        "content": [
+          {
+            "type": "text",
+            "text": "left-b"
+          }
+        ],
+        "attachments": [],
+        "files": []
+      }
+    ]
+  },
+  {
+    "uuid": "virtual-future-block",
+    "name": "Unknown future block",
+    "summary": "Synthetic only.",
+    "created_at": "2026-06-10T11:00:00Z",
+    "updated_at": "2026-06-10T11:00:01Z",
+    "account": {
+      "uuid": "virtual-account"
+    },
+    "chat_messages": [
+      {
+        "uuid": "fb-u0",
+        "parent_message_uuid": "00000000-0000-4000-8000-000000000000",
+        "sender": "human",
+        "text": "future",
+        "created_at": "2026-06-10T11:00:00Z",
+        "updated_at": "2026-06-10T11:00:00Z",
+        "content": [
+          {
+            "type": "text",
+            "text": "future"
+          }
+        ],
+        "attachments": [],
+        "files": []
+      },
+      {
+        "uuid": "fb-a0",
+        "parent_message_uuid": "fb-u0",
+        "sender": "assistant",
+        "text": "visible",
+        "created_at": "2026-06-10T11:00:01Z",
+        "updated_at": "2026-06-10T11:00:01Z",
+        "content": [
+          {
+            "type": "future_provider_block",
+            "alpha": 1,
+            "nested": {
+              "beta": 2
+            }
+          },
+          {
+            "type": "text",
+            "text": "visible"
+          }
+        ],
+        "attachments": [],
+        "files": []
+      }
+    ]
+  },
+  {
+    "uuid": "virtual-tool-link",
+    "name": "Tool linkage",
+    "summary": "Synthetic only.",
+    "created_at": "2026-06-10T12:00:00Z",
+    "updated_at": "2026-06-10T12:00:02Z",
+    "account": {
+      "uuid": "virtual-account"
+    },
+    "chat_messages": [
+      {
+        "uuid": "tl-u0",
+        "parent_message_uuid": "00000000-0000-4000-8000-000000000000",
+        "sender": "human",
+        "text": "run",
+        "created_at": "2026-06-10T12:00:00Z",
+        "updated_at": "2026-06-10T12:00:00Z",
+        "content": [
+          {
+            "type": "text",
+            "text": "run"
+          }
+        ],
+        "attachments": [],
+        "files": []
+      },
+      {
+        "uuid": "tl-a0",
+        "parent_message_uuid": "tl-u0",
+        "sender": "assistant",
+        "text": "",
+        "created_at": "2026-06-10T12:00:01Z",
+        "updated_at": "2026-06-10T12:00:01Z",
+        "content": [
+          {
+            "type": "tool_use",
+            "id": "toolu-link-1",
+            "name": "demo_tool",
+            "input": {
+              "x": 1
+            }
+          }
+        ],
+        "attachments": [],
+        "files": []
+      },
+      {
+        "uuid": "tl-a1",
+        "parent_message_uuid": "tl-a0",
+        "sender": "assistant",
+        "text": "",
+        "created_at": "2026-06-10T12:00:02Z",
+        "updated_at": "2026-06-10T12:00:02Z",
+        "content": [
+          {
+            "type": "tool_result",
+            "tool_use_id": "toolu-link-1",
+            "name": "demo_tool",
+            "content": [
+              {
+                "type": "text",
+                "text": "ok"
+              }
+            ],
+            "is_error": false
+          }
+        ],
+        "attachments": [],
+        "files": []
+      }
+    ]
+  },
+  {
+    "uuid": "virtual-attachment-only",
+    "name": "Attachment-only turn",
+    "summary": "Synthetic only.",
+    "created_at": "2026-06-10T13:00:00Z",
+    "updated_at": "2026-06-10T13:00:00Z",
+    "account": {
+      "uuid": "virtual-account"
+    },
+    "chat_messages": [
+      {
+        "uuid": "ao-u0",
+        "parent_message_uuid": "00000000-0000-4000-8000-000000000000",
+        "sender": "human",
+        "text": "",
+        "created_at": "2026-06-10T13:00:00Z",
+        "updated_at": "2026-06-10T13:00:00Z",
+        "content": [],
+        "attachments": [
+          {
+            "file_name": "paste.txt",
+            "file_size": 24,
+            "file_type": "txt",
+            "extracted_content": "attachment only canary"
+          }
+        ],
+        "files": []
+      }
+    ]
+  },
+  {
+    "uuid": "virtual-empty",
+    "name": "Empty conversation",
+    "summary": "Synthetic only.",
+    "created_at": "2026-06-10T14:00:00Z",
+    "updated_at": "2026-06-10T14:00:00Z",
+    "account": {
+      "uuid": "virtual-account"
+    },
+    "chat_messages": []
+  }
+]
