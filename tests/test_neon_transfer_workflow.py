@@ -19,6 +19,7 @@ class NeonTransferWorkflowTest(unittest.TestCase):
         text = WF.read_text(encoding='utf-8')
         self.assertIn('import http.client', text)
         self.assertIn('http.client.HTTPException', text)
+        self.assertIn('ConnectionError', text)
         self.assertIn('transfer_error = type(exc).__name__', text)
         self.assertIn('after = project_readback()', text)
 
