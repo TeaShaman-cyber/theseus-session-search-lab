@@ -48,6 +48,7 @@ REQUIRED = [
     'tests/test_arcade_materialize_ops.py',
     'tests/test_arcade_inspect_ops.py',
     'tests/test_arcade_workflow_identity.py',
+    'tests/test_neon_transfer_workflow.py',
     'scripts/arcade_mark_bundle_ready.py',
     'tests/test_arcade_ready_ops.py',
     '.github/workflows/activate-session-search-generation.yml',
