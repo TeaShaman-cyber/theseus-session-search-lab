@@ -6,6 +6,7 @@ SCHEMA = ROOT / "sql" / "neon" / "001_federated_shard_v1.sql"
 PRIVILEGES = ROOT / "sql" / "neon" / "002_federated_shard_privileges.sql"
 LIFECYCLE = ROOT / "sql" / "neon" / "003_federated_generation_lifecycle.sql"
 BUILDING_LOADER = ROOT / "sql" / "neon" / "004_arcade_building_loader.sql"
+READY_MARKER = ROOT / "sql" / "neon" / "005_ready_marker_capability.sql"
 
 
 class NeonFederatedContractTest(unittest.TestCase):
@@ -47,6 +48,21 @@ class NeonFederatedContractTest(unittest.TestCase):
         self.assertNotIn("activate_generation", text)
         self.assertNotIn("UPDATE", text)
         self.assertNotIn("DELETE", text)
+
+    def test_ready_marker_capability_can_only_mark_ready(self):
+        text = READY_MARKER.read_text(encoding="utf-8")
+        self.assertIn("CREATE ROLE session_search_ready_marker NOLOGIN", text)
+        self.assertIn("GRANT USAGE ON SCHEMA session_search TO session_search_ready_marker", text)
+        self.assertIn(
+            "GRANT EXECUTE ON FUNCTION session_search.mark_generation_ready(text,text,integer,integer) "
+            "TO session_search_ready_marker",
+            text,
+        )
+        self.assertNotIn("activate_generation", text)
+        self.assertNotIn("GRANT SELECT", text)
+        self.assertNotIn("GRANT INSERT", text)
+        self.assertNotIn("GRANT UPDATE", text)
+        self.assertNotIn("GRANT DELETE", text)
 
     def test_lifecycle_migration_makes_ready_generations_immutable(self):
         text = LIFECYCLE.read_text(encoding="utf-8")
