@@ -18,23 +18,61 @@ case "$TIMEOUT:$POLL" in
     *[!0-9:]*|:*|*:0) printf '%s\n' 'timeout must be >=0 and poll must be >0 integer seconds' >&2; exit 2 ;;
 esac
 
+STATUS_CMD=${CODEX_REVIEW_STATUS_CMD:-$ROOT/tools/pr/codex-review-status.sh}
+command -v timeout >/dev/null 2>&1 || {
+    printf '%s\n' 'codex-review-wait: GNU timeout is required' >&2
+    exit 2
+}
+
 START=$(date +%s)
 LAST_STATE=
 while :; do
     NOW=$(date +%s)
     ELAPSED=$((NOW - START))
-    if [ -n "$LAST_STATE" ] && [ "$ELAPSED" -ge "$TIMEOUT" ]; then
-        DECISION=$(printf '%s\n' "$LAST_STATE" | PYTHONPATH="$ROOT" python3 -c '
+    if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+        if [ -n "$LAST_STATE" ]; then
+            DECISION=$(printf '%s\n' "$LAST_STATE" | PYTHONPATH="$ROOT" python3 -c '
 import json, sys
 from scripts.codex_review_status import classify_codex_wait
 state = json.load(sys.stdin)
 print(json.dumps(classify_codex_wait(state, elapsed_seconds=int(sys.argv[1]), timeout_seconds=int(sys.argv[2])), sort_keys=True))
 ' "$ELAPSED" "$TIMEOUT")
+        else
+            DECISION=$(PYTHONPATH="$ROOT" python3 -c '
+import json, sys
+from scripts.codex_review_status import status_request_timeout_result
+print(json.dumps(status_request_timeout_result(sys.argv[1], elapsed_seconds=int(sys.argv[2]), timeout_seconds=int(sys.argv[3])), sort_keys=True))
+' "$EXPECTED_HEAD" "$ELAPSED" "$TIMEOUT")
+        fi
         printf '%s\n' "$DECISION"
         exit 3
     fi
 
-    STATE=$("$ROOT/tools/pr/codex-review-status.sh" "$PR" "$EXPECTED_HEAD")
+    REMAINING=$((TIMEOUT - ELAPSED))
+    set +e
+    STATE=$(timeout --signal=KILL "$REMAINING" "$STATUS_CMD" "$PR" "$EXPECTED_HEAD" 2>&1)
+    STATUS_RC=$?
+    set -e
+    if [ "$STATUS_RC" -ne 0 ]; then
+        NOW=$(date +%s)
+        ELAPSED=$((NOW - START))
+        case "$STATUS_RC" in
+            124|137)
+                DECISION=$(PYTHONPATH="$ROOT" python3 -c '
+import json, sys
+from scripts.codex_review_status import status_request_timeout_result
+print(json.dumps(status_request_timeout_result(sys.argv[1], elapsed_seconds=int(sys.argv[2]), timeout_seconds=int(sys.argv[3])), sort_keys=True))
+' "$EXPECTED_HEAD" "$ELAPSED" "$TIMEOUT")
+                printf '%s\n' "$DECISION"
+                exit 3
+                ;;
+            *)
+                printf '%s\n' "codex-review-wait: status helper failed rc=$STATUS_RC" >&2
+                printf '%s\n' "$STATE" >&2
+                exit 2
+                ;;
+        esac
+    fi
     NOW=$(date +%s)
     ELAPSED=$((NOW - START))
     DECISION=$(printf '%s\n' "$STATE" | PYTHONPATH="$ROOT" python3 -c '

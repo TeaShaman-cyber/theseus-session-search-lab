@@ -149,6 +149,21 @@ def classify_codex_wait(
     }
 
 
+def status_request_timeout_result(
+    expected_head: str, *, elapsed_seconds: int, timeout_seconds: int
+) -> dict[str, Any]:
+    return {
+        "advisory": True,
+        "status": "PENDING",
+        "reason": "status-request-timeout",
+        "head_sha": expected_head,
+        "reviewed_commit": None,
+        "wait_disposition": "TIMEOUT",
+        "wait_elapsed_seconds": elapsed_seconds,
+        "wait_timeout_seconds": timeout_seconds,
+    }
+
+
 def bounded_poll_sleep_seconds(
     *, elapsed_seconds: int, timeout_seconds: int, poll_seconds: int
 ) -> int:
