@@ -43,6 +43,8 @@ REQUIRED = [
     'arcade/session-search-materializer/src/session_search_arcade_materializer/server.py',
     '.github/workflows/deploy-session-search-arcade-materializer.yml',
     '.github/workflows/promote-session-search-ready.yml',
+    'scripts/arcade_inspect_bundle.py',
+    'tests/test_arcade_inspect_ops.py',
     'scripts/arcade_mark_bundle_ready.py',
     'tests/test_arcade_ready_ops.py',
     '.github/workflows/activate-session-search-generation.yml',

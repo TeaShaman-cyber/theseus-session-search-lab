@@ -23,6 +23,8 @@ class FakeTools:
     def list(self, **kwargs):
         self.list_calls.append(kwargs)
         toolkit = kwargs.get('toolkit')
+        if getattr(self, 'fail_on_offset', False) and kwargs.get('offset'):
+            raise RuntimeError('page failure')
         names = self.scoped_names.get(toolkit, self.names if toolkit is None else [])
         items = [SimpleNamespace(qualified_name=name) for name in names]
         return SimpleNamespace(items=items, next_offset=None)
@@ -58,6 +60,20 @@ class ArcadeReadyOpsTest(unittest.TestCase):
         client = FakeClient(tools)
         self.assertEqual(discover_mark_bundle_ready(client), 'SessionSearchMaterializer.MarkBundleReady')
         self.assertEqual(tools.list_calls[0]['toolkit'], 'session_search_materializer')
+
+    def test_partial_paginated_discovery_fails_closed(self):
+        tools = FakeTools(names=[])
+        calls = 0
+        original_list = tools.list
+        def paged_list(**kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                return SimpleNamespace(items=[SimpleNamespace(qualified_name='SessionSearchMaterializer.MarkBundleReady')], next_offset='next')
+            raise RuntimeError('page failure')
+        tools.list = paged_list
+        with self.assertRaisesRegex(ReadyOpsError, 'MARK_BUNDLE_READY_DISCOVERY_INCOMPLETE'):
+            discover_mark_bundle_ready(FakeClient(tools))
 
     def test_ambiguous_ready_tool_discovery_fails_closed(self):
         client = FakeClient(FakeTools(names=['A.MarkBundleReady', 'B.mark_bundle_ready']))

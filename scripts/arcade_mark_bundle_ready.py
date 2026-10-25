@@ -48,7 +48,9 @@ def _collect_ready_matches(client: Any, *, toolkit: str | None) -> list[str]:
             kwargs['offset'] = offset
         try:
             page = client.tools.list(**kwargs)
-        except Exception:
+        except Exception as exc:
+            if offset is not None or matches:
+                raise ReadyOpsError('MARK_BUNDLE_READY_DISCOVERY_INCOMPLETE') from exc
             return matches
         for tool in page.items:
             name = _qualified_name(tool)

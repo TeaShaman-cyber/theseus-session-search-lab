@@ -21,6 +21,8 @@ Google Drive is transport, not authority. The mandatory external bundle SHA-256 
 
 The real xAI bundle completed Hosted end-to-end verification on 2026-10-24: 60 sessions, 17,790 searchable messages, generation `6095e643b3fc4f133c94c04db24565dce6bbd456a308860820e94e70f8047835`, with the server log independently showing Google Drive HTTP 200 and tool success.
 
+The reusable operator path is `.github/workflows/smoke-session-search-arcade-inspector.yml`, backed by `scripts/arcade_inspect_bundle.py`. It requires an exact Drive file ID plus an expected external bundle SHA-256, discovers exactly one Hosted `InspectBundle` tool with toolkit-scoped lookup, requires Google authorization to already be completed, and validates the returned `VERIFIED`/schema/bundle-digest postcondition. The workflow has no Neon, READY, activation, router, or catalog inputs.
+
 ## BUILDING-only slice
 
 `materialize_bundle(...)` reuses the same single verification pass and then resolves a Neon connection URI through Neon control plane using Arcade-managed `NEON_API_KEY`. The API key must be scoped to the one target project.

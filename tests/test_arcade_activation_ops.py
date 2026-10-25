@@ -21,6 +21,8 @@ class FakeTools:
 
     def list(self, **kwargs):
         toolkit = kwargs.get('toolkit')
+        if getattr(self, 'fail_on_offset', False) and kwargs.get('offset'):
+            raise RuntimeError('page failure')
         names = self.scoped_names.get(toolkit, self.names if toolkit is None else [])
         return SimpleNamespace(items=[SimpleNamespace(qualified_name=n) for n in names], next_offset=None)
 
@@ -49,6 +51,20 @@ class ArcadeActivationOpsTest(unittest.TestCase):
             discover_activation_tool(FakeClient(tools)),
             'SessionSearchMaterializer.ActivateReadyGeneration',
         )
+
+    def test_partial_paginated_discovery_fails_closed(self):
+        tools = FakeTools(names=[])
+        calls = 0
+        original_list = tools.list
+        def paged_list(**kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                return SimpleNamespace(items=[SimpleNamespace(qualified_name='SessionSearchMaterializer.ActivateReadyGeneration')], next_offset='next')
+            raise RuntimeError('page failure')
+        tools.list = paged_list
+        with self.assertRaisesRegex(ActivationOpsError, 'ACTIVATION_TOOL_DISCOVERY_INCOMPLETE'):
+            discover_activation_tool(FakeClient(tools))
 
     def test_ambiguous_activation_tool_discovery_fails_closed(self):
         tools = FakeTools(names=['A.ActivateReadyGeneration', 'B.activate_ready_generation'])
