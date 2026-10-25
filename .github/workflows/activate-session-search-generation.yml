@@ -46,7 +46,7 @@ jobs:
         env:
           ARCADE_URL: ${{ secrets.ARCADE_URL }}
           ARCADE_API_KEY: ${{ secrets.ARCADE_API_KEY }}
-          ARCADE_USER_ID: ${{ github.actor }}
+          ARCADE_USER_ID: ${{ vars.ARCADE_USER_ID }}
           NEON_PROJECT_ID: ${{ inputs.neon_project_id }}
           NEON_BRANCH_ID: ${{ inputs.neon_branch_id }}
           GENERATION_ID: ${{ inputs.generation_id }}

@@ -45,6 +45,7 @@ REQUIRED = [
     '.github/workflows/promote-session-search-ready.yml',
     'scripts/arcade_inspect_bundle.py',
     'tests/test_arcade_inspect_ops.py',
+    'tests/test_arcade_workflow_identity.py',
     'scripts/arcade_mark_bundle_ready.py',
     'tests/test_arcade_ready_ops.py',
     '.github/workflows/activate-session-search-generation.yml',
