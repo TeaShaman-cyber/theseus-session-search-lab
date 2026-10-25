@@ -2,7 +2,11 @@ import json
 import unittest
 from pathlib import Path
 
-from scripts.codex_review_status import classify_codex_review, normalize_comments
+from scripts.codex_review_status import (
+    classify_codex_review,
+    classify_codex_wait,
+    normalize_comments,
+)
 
 HEAD = "a" * 40
 
@@ -103,11 +107,41 @@ class CodexReviewStatusTest(unittest.TestCase):
         self.assertEqual(result["status"], "FINDINGS")
         self.assertEqual(result["reviewed_commit"], HEAD)
 
+    def test_wait_clean_is_terminal_immediately(self):
+        state = {"status": "CLEAN", "head_sha": HEAD, "advisory": True}
+        result = classify_codex_wait(state, elapsed_seconds=1, timeout_seconds=120)
+        self.assertEqual(result["wait_disposition"], "TERMINAL")
+
+    def test_wait_findings_is_terminal_evidence_not_merge_decision(self):
+        state = {"status": "FINDINGS", "head_sha": HEAD, "advisory": True}
+        result = classify_codex_wait(state, elapsed_seconds=2, timeout_seconds=120)
+        self.assertEqual(result["wait_disposition"], "TERMINAL")
+        self.assertEqual(result["status"], "FINDINGS")
+
+    def test_wait_pending_becomes_timeout_at_bound(self):
+        state = {"status": "PENDING", "head_sha": HEAD, "advisory": True}
+        before = classify_codex_wait(state, elapsed_seconds=119, timeout_seconds=120)
+        at_bound = classify_codex_wait(state, elapsed_seconds=120, timeout_seconds=120)
+        self.assertEqual(before["wait_disposition"], "WAIT")
+        self.assertEqual(at_bound["wait_disposition"], "TIMEOUT")
+
+    def test_wait_stale_becomes_timeout_at_bound(self):
+        state = {"status": "STALE", "head_sha": HEAD, "advisory": True}
+        before = classify_codex_wait(state, elapsed_seconds=10, timeout_seconds=20)
+        at_bound = classify_codex_wait(state, elapsed_seconds=20, timeout_seconds=20)
+        self.assertEqual(before["wait_disposition"], "WAIT")
+        self.assertEqual(at_bound["wait_disposition"], "TIMEOUT")
+
     def test_wrapper_requests_all_comment_pages(self):
         root = Path(__file__).resolve().parents[1]
         text = (root / "tools" / "pr" / "codex-review-status.sh").read_text(encoding="utf-8")
         self.assertIn("--paginate", text)
         self.assertIn("--slurp", text)
+
+        wait = (root / "tools" / "pr" / "codex-review-wait.sh").read_text(encoding="utf-8")
+        self.assertIn("classify_codex_wait", wait)
+        self.assertIn("TIMEOUT=${2:-120}", wait)
+        self.assertNotIn("pr merge", wait)
 
 
 if __name__ == "__main__":

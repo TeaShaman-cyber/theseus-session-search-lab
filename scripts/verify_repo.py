@@ -61,6 +61,7 @@ REQUIRED = [
     'tests/test_arcade_neon_loader.py',
     'scripts/codex_review_status.py',
     'tools/pr/codex-review-status.sh',
+    'tools/pr/codex-review-wait.sh',
     'session_search/importer.py',
     'session_search/search.py',
     'session_search/chatgpt_export.py',

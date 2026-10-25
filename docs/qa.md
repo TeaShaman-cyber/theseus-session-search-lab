@@ -45,11 +45,13 @@ Do not reintroduce a separate Python federation implementation merely for symmet
 
 ## Advisory Codex review
 
-Codex review is independent advisory evidence, not merge authority and not a universal promotion gate. Hosted QA, repository verification, risk, scope, and the maintainer promotion decision remain separate claims. A PR may be promoted while Codex is still pending when the normal promotion conditions are otherwise satisfied.
+Codex review is independent advisory evidence, not merge authority and not a universal promotion gate. Hosted QA, repository verification, risk, scope, and the maintainer promotion decision remain separate claims. Ordinary low-risk PRs may still be promoted while Codex is pending when the normal promotion conditions are otherwise satisfied.
 
-Do not ignore Codex findings when they arrive later. Reconcile them explicitly: fix a confirmed in-scope defect, reject a finding with evidence, or move a valid out-of-scope concern to a narrow follow-up issue. A non-terminal or stale review does not keep a PR open indefinitely.
+For PRs that change verification, authority, permission, promotion, canonical-source, lifecycle, or another fail-closed safety boundary, use a bounded exact-head wait when Codex review is pending or stale after PR creation. `tools/pr/codex-review-wait.sh <pr-number> [timeout-seconds] [poll-seconds]` defaults to 120 seconds with a 10-second poll. `CLEAN` and `FINDINGS` are both terminal evidence; the helper does not decide merge eligibility. `PENDING` and `STALE` wait only to the configured bound and then return an explicit `TIMEOUT` disposition rather than holding the PR open indefinitely.
 
-Use `tools/pr/codex-review-status.sh <pr-number>` to report the current exact-head advisory state as `PENDING`, `FINDINGS`, `CLEAN`, or `STALE`. The command reports evidence; it deliberately does not enforce merge eligibility.
+`FINDINGS` on the exact head must be explicitly reconciled before routine promotion: fix a confirmed in-scope defect, reject it with evidence, or move a valid out-of-scope concern to a narrow follow-up issue. A bounded timeout is visible evidence, not proof of cleanliness; if promotion still proceeds, any late finding must receive the same explicit reconciliation.
+
+Use `tools/pr/codex-review-status.sh <pr-number>` for a one-shot exact-head advisory state as `PENDING`, `FINDINGS`, `CLEAN`, or `STALE`. Both status and wait helpers report evidence only and deliberately do not enforce merge eligibility.
 
 ## Adding QA
 

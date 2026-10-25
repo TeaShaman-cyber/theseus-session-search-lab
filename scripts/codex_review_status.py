@@ -112,6 +112,28 @@ def classify_codex_review(comments: list[dict[str, Any]], head_sha: str) -> dict
     }
 
 
+def classify_codex_wait(
+    review_state: dict[str, Any], *, elapsed_seconds: int, timeout_seconds: int
+) -> dict[str, Any]:
+    if elapsed_seconds < 0:
+        raise ValueError("elapsed_seconds must be non-negative")
+    if timeout_seconds < 0:
+        raise ValueError("timeout_seconds must be non-negative")
+    status = str(review_state.get("status") or "")
+    if status in {"CLEAN", "FINDINGS"}:
+        disposition = "TERMINAL"
+    elif elapsed_seconds >= timeout_seconds:
+        disposition = "TIMEOUT"
+    else:
+        disposition = "WAIT"
+    return {
+        **review_state,
+        "wait_disposition": disposition,
+        "wait_elapsed_seconds": elapsed_seconds,
+        "wait_timeout_seconds": timeout_seconds,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--head", required=True)
