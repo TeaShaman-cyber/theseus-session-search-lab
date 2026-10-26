@@ -28,6 +28,11 @@ for marker in (
     "Do **not** add `mcp.json` or `.mcp.json`",
     "PARTIAL",
     "copper compass",
+    "Arcade_SelectTools",
+    "queried_shards",
+    "unavailable_shards",
+    "live shard catalog",
+    "historical #64",
 ):
     if marker not in skill:
         raise SystemExit(f"SESSION_SEARCH_APP_OVERLAY_FAIL SKILL marker: {marker}")
@@ -36,9 +41,18 @@ for marker in (
     "gw_3L9SqeBQ5L5Cs2V1GB6yvnKhR8P",
     "https://api.arcade.dev/mcp/gw_3L9SqeBQ5L5Cs2V1GB6yvnKhR8P",
     "TheseusSessionSearch.session_search",
+    "historical #64",
+    "live shard catalog",
 ):
     if marker not in gateway:
         raise SystemExit(f"SESSION_SEARCH_APP_OVERLAY_FAIL gateway marker: {marker}")
+
+
+legacy_current_smoke = "require `FOUND` with both `chatgpt-0001` and `hermes-0001` provenance"
+if legacy_current_smoke in skill:
+    raise SystemExit(
+        "SESSION_SEARCH_APP_OVERLAY_FAIL stale #64 synthetic smoke is still current acceptance"
+    )
 
 for forbidden in ("mcp.json", ".mcp.json", ".app.json"):
     for path in OVERLAY.rglob(forbidden):
