@@ -1,23 +1,49 @@
 # Canonical Session Search gateway
 
-Current issue #64 synthetic acceptance target:
+Canonical App-backed transport:
 
 - Arcade remote server: `theseus-session-search`
 - Arcade gateway: `Session Search`
 - Gateway ID / slug: `gw_3L9SqeBQ5L5Cs2V1GB6yvnKhR8P`
 - MCP URL: `https://api.arcade.dev/mcp/gw_3L9SqeBQ5L5Cs2V1GB6yvnKhR8P`
-- Authentication for ChatGPT custom-MCP creation: OAuth
-- Expected exposed tool count: 1
-- Expected tool: `TheseusSessionSearch.session_search`
+- Authentication for the ChatGPT App binding: OAuth
+- Session Search domain tool: `TheseusSessionSearch.session_search`
 
-Canonical remote MCP behind Arcade is the independently deployed Session Search router. The consumer App should connect to the Arcade gateway URL above, not directly to an individual Neon shard and not to a portable `mcp.json` package.
+Canonical remote MCP behind Arcade is the independently deployed Session Search router. The consumer App should connect through the existing Arcade App binding, not directly to an individual Neon shard and not through a standalone packaged `mcp.json`.
 
-## Acceptance
+## Host surface
+
+The Arcade gateway itself exposes the Session Search domain capability. The ChatGPT host may expose Arcade discovery/execution wrappers such as `Arcade_SelectTools` and `Arcade_UseTool`; therefore do not use total top-level host tool count as the acceptance invariant.
+
+The invariant is that the existing App-backed host can discover and execute `TheseusSessionSearch.session_search` through the Arcade surface while preserving web/mobile compatibility.
+
+## Current acceptance
 
 Gateway/control-plane existence is not host acceptance.
 
-Final host acceptance requires a fresh ChatGPT runtime using the host-created App-backed plugin and a successful `session_search` call returning the expected synthetic two-shard result.
+A fresh host acceptance must:
+1. use the existing App-backed Session Search plugin identity;
+2. discover the current Session Search domain tool;
+3. execute a bounded live probe;
+4. receive a terminal `FOUND`, `NO_SIGNAL`, or `PARTIAL` result with explicit `queried_shards` and `unavailable_shards`;
+5. preserve returned shard/generation provenance;
+6. require no unavailable shards before declaring the serving path healthy.
 
-## Current promotion boundary
+The **live shard catalog** is runtime evidence and may evolve. Compare observed provenance with current deployment/project evidence when shard topology matters.
 
-The endpoint is suitable for synthetic acceptance only. Real-corpus promotion remains blocked until current production edge authentication and cutover policy are explicitly verified.
+## Historical #64 acceptance
+
+The historical #64 synthetic acceptance used:
+- `chatgpt-0001`;
+- `hermes-0001`;
+- `copper compass -> FOUND`.
+
+That remains durable evidence that the App-backed ChatGPT path worked on the #64 synthetic topology. It is not a permanent current-shard requirement.
+
+## Promotion boundary
+
+This file does not authorize corpus promotion, production cutover, shard activation, credential changes, or edge-auth changes.
+
+Do not inherit a stale promotion conclusion from historical #64 text. Verify the smallest current authoritative deployment/promotion state needed for the action being considered.
+
+Consumer-overlay maintenance must preserve the host-created App binding and must not add `mcp.json` or `.mcp.json`.

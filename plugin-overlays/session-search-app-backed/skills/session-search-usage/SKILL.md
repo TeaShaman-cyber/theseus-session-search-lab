@@ -8,12 +8,14 @@ description: Use whenever historical ChatGPT, Hermes, Codex, or other accepted c
 This plugin routes:
 
 ```text
-ChatGPT
-  -> App-backed Session Search plugin
-  -> Arcade Session Search gateway
+ChatGPT web/mobile
+  -> existing App-backed Session Search plugin
+  -> Arcade host surface
+       -> Arcade_SelectTools
+       -> Arcade_UseTool
   -> TheseusSessionSearch.session_search
   -> federated Session Search router
-  -> derived Neon projection shards
+  -> current live shard catalog
 ```
 
 Session Search is a read-only retrieval surface in this plugin. Ingest, rebuild, generation activation, corpus mutation, and recovery stay outside the consumer plugin.
@@ -24,15 +26,20 @@ Preserve the host-created `.app.json` App binding.
 
 Do **not** add `mcp.json` or `.mcp.json` to the production App-backed plugin. A standalone package that embeds a remote MCP endpoint is not the production web/mobile path for this project.
 
+Do not replace the existing App/plugin identity during an overlay refresh. For App-backed plugin updates, preserve the existing App binding, MCP configuration, name, and presentation and use a guarded current-release update.
+
 Read `references/gateway.md` before diagnosing routing or changing the connection.
 
 ## Search semantics
 
-Use the single exposed tool `TheseusSessionSearch.session_search`.
+The Session Search domain capability is `TheseusSessionSearch.session_search`.
+
+In the ChatGPT host, that domain tool may be discovered/executed through the Arcade wrapper surface rather than appearing as a raw top-level tool. Use `Arcade_SelectTools` to discover the exact current tool contract when needed, then execute it through `Arcade_UseTool`.
 
 Start with the smallest useful query:
 - `query` is required;
-- use `provider` only when the user clearly scopes the search to a known source such as ChatGPT or Hermes;
+- use `provider` only when the user clearly scopes the search and that provider is supported by the current serving/catalog evidence;
+- do not infer that historical #64 providers are present in the current live shard catalog;
 - use `session_id` or time bounds only when they materially narrow retrieval;
 - use `scopes` deliberately: `dialogue`, `evidence`, or `trace`;
 - keep `limit` bounded and expand only when the first retrieval is insufficient.
@@ -47,6 +54,24 @@ Interpret terminal states as:
 When `PARTIAL`, report the healthy evidence and the unavailable shard(s). Do not claim that missing shards contained no relevant history.
 
 Preserve returned shard and generation provenance when it matters to the answer or diagnosis.
+
+## Live shard catalog
+
+Treat each call's `queried_shards` and `unavailable_shards` as direct serving evidence for that invocation.
+
+The live shard catalog may evolve independently of the consumer skill. Therefore:
+- do not hard-code one provider/shard pair as the universal current topology;
+- do not use absence from the live shard catalog as proof that the underlying historical corpus does not exist elsewhere;
+- do not substitute a different Session Search surface when reconstructing historical behavior without stating the surface change;
+- compare live provenance with current deployment/issue evidence when topology matters.
+
+Point-in-time observation on 2026-10-26 showed `deepseek-0001` and `xai-0001` in the live catalog. That observation is evidence, not a permanent acceptance constant.
+
+## Historical #64 acceptance
+
+The historical #64 host acceptance used synthetic `chatgpt-0001` and `hermes-0001` shards and required `copper compass -> FOUND` from both. That smoke proved the App-backed host path at that point in time.
+
+It is **historical #64** evidence, not the current universal topology contract.
 
 ## Authority boundary
 
@@ -63,7 +88,9 @@ durable accepted source exports
   -> ChatGPT
 ```
 
-MarcoPolo may be used for engineering, ingest, QA, rebuild, or recovery. It is not part of the production read request path.
+MarcoPolo may be used for engineering, ingest, QA, rebuild, recovery, and current deployment verification. It is not part of the production read request path.
+
+A successful live query proves only the queried serving surface and shards. It does not prove completeness of every provider corpus.
 
 ## Safety and privacy
 
@@ -71,7 +98,7 @@ Never expose database connection strings, passwords, OAuth tokens, Authorization
 
 Database/runtime errors can contain connection details. Log only bounded error class/code unless a sanitized detail field is explicitly verified safe.
 
-The current synthetic spike does not authorize real-corpus promotion. Before any real corpus is served, verify current edge authentication, least-privilege shard credentials, and the intended production cutover.
+This consumer overlay does not authorize corpus promotion, generation activation, router cutover, or a change in edge authentication. Those remain separate operational decisions requiring current evidence.
 
 ## Failure isolation
 
@@ -79,22 +106,26 @@ Keep these layers separate:
 
 1. ChatGPT plugin exposure and selected App binding;
 2. ChatGPT-to-Arcade OAuth/session;
-3. Arcade gateway and one-tool exposure;
+3. Arcade wrapper/discovery surface;
 4. registered Session Search remote MCP server;
 5. router MCP/HTTP behavior;
-6. individual Neon shard Function;
-7. bounded Postgres query plane and active generation.
+6. current live shard catalog;
+7. individual Neon shard Function;
+8. bounded Postgres query plane and active generation.
 
 A failure at one layer is evidence about that layer only. Preserve `UNKNOWN`, `DEGRADED`, or `REPROBE_REQUIRED` when the next boundary has not been observed.
 
 ## Final host smoke
 
-After creating or updating the App-backed plugin:
+After updating the existing App-backed plugin:
 
-1. start a fresh ChatGPT conversation;
-2. select the Session Search plugin;
-3. verify exactly the expected Session Search tool surface is exposed;
-4. run the synthetic query `copper compass`;
-5. require `FOUND` with both `chatgpt-0001` and `hermes-0001` provenance before declaring the host cutover verified.
+1. start a fresh ChatGPT conversation on the intended host surface;
+2. select the existing Session Search App-backed plugin; do not create a replacement identity;
+3. use `Arcade_SelectTools` to confirm the Session Search domain capability resolves to `TheseusSessionSearch.session_search`;
+4. use `Arcade_UseTool` to run a bounded safe probe such as `copper compass`;
+5. require a contract-valid terminal status and explicit `queried_shards` / `unavailable_shards`;
+6. require `unavailable_shards=[]` before calling the serving path healthy;
+7. if the result is `PARTIAL`, classify the host path as executable but serving as DEGRADED;
+8. compare observed provenance with the current live shard catalog/deployment evidence instead of historical #64 shard names.
 
-Do not infer host success from Arcade control-plane state alone.
+Do not infer host success from Arcade control-plane state alone. Do not infer corpus absence merely because a provider/shard family is not present in the current live catalog.
