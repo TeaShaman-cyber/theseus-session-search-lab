@@ -101,6 +101,13 @@ function metricAttributes({ route, status, errorClass = 'none', resultStatus, pr
   return attributes;
 }
 
+function spanOutcomeAttributes({ status, errorClass = 'none' }) {
+  return {
+    'session_search.status_class': statusClass(status),
+    'session_search.error_class': safeErrorClass(errorClass),
+  };
+}
+
 function spanResultAttributes({ resultStatus, provider, shardId, generationId, queriedShards, unavailableShards }) {
   const attributes = {};
   if (resultStatus) attributes['session_search.result_status'] = safeResultStatus(resultStatus);
@@ -235,6 +242,7 @@ export function createTelemetryRuntime({
       });
       requestCount.add(1, attrs);
       requestDuration.record(Math.max(0, performance.now() - started), attrs);
+      span.setAttributes(spanOutcomeAttributes({ status, errorClass: state.errorClass }));
       span.end();
       await forceFlush();
     }
@@ -270,9 +278,10 @@ export function createTelemetryRuntime({
         shardId,
         generationId: outcome?.body?.generation_id ?? generationId,
       }));
+      const status = outcome?.ok ? 200 : errorClass === 'timeout' ? 504 : 503;
       const attrs = metricAttributes({
         route: 'search',
-        status: outcome?.ok ? 200 : errorClass === 'timeout' ? 504 : 503,
+        status,
         errorClass,
         resultStatus: outcome?.body?.status,
         provider,
@@ -280,12 +289,14 @@ export function createTelemetryRuntime({
       });
       dispatchCount.add(1, attrs);
       dispatchDuration.record(Math.max(0, performance.now() - started), attrs);
+      span.setAttributes(spanOutcomeAttributes({ status, errorClass }));
       return outcome;
     } catch (error) {
       span.setStatus({ code: SpanStatusCode.ERROR });
       const attrs = metricAttributes({ route: 'search', status: 503, errorClass: 'upstream', provider, shardId });
       dispatchCount.add(1, attrs);
       dispatchDuration.record(Math.max(0, performance.now() - started), attrs);
+      span.setAttributes(spanOutcomeAttributes({ status: 503, errorClass: 'upstream' }));
       throw error;
     } finally {
       span.end();

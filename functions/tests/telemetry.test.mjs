@@ -96,6 +96,61 @@ test('router propagates W3C trace context to shard and flushes serverless teleme
 });
 
 
+test('request spans expose bounded status and error class for TraceQL window metrics', async () => {
+  const { telemetry, spanExporter } = runtime();
+  try {
+    const handler = makeRouterHandler({
+      catalog: [{
+        shard_id: 'deepseek-0001', provider: 'deepseek', generation_id: 'd'.repeat(64),
+        state: 'READY', url: 'https://deepseek.test/search',
+      }],
+      telemetry,
+      fetchImpl: async () => Response.json({ status: 'NO_SIGNAL', generation_id: 'd'.repeat(64), hits: [] }),
+    });
+    const response = await handler.fetch(new Request('https://router.test/search', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    }));
+    assert.equal(response.status, 400);
+
+    const server = spanExporter.getFinishedSpans().find((span) => span.name === 'session_search.search');
+    assert.ok(server);
+    assert.equal(server.attributes['session_search.status_class'], '4xx');
+    assert.equal(server.attributes['session_search.error_class'], 'validation');
+    assert.equal(JSON.stringify(server.attributes).includes('QUERY_OUT_OF_BOUNDS'), false);
+  } finally {
+    await telemetry.shutdown();
+  }
+});
+
+test('dispatch spans expose bounded status and error class for TraceQL window metrics', async () => {
+  const { telemetry, spanExporter } = runtime();
+  try {
+    const handler = makeRouterHandler({
+      catalog: [{
+        shard_id: 'deepseek-0001', provider: 'deepseek', generation_id: 'e'.repeat(64),
+        state: 'READY', url: 'https://deepseek.test/search',
+      }],
+      telemetry,
+      fetchImpl: async () => Response.json({ status: 'NO_SIGNAL', generation_id: 'e'.repeat(64), hits: [] }),
+    });
+    const response = await handler.fetch(new Request('https://router.test/search', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ query: 'safe-query', provider: 'deepseek' }),
+    }));
+    assert.equal(response.status, 200);
+
+    const dispatch = spanExporter.getFinishedSpans().find((span) => span.name === 'session_search.shard_dispatch');
+    assert.ok(dispatch);
+    assert.equal(dispatch.attributes['session_search.status_class'], '2xx');
+    assert.equal(dispatch.attributes['session_search.error_class'], 'none');
+  } finally {
+    await telemetry.shutdown();
+  }
+});
+
 test('shard extracts router traceparent and continues the same distributed trace', async () => {
   const routerRuntime = runtime();
   const shardSpanExporter = new InMemorySpanExporter();
