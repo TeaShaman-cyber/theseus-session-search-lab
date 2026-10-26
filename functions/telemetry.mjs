@@ -314,7 +314,7 @@ export function createTelemetryRuntime({
   };
 }
 
-export function createTelemetryFromEnv({ serviceName }) {
+export function createTelemetryFromEnv({ serviceName, flushTimeoutMs = DEFAULT_FLUSH_TIMEOUT_MS }) {
   const endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT?.replace(/\/+$/, '');
   if (!endpoint) return createNoopTelemetry();
   const headers = parseHeaderEnv(process.env.OTEL_EXPORTER_OTLP_HEADERS);
@@ -324,16 +324,16 @@ export function createTelemetryFromEnv({ serviceName }) {
     serviceName,
     serviceVersion,
     environment,
-    flushTimeoutMs: DEFAULT_FLUSH_TIMEOUT_MS,
+    flushTimeoutMs,
     traceExporter: new OTLPTraceExporter({
       url: `${endpoint}/v1/traces`,
       headers,
-      timeoutMillis: DEFAULT_FLUSH_TIMEOUT_MS,
+      timeoutMillis: flushTimeoutMs,
     }),
     metricExporter: new OTLPMetricExporter({
       url: `${endpoint}/v1/metrics`,
       headers,
-      timeoutMillis: DEFAULT_FLUSH_TIMEOUT_MS,
+      timeoutMillis: flushTimeoutMs,
     }),
   });
 }
