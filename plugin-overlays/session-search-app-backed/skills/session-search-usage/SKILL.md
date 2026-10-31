@@ -65,7 +65,7 @@ The live shard catalog may evolve independently of the consumer skill. Therefore
 - do not substitute a different Session Search surface when reconstructing historical behavior without stating the surface change;
 - compare live provenance with current deployment/issue evidence when topology matters.
 
-Point-in-time observation on 2026-10-26 showed `deepseek-0001` and `xai-0001` in the live catalog. That observation is evidence, not a permanent acceptance constant.
+Point-in-time observation on 2026-10-26 showed `deepseek-0001` and `xai-0001` in the live catalog. A later verified acceptance on 2026-10-31, after issue #126 promotion, observed `chatgpt-0001`, `chatgpt-0002`, `deepseek-0001`, and `xai-0001` with `unavailable_shards=[]` through the App-backed host path. These observations are evidence, not permanent acceptance constants.
 
 ## Historical #64 acceptance
 
