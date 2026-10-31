@@ -55,6 +55,7 @@ REQUIRED = [
     'scripts/arcade_activate_generation.py',
     'tests/test_arcade_activation_ops.py',
     'sql/neon/006_activation_marker_capability.sql',
+    'sql/neon/007_safe_message_tsvector.sql',
     'session_search/shard_bundle.py',
     'scripts/shard_bundle.py',
     'session_search/shard_integrity.py',

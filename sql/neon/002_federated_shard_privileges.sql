@@ -8,6 +8,7 @@ ALTER TABLE session_search.generations OWNER TO session_search_owner;
 ALTER TABLE session_search.sessions OWNER TO session_search_owner;
 ALTER TABLE session_search.messages OWNER TO session_search_owner;
 ALTER TABLE session_search.active_generation OWNER TO session_search_owner;
+ALTER FUNCTION session_search.safe_message_search_vector(text) OWNER TO session_search_owner;
 ALTER FUNCTION session_search.mark_generation_ready(text,text,integer,integer) OWNER TO session_search_owner;
 ALTER FUNCTION session_search.activate_generation(text,text) OWNER TO session_search_owner;
 ALTER FUNCTION session_search.search_generation(text,text,text[],integer,text,double precision,double precision) OWNER TO session_search_owner;
