@@ -1,4 +1,6 @@
+import csv
 import json
+import sqlite3
 import os
 import subprocess
 import sys
@@ -93,6 +95,48 @@ class ShardBundleTest(unittest.TestCase):
             self.assertIn("deep signal", messages)
             self.assertNotIn("private-s1", sessions)
             self.assertNotIn("hello", messages)
+
+    def test_verify_accepts_large_text_field_and_restores_csv_limit(self):
+        with tempfile.TemporaryDirectory() as td:
+            td = Path(td)
+            corpus = self.make_corpus(td / "corpus")
+            large_text = "x" * 200_000
+            with sqlite3.connect(corpus / "corpus.sqlite3") as con:
+                con.execute(
+                    "UPDATE messages SET text=? WHERE row_id=(SELECT min(row_id) FROM messages)",
+                    (large_text,),
+                )
+                con.commit()
+            path = td / "large-field.zip"
+            build_bundle(
+                corpus, provider="xai", shard_id="xai-0001",
+                output_path=path, require_verified=False,
+            )
+            previous = csv.field_size_limit()
+            try:
+                csv.field_size_limit(1024)
+                verified = verify_bundle(path)
+                self.assertEqual(verified["message_count"], 2)
+                self.assertEqual(csv.field_size_limit(), 1024)
+            finally:
+                csv.field_size_limit(previous)
+
+    def test_build_rejects_field_above_bundle_contract_limit(self):
+        with tempfile.TemporaryDirectory() as td:
+            td = Path(td)
+            corpus = self.make_corpus(td / "corpus")
+            too_large = "x" * (8 * 1024 * 1024 + 1)
+            with sqlite3.connect(corpus / "corpus.sqlite3") as con:
+                con.execute(
+                    "UPDATE messages SET text=? WHERE row_id=(SELECT min(row_id) FROM messages)",
+                    (too_large,),
+                )
+                con.commit()
+            with self.assertRaisesRegex(ValueError, "BUNDLE_CSV_FIELD_TOO_LARGE"):
+                build_bundle(
+                    corpus, provider="xai", shard_id="xai-0001",
+                    output_path=td / "too-large.zip", require_verified=False,
+                )
 
     def test_verify_rejects_tampered_member(self):
         with tempfile.TemporaryDirectory() as td:
