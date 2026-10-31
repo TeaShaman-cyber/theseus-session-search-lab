@@ -289,6 +289,129 @@ class ArcadeNeonLoaderTest(unittest.TestCase):
         self.assertEqual(result['loaded_sessions'], 60)
         self.assertEqual(result['loaded_messages'], 17790)
 
+    def test_exact_replay_does_not_consume_streams(self):
+        manifest = {
+            'generation_id': 'a' * 64,
+            'shard_id': 'xai-0001', 'provider': 'xai',
+            'source_manifest_sha256': 'b' * 64,
+            'projection_schema_version': 'session-search-federated-v1',
+            'session_count': 60, 'message_count': 17790,
+        }
+        existing = ('xai-0001','xai','b' * 64,'session-search-federated-v1','BUILDING',60,17790)
+        def forbidden():
+            raise AssertionError('exact replay must not consume bundle rows')
+            yield None
+        class Cursor:
+            def __enter__(self): return self
+            def __exit__(self, *_args): return False
+            def execute(self, sql, params=None): pass
+            def fetchone(self): return existing
+        class Connection:
+            def __enter__(self): return self
+            def __exit__(self, *_args): return False
+            def cursor(self): return Cursor()
+            def close(self): pass
+        result = load_rows_to_building(
+            manifest=manifest, sessions=forbidden(), messages=forbidden(),
+            database_url='postgresql://private', connect=lambda _url: Connection(),
+            execute_values_fn=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                AssertionError('replay must not insert')
+            ),
+        )
+        self.assertEqual(result['status'], 'ALREADY_BUILDING')
+
+    def test_streaming_load_consumes_rows_in_bounded_batches(self):
+        manifest = {
+            'generation_id': 'a' * 64,
+            'shard_id': 'chatgpt-0001',
+            'provider': 'chatgpt',
+            'source_manifest_sha256': 'b' * 64,
+            'projection_schema_version': 'session-search-federated-v1',
+            'session_count': 3,
+            'message_count': 7,
+        }
+        consumed = {'sessions': 0, 'messages': 0}
+        def sessions():
+            for i in range(3):
+                consumed['sessions'] += 1
+                yield (f's{i}', f'Title {i}', 'COMPLETE', None, None)
+        def messages():
+            for i in range(7):
+                consumed['messages'] += 1
+                yield (f's{i % 3}', i, f'm{i}', 'assistant', 'dialogue', None, f'text {i}')
+
+        class Cursor:
+            def __init__(self): self.fetch = None; self.session_rows = 0; self.message_rows = 0
+            def __enter__(self): return self
+            def __exit__(self, *_args): return False
+            def execute(self, sql, params=None):
+                normalized = ' '.join(sql.split())
+                if normalized.startswith('SELECT g.shard_id'):
+                    self.fetch = None
+                elif normalized.startswith('SELECT state,'):
+                    self.fetch = ('BUILDING', self.session_rows, self.message_rows)
+            def fetchone(self): return self.fetch
+        class Connection:
+            def __init__(self): self.cursor_obj=Cursor(); self.commits=0; self.rollbacks=0
+            def __enter__(self): return self
+            def __exit__(self, exc_type, *_args):
+                if exc_type is None: self.commits += 1
+                else: self.rollbacks += 1
+                return False
+            def cursor(self): return self.cursor_obj
+            def close(self): pass
+        conn=Connection()
+        batch_sizes=[]
+        def execute_values(cur, sql, rows, page_size):
+            rows=list(rows); batch_sizes.append(len(rows))
+            if 'session_search.sessions' in sql: cur.session_rows += len(rows)
+            elif 'session_search.messages' in sql: cur.message_rows += len(rows)
+
+        result=load_rows_to_building(
+            manifest=manifest, sessions=sessions(), messages=messages(),
+            database_url='postgresql://private', connect=lambda _url: conn,
+            execute_values_fn=execute_values, batch_size=2,
+        )
+        self.assertEqual(result['status'], 'LOADED')
+        self.assertEqual(consumed, {'sessions': 3, 'messages': 7})
+        self.assertTrue(all(size <= 2 for size in batch_sizes))
+        self.assertEqual(batch_sizes, [2, 1, 2, 2, 2, 1])
+        self.assertEqual(conn.commits, 1)
+
+    def test_streaming_load_count_mismatch_rolls_back(self):
+        manifest = {
+            'generation_id': 'a' * 64,
+            'shard_id': 'chatgpt-0001', 'provider': 'chatgpt',
+            'source_manifest_sha256': 'b' * 64,
+            'projection_schema_version': 'session-search-federated-v1',
+            'session_count': 1, 'message_count': 3,
+        }
+        class Cursor:
+            def __init__(self): self.fetch=None
+            def __enter__(self): return self
+            def __exit__(self, *_args): return False
+            def execute(self, sql, params=None):
+                if 'SELECT g.shard_id' in sql: self.fetch=None
+            def fetchone(self): return self.fetch
+        class Connection:
+            def __init__(self): self.rollbacks=0
+            def __enter__(self): return self
+            def __exit__(self, exc_type, *_args):
+                if exc_type is not None: self.rollbacks += 1
+                return False
+            def cursor(self): return Cursor()
+            def close(self): pass
+        conn=Connection()
+        with self.assertRaisesRegex(TargetMaterializationError, 'BUNDLE_MESSAGE_COUNT_MISMATCH'):
+            load_rows_to_building(
+                manifest=manifest,
+                sessions=iter([('s1','One','COMPLETE',None,None)]),
+                messages=iter([('s1',0,'m1','user','dialogue',None,'only one')]),
+                database_url='postgresql://private', connect=lambda _url: conn,
+                execute_values_fn=lambda *_args, **_kwargs: None, batch_size=2,
+            )
+        self.assertEqual(conn.rollbacks, 1)
+
     def test_server_separates_building_ready_and_activation_capabilities(self):
         server = (PKG_SRC / 'session_search_arcade_materializer' / 'server.py').read_text()
         self.assertIn('materialize_bundle', server)
@@ -305,7 +428,9 @@ class ArcadeNeonLoaderTest(unittest.TestCase):
         self.assertIn("ACTIVATOR_ROLE = 'session_search_arcade_activator_sql'", loader)
         self.assertIn("ACTIVATION_CAPABILITY_ROLE = 'session_search_activation_marker'", loader)
         self.assertNotIn('role_name: Annotated', server)
-        self.assertIn('read_verified_bundle', server)
+        self.assertIn('verify_bundle', server)
+        self.assertIn('iter_bundle_sessions', server)
+        self.assertIn('iter_bundle_messages', server)
         self.assertIn('load_rows_to_building', server)
         self.assertIn('mark_generation_ready', server)
         self.assertNotIn('VERIFIED_NOT_LOADED', server)

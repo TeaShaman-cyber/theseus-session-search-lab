@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "session-search-arcade-materializer"
-version = "0.4.0"
+version = "0.5.0"
 description = "Arcade Hosted verifier/materializer for Session Search shard bundles"
 requires-python = ">=3.11"
 dependencies = [

@@ -5,7 +5,9 @@ import hashlib
 import io
 import json
 import re
+import threading
 from pathlib import Path
+from collections.abc import Iterator
 from typing import Any
 from urllib.parse import quote
 from zipfile import ZIP_STORED, BadZipFile, ZipFile
@@ -25,6 +27,7 @@ BUNDLE_MEMBERS = ("manifest.json", "sessions.csv", "messages.csv")
 DEFAULT_MAX_BUNDLE_BYTES = 512 * 1024 * 1024
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _DRIVE_FILE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{10,200}$")
+_CSV_LIMIT_LOCK = threading.RLock()
 
 
 class BundleVerificationError(ValueError):
@@ -53,6 +56,40 @@ def _member_digest(zf: ZipFile, name: str) -> str:
     return digest.hexdigest()
 
 
+def _iter_csv(
+    zf: ZipFile,
+    name: str,
+    columns: tuple[str, ...],
+    *,
+    field_limit: int,
+) -> Iterator[tuple[str, ...]]:
+    # csv.field_size_limit is process-global. Serialize the temporary override so
+    # concurrent Hosted tool calls cannot restore another parser's limit.
+    with _CSV_LIMIT_LOCK:
+        prior_limit = csv.field_size_limit()
+        if prior_limit < field_limit:
+            csv.field_size_limit(field_limit)
+        try:
+            with zf.open(name, "r") as raw:
+                wrapper = io.TextIOWrapper(raw, encoding="utf-8", newline="")
+                reader = csv.reader(wrapper)
+                try:
+                    header = tuple(next(reader))
+                except StopIteration as exc:
+                    raise BundleVerificationError("BUNDLE_CSV_EMPTY") from exc
+                if header != columns:
+                    raise BundleVerificationError("BUNDLE_CSV_COLUMNS_INVALID")
+                for row in reader:
+                    if len(row) != len(columns):
+                        raise BundleVerificationError("BUNDLE_ROW_SHAPE_INVALID")
+                    if any("\x00" in value for value in row):
+                        raise BundleVerificationError("BUNDLE_TEXT_NUL")
+                    yield tuple(row)
+        finally:
+            if csv.field_size_limit() != prior_limit:
+                csv.field_size_limit(prior_limit)
+
+
 def _read_csv(
     zf: ZipFile,
     name: str,
@@ -60,59 +97,44 @@ def _read_csv(
     *,
     field_limit: int,
 ) -> list[tuple[str, ...]]:
-    if csv.field_size_limit() < field_limit:
-        csv.field_size_limit(field_limit)
-    with zf.open(name, "r") as raw:
-        wrapper = io.TextIOWrapper(raw, encoding="utf-8", newline="")
-        reader = csv.reader(wrapper)
-        try:
-            header = tuple(next(reader))
-        except StopIteration as exc:
-            raise BundleVerificationError("BUNDLE_CSV_EMPTY") from exc
-        if header != columns:
-            raise BundleVerificationError("BUNDLE_CSV_COLUMNS_INVALID")
-        rows: list[tuple[str, ...]] = []
-        for row in reader:
-            if len(row) != len(columns):
-                raise BundleVerificationError("BUNDLE_ROW_SHAPE_INVALID")
-            if any("\x00" in value for value in row):
-                raise BundleVerificationError("BUNDLE_TEXT_NUL")
-            rows.append(tuple(row))
-        return rows
+    return list(_iter_csv(zf, name, columns, field_limit=field_limit))
 
+
+def _typed_session(row: tuple[str, ...]) -> tuple[Any, ...]:
+    try:
+        session_id, title, coverage_state, time_min, time_max = row
+        return (
+            session_id,
+            title,
+            coverage_state,
+            None if time_min == "" else float(time_min),
+            None if time_max == "" else float(time_max),
+        )
+    except (ValueError, TypeError) as exc:
+        raise BundleVerificationError("BUNDLE_TYPED_ROW_INVALID") from exc
+
+
+def _typed_message(row: tuple[str, ...]) -> tuple[Any, ...]:
+    try:
+        session_id, ordinal, message_id, role, search_class, create_time, text = row
+        return (
+            session_id,
+            int(ordinal),
+            message_id,
+            role,
+            search_class,
+            None if create_time == "" else float(create_time),
+            text,
+        )
+    except (ValueError, TypeError) as exc:
+        raise BundleVerificationError("BUNDLE_TYPED_ROW_INVALID") from exc
 
 def _typed_sessions(rows: list[tuple[str, ...]]) -> list[tuple[Any, ...]]:
-    typed = []
-    try:
-        for session_id, title, coverage_state, time_min, time_max in rows:
-            typed.append((
-                session_id,
-                title,
-                coverage_state,
-                None if time_min == "" else float(time_min),
-                None if time_max == "" else float(time_max),
-            ))
-    except ValueError as exc:
-        raise BundleVerificationError("BUNDLE_TYPED_ROW_INVALID") from exc
-    return typed
+    return [_typed_session(row) for row in rows]
 
 
 def _typed_messages(rows: list[tuple[str, ...]]) -> list[tuple[Any, ...]]:
-    typed = []
-    try:
-        for session_id, ordinal, message_id, role, search_class, create_time, text in rows:
-            typed.append((
-                session_id,
-                int(ordinal),
-                message_id,
-                role,
-                search_class,
-                None if create_time == "" else float(create_time),
-                text,
-            ))
-    except ValueError as exc:
-        raise BundleVerificationError("BUNDLE_TYPED_ROW_INVALID") from exc
-    return typed
+    return [_typed_message(row) for row in rows]
 
 
 def _projection_digest(sessions: list[tuple[Any, ...]], messages: list[tuple[Any, ...]]) -> str:
@@ -126,6 +148,16 @@ def _projection_digest(sessions: list[tuple[Any, ...]], messages: list[tuple[Any
             digest.update(b"\n")
     return digest.hexdigest()
 
+
+
+def _update_projection_digest(
+    digest: "hashlib._Hash", kind: str, row: tuple[Any, ...]
+) -> None:
+    payload = json.dumps(
+        [kind, *row], ensure_ascii=False, separators=(",", ":")
+    ).encode("utf-8")
+    digest.update(payload)
+    digest.update(b"\n")
 
 def _source_manifest_digest(manifest: dict[str, Any]) -> str:
     fields = (
@@ -152,7 +184,60 @@ def _source_manifest_digest(manifest: dict[str, Any]) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
-def read_verified_bundle(
+def _validate_bundle_structure(
+    zf: ZipFile,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    if sorted(zf.namelist()) != sorted(BUNDLE_MEMBERS):
+        raise BundleVerificationError("BUNDLE_MEMBER_SET_INVALID")
+    for name in BUNDLE_MEMBERS:
+        info = zf.getinfo(name)
+        if info.compress_type != ZIP_STORED:
+            raise BundleVerificationError("BUNDLE_COMPRESSION_UNSUPPORTED")
+    try:
+        manifest = json.loads(zf.read("manifest.json").decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise BundleVerificationError("BUNDLE_MANIFEST_INVALID") from exc
+    if not isinstance(manifest, dict) or manifest.get("schema") != BUNDLE_SCHEMA:
+        raise BundleVerificationError("BUNDLE_SCHEMA_UNSUPPORTED")
+    files = manifest.get("files")
+    if not isinstance(files, dict) or set(files) != {"sessions.csv", "messages.csv"}:
+        raise BundleVerificationError("BUNDLE_FILE_MANIFEST_INVALID")
+    for name, columns in (("sessions.csv", SESSION_COLUMNS), ("messages.csv", MESSAGE_COLUMNS)):
+        metadata = files.get(name)
+        if not isinstance(metadata, dict):
+            raise BundleVerificationError("BUNDLE_FILE_MANIFEST_INVALID")
+        if metadata.get("columns") != list(columns):
+            raise BundleVerificationError("BUNDLE_FILE_COLUMNS_MISMATCH")
+        if metadata.get("sha256") != _member_digest(zf, name):
+            raise BundleVerificationError("BUNDLE_FILE_DIGEST_MISMATCH")
+        if metadata.get("size_bytes") != zf.getinfo(name).file_size:
+            raise BundleVerificationError("BUNDLE_FILE_SIZE_MISMATCH")
+    return manifest, files
+
+
+def _result_from_manifest(
+    manifest: dict[str, Any], *, actual_sha256: str, bundle_size_bytes: int
+) -> dict[str, Any]:
+    return {
+        "status": "VERIFIED",
+        "schema": BUNDLE_SCHEMA,
+        "provider": manifest["provider"],
+        "shard_id": manifest["shard_id"],
+        "generation_id": manifest["generation_id"],
+        "source_manifest_sha256": manifest["source_manifest_sha256"],
+        "source_projection_sha256": manifest["source_projection_sha256"],
+        "accepted_artifact_count": manifest["accepted_artifact_count"],
+        "accepted_set_sha256": manifest["accepted_set_sha256"],
+        "session_count": manifest["session_count"],
+        "message_count": manifest["message_count"],
+        "searchable_text_bytes": manifest["searchable_text_bytes"],
+        "bundle_sha256": actual_sha256,
+        "bundle_size_bytes": bundle_size_bytes,
+        "projection_schema_version": manifest["projection_schema_version"],
+    }
+
+
+def verify_bundle(
     path: Path,
     *,
     expected_bundle_sha256: str,
@@ -171,54 +256,35 @@ def read_verified_bundle(
 
     try:
         with ZipFile(path, "r") as zf:
-            if sorted(zf.namelist()) != sorted(BUNDLE_MEMBERS):
-                raise BundleVerificationError("BUNDLE_MEMBER_SET_INVALID")
-            for name in BUNDLE_MEMBERS:
-                info = zf.getinfo(name)
-                if info.compress_type != ZIP_STORED:
-                    raise BundleVerificationError("BUNDLE_COMPRESSION_UNSUPPORTED")
-            try:
-                manifest = json.loads(zf.read("manifest.json").decode("utf-8"))
-            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-                raise BundleVerificationError("BUNDLE_MANIFEST_INVALID") from exc
-            if not isinstance(manifest, dict) or manifest.get("schema") != BUNDLE_SCHEMA:
-                raise BundleVerificationError("BUNDLE_SCHEMA_UNSUPPORTED")
-            files = manifest.get("files")
-            if not isinstance(files, dict) or set(files) != {"sessions.csv", "messages.csv"}:
-                raise BundleVerificationError("BUNDLE_FILE_MANIFEST_INVALID")
-
-            for name, columns in (("sessions.csv", SESSION_COLUMNS), ("messages.csv", MESSAGE_COLUMNS)):
-                metadata = files.get(name)
-                if not isinstance(metadata, dict):
-                    raise BundleVerificationError("BUNDLE_FILE_MANIFEST_INVALID")
-                if metadata.get("columns") != list(columns):
-                    raise BundleVerificationError("BUNDLE_FILE_COLUMNS_MISMATCH")
-                if metadata.get("sha256") != _member_digest(zf, name):
-                    raise BundleVerificationError("BUNDLE_FILE_DIGEST_MISMATCH")
-                if metadata.get("size_bytes") != zf.getinfo(name).file_size:
-                    raise BundleVerificationError("BUNDLE_FILE_SIZE_MISMATCH")
-
-            session_raw = _read_csv(
+            manifest, files = _validate_bundle_structure(zf)
+            projection = hashlib.sha256()
+            session_count = 0
+            message_count = 0
+            text_bytes = 0
+            for raw in _iter_csv(
                 zf, "sessions.csv", SESSION_COLUMNS, field_limit=max_bundle_bytes
-            )
-            message_raw = _read_csv(
+            ):
+                row = _typed_session(raw)
+                _update_projection_digest(projection, "session", row)
+                session_count += 1
+            for raw in _iter_csv(
                 zf, "messages.csv", MESSAGE_COLUMNS, field_limit=max_bundle_bytes
-            )
-            if files["sessions.csv"].get("rows") != len(session_raw):
-                raise BundleVerificationError("BUNDLE_ROW_COUNT_MISMATCH")
-            if files["messages.csv"].get("rows") != len(message_raw):
-                raise BundleVerificationError("BUNDLE_ROW_COUNT_MISMATCH")
-            if manifest.get("session_count") != len(session_raw):
-                raise BundleVerificationError("BUNDLE_SESSION_COUNT_MISMATCH")
-            if manifest.get("message_count") != len(message_raw):
-                raise BundleVerificationError("BUNDLE_MESSAGE_COUNT_MISMATCH")
+            ):
+                row = _typed_message(raw)
+                _update_projection_digest(projection, "message", row)
+                text_bytes += len(row[6].encode("utf-8"))
+                message_count += 1
 
-            sessions = _typed_sessions(session_raw)
-            messages = _typed_messages(message_raw)
-            projection_sha = _projection_digest(sessions, messages)
-            if manifest.get("source_projection_sha256") != projection_sha:
+            if files["sessions.csv"].get("rows") != session_count:
+                raise BundleVerificationError("BUNDLE_ROW_COUNT_MISMATCH")
+            if files["messages.csv"].get("rows") != message_count:
+                raise BundleVerificationError("BUNDLE_ROW_COUNT_MISMATCH")
+            if manifest.get("session_count") != session_count:
+                raise BundleVerificationError("BUNDLE_SESSION_COUNT_MISMATCH")
+            if manifest.get("message_count") != message_count:
+                raise BundleVerificationError("BUNDLE_MESSAGE_COUNT_MISMATCH")
+            if manifest.get("source_projection_sha256") != projection.hexdigest():
                 raise BundleVerificationError("BUNDLE_SOURCE_PROJECTION_MISMATCH")
-            text_bytes = sum(len(row[6].encode("utf-8")) for row in messages)
             if manifest.get("searchable_text_bytes") != text_bytes:
                 raise BundleVerificationError("BUNDLE_TEXT_BYTES_MISMATCH")
             source_manifest_sha = _source_manifest_digest(manifest)
@@ -232,38 +298,42 @@ def read_verified_bundle(
     except BadZipFile as exc:
         raise BundleVerificationError("BUNDLE_ZIP_INVALID") from exc
 
-    result = {
-        "status": "VERIFIED",
-        "schema": BUNDLE_SCHEMA,
-        "provider": manifest["provider"],
-        "shard_id": manifest["shard_id"],
-        "generation_id": manifest["generation_id"],
-        "source_manifest_sha256": manifest["source_manifest_sha256"],
-        "source_projection_sha256": manifest["source_projection_sha256"],
-        "accepted_artifact_count": manifest["accepted_artifact_count"],
-        "accepted_set_sha256": manifest["accepted_set_sha256"],
-        "session_count": manifest["session_count"],
-        "message_count": manifest["message_count"],
-        "searchable_text_bytes": manifest["searchable_text_bytes"],
-        "bundle_sha256": actual,
-        "bundle_size_bytes": size,
-        "projection_schema_version": manifest["projection_schema_version"],
-    }
-    return result, sessions, messages
+    return _result_from_manifest(
+        manifest, actual_sha256=actual, bundle_size_bytes=size
+    )
 
 
-def verify_bundle(
+def iter_bundle_sessions(
+    path: Path, *, field_limit: int = DEFAULT_MAX_BUNDLE_BYTES
+) -> Iterator[tuple[Any, ...]]:
+    with ZipFile(Path(path), "r") as zf:
+        for raw in _iter_csv(zf, "sessions.csv", SESSION_COLUMNS, field_limit=field_limit):
+            yield _typed_session(raw)
+
+
+def iter_bundle_messages(
+    path: Path, *, field_limit: int = DEFAULT_MAX_BUNDLE_BYTES
+) -> Iterator[tuple[Any, ...]]:
+    with ZipFile(Path(path), "r") as zf:
+        for raw in _iter_csv(zf, "messages.csv", MESSAGE_COLUMNS, field_limit=field_limit):
+            yield _typed_message(raw)
+
+
+def read_verified_bundle(
     path: Path,
     *,
     expected_bundle_sha256: str,
     max_bundle_bytes: int = DEFAULT_MAX_BUNDLE_BYTES,
-) -> dict[str, Any]:
-    result, _sessions, _messages = read_verified_bundle(
+) -> tuple[dict[str, Any], list[tuple[Any, ...]], list[tuple[Any, ...]]]:
+    """Compatibility helper for callers that explicitly need all rows in memory."""
+    result = verify_bundle(
         path,
         expected_bundle_sha256=expected_bundle_sha256,
         max_bundle_bytes=max_bundle_bytes,
     )
-    return result
+    sessions = list(iter_bundle_sessions(path, field_limit=max_bundle_bytes))
+    messages = list(iter_bundle_messages(path, field_limit=max_bundle_bytes))
+    return result, sessions, messages
 
 
 async def download_drive_bundle(

@@ -8,7 +8,8 @@ from arcade_mcp_server.auth import Google
 
 from session_search_arcade_materializer.bundle_consumer import (
     download_drive_bundle,
-    read_verified_bundle,
+    iter_bundle_messages,
+    iter_bundle_sessions,
     verify_bundle,
 )
 from session_search_arcade_materializer.neon_loader import (
@@ -24,7 +25,7 @@ from session_search_arcade_materializer.neon_loader import (
 )
 
 DRIVE_READONLY = "https://www.googleapis.com/auth/drive.readonly"
-app = MCPApp(name="session_search_materializer", version="0.4.0", log_level="INFO")
+app = MCPApp(name="session_search_materializer", version="0.5.0", log_level="INFO")
 
 
 @app.tool(requires_auth=Google(scopes=[DRIVE_READONLY]))
@@ -73,7 +74,7 @@ async def materialize_bundle(
             drive_file_id=drive_file_id, oauth_token=token,
             expected_bundle_sha256=expected_bundle_sha256, destination=path,
         )
-        verified, sessions, messages = read_verified_bundle(
+        verified = verify_bundle(
             path, expected_bundle_sha256=expected_bundle_sha256
         )
         database_url = await resolve_neon_connection_uri(
@@ -82,7 +83,9 @@ async def materialize_bundle(
         )
         loaded = await asyncio.to_thread(
             load_rows_to_building,
-            manifest=verified, sessions=sessions, messages=messages,
+            manifest=verified,
+            sessions=iter_bundle_sessions(path),
+            messages=iter_bundle_messages(path),
             database_url=database_url,
         )
         return {
