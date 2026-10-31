@@ -16,6 +16,7 @@ from .neon_materializer import (
 
 
 BUNDLE_SCHEMA = "theseus.session-search-shard-bundle.v1"
+BUNDLE_CSV_FIELD_LIMIT = 8 * 1024 * 1024
 SESSION_COLUMNS = ("session_id", "title", "coverage_state", "time_min", "time_max")
 MESSAGE_COLUMNS = (
     "session_id",
@@ -52,6 +53,11 @@ def _write_csv(path: Path, columns: tuple[str, ...], rows: list[tuple[Any, ...]]
         for row in rows:
             if len(row) != len(columns):
                 raise ValueError("BUNDLE_ROW_SHAPE_INVALID")
+            if any(
+                isinstance(value, str) and len(value) > BUNDLE_CSV_FIELD_LIMIT
+                for value in row
+            ):
+                raise ValueError("BUNDLE_CSV_FIELD_TOO_LARGE")
             if any(isinstance(value, str) and "\x00" in value for value in row):
                 raise ValueError("BUNDLE_TEXT_NUL")
             writer.writerow(row)
@@ -178,23 +184,28 @@ def _member_digest(zf: ZipFile, name: str) -> str:
 
 
 def _csv_rows(zf: ZipFile, name: str, columns: tuple[str, ...]) -> list[tuple[Any, ...]]:
-    with zf.open(name, "r") as raw:
-        import io
+    previous_limit = csv.field_size_limit()
+    csv.field_size_limit(BUNDLE_CSV_FIELD_LIMIT)
+    try:
+        with zf.open(name, "r") as raw:
+            import io
 
-        wrapper = io.TextIOWrapper(raw, encoding="utf-8", newline="")
-        reader = csv.reader(wrapper)
-        try:
-            header = tuple(next(reader))
-        except StopIteration as exc:
-            raise ValueError("BUNDLE_CSV_EMPTY") from exc
-        if header != columns:
-            raise ValueError("BUNDLE_CSV_COLUMNS_INVALID")
-        rows: list[tuple[Any, ...]] = []
-        for row in reader:
-            if len(row) != len(columns):
-                raise ValueError("BUNDLE_ROW_SHAPE_INVALID")
-            rows.append(tuple(row))
-        return rows
+            wrapper = io.TextIOWrapper(raw, encoding="utf-8", newline="")
+            reader = csv.reader(wrapper)
+            try:
+                header = tuple(next(reader))
+            except StopIteration as exc:
+                raise ValueError("BUNDLE_CSV_EMPTY") from exc
+            if header != columns:
+                raise ValueError("BUNDLE_CSV_COLUMNS_INVALID")
+            rows: list[tuple[Any, ...]] = []
+            for row in reader:
+                if len(row) != len(columns):
+                    raise ValueError("BUNDLE_ROW_SHAPE_INVALID")
+                rows.append(tuple(row))
+            return rows
+    finally:
+        csv.field_size_limit(previous_limit)
 
 
 def _typed_sessions(rows: list[tuple[Any, ...]]) -> list[tuple[Any, ...]]:
