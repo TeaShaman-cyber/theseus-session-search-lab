@@ -8,6 +8,7 @@ LIFECYCLE = ROOT / "sql" / "neon" / "003_federated_generation_lifecycle.sql"
 BUILDING_LOADER = ROOT / "sql" / "neon" / "004_arcade_building_loader.sql"
 READY_MARKER = ROOT / "sql" / "neon" / "005_ready_marker_capability.sql"
 ACTIVATION_MARKER = ROOT / "sql" / "neon" / "006_activation_marker_capability.sql"
+FTS_GUARD = ROOT / "sql" / "neon" / "007_safe_message_tsvector.sql"
 
 
 class NeonFederatedContractTest(unittest.TestCase):
@@ -28,6 +29,14 @@ class NeonFederatedContractTest(unittest.TestCase):
         self.assertIn("result limit out of bounds", text)
         self.assertIn("GENERATED ALWAYS AS", text)
         self.assertIn("USING GIN", text)
+
+    def test_message_fts_projection_uses_safe_guard(self):
+        schema = SCHEMA.read_text(encoding="utf-8")
+        guard = FTS_GUARD.read_text(encoding="utf-8") if FTS_GUARD.exists() else ""
+        self.assertIn("session_search.safe_message_search_vector", schema)
+        self.assertIn("EXCEPTION WHEN program_limit_exceeded", guard)
+        self.assertIn("candidate := left(candidate", guard)
+        self.assertIn("GENERATED ALWAYS AS (session_search.safe_message_search_vector(text)) STORED", schema)
 
     def test_privilege_migration_keeps_reader_behind_bounded_functions(self):
         text = PRIVILEGES.read_text(encoding="utf-8")

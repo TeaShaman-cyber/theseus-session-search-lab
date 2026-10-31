@@ -1,6 +1,12 @@
 BEGIN;
 CREATE SCHEMA session_search;
 
+CREATE FUNCTION session_search.safe_message_search_vector(input text)
+RETURNS tsvector LANGUAGE plpgsql IMMUTABLE STRICT SET search_path = pg_catalog, pg_temp AS $$
+DECLARE candidate text := input;
+BEGIN LOOP BEGIN RETURN pg_catalog.to_tsvector('pg_catalog.simple'::regconfig, candidate); EXCEPTION WHEN program_limit_exceeded THEN IF length(candidate) <= 1 THEN RAISE; END IF; candidate := left(candidate, GREATEST(1, length(candidate) / 2)); END; END LOOP; END
+$$;
+
 CREATE TABLE session_search.generations (
     generation_id text PRIMARY KEY CHECK (generation_id ~ '^[0-9a-f]{64}$'),
     shard_id text NOT NULL,
@@ -32,7 +38,7 @@ CREATE TABLE session_search.messages (
     search_class text NOT NULL CHECK (search_class IN ('dialogue','evidence','trace')),
     create_time double precision,
     text text NOT NULL,
-    search_vector tsvector GENERATED ALWAYS AS (to_tsvector('simple', text)) STORED,
+    search_vector tsvector GENERATED ALWAYS AS (session_search.safe_message_search_vector(text)) STORED,
     PRIMARY KEY (generation_id, session_id, message_id),
     FOREIGN KEY (generation_id, session_id)
         REFERENCES session_search.sessions(generation_id, session_id)
