@@ -20,7 +20,7 @@ from .neon_materializer import (
 )
 
 SCHEMA = "theseus.session-search-shard-source-integrity.v1"
-MODE = "SHARD_LOCAL_REPLAY_DIRECT_ONLY"
+MODE = "SHARD_BOUNDED_REPLAY_V2"
 
 
 def _result(status: str, provider: str, shard_id: str, **extra: Any) -> dict[str, Any]:
@@ -46,6 +46,46 @@ def _route_rows(con: sqlite3.Connection, session_ids: tuple[str, ...]) -> list[t
             session_ids,
         )
     ]
+
+
+def _all_route_rows(con: sqlite3.Connection) -> list[tuple[str, ...]]:
+    return [
+        tuple(str(value) for value in row)
+        for row in con.execute(
+            "SELECT a.sha256,r.accepted_session_id,r.projected_session_id,"
+            "r.route_state,r.route_reason,r.route_version,a.source_adapter "
+            "FROM artifact_routes r JOIN artifacts a ON a.artifact_id=r.artifact_id "
+            "ORDER BY a.sha256"
+        )
+    ]
+
+
+def _route_rows_for_artifacts(
+    con: sqlite3.Connection, artifact_shas: set[str] | tuple[str, ...]
+) -> list[tuple[str, ...]]:
+    wanted = set(artifact_shas)
+    return [row for row in _all_route_rows(con) if row[0] in wanted]
+
+
+def _chatgpt_family_closure_shas(
+    all_routes: list[tuple[str, ...]], target_routes: list[tuple[str, ...]]
+) -> tuple[set[str], tuple[str, ...]]:
+    family_ids = tuple(sorted({row[1] for row in target_routes if row[3] != "DIRECT"}))
+    closure_shas = {row[0] for row in target_routes}
+    if not family_ids:
+        return closure_shas, family_ids
+    for row in all_routes:
+        accepted_session_id = row[1]
+        source_adapter = row[6]
+        if accepted_session_id in family_ids:
+            closure_shas.add(row[0])
+            continue
+        if source_adapter == "chatgpt-export" and any(
+            accepted_session_id.startswith(f"{family_id}~branch-")
+            for family_id in family_ids
+        ):
+            closure_shas.add(row[0])
+    return closure_shas, family_ids
 
 
 def verify_shard_source_integrity(
@@ -109,23 +149,38 @@ def verify_shard_source_integrity(
                     reason="shard has no routed artifacts",
                 )
             route_states = sorted({row[3] for row in current_routes})
-            if route_states != ["DIRECT"]:
+            unsupported_states = sorted(
+                state for state in route_states if state not in {"DIRECT", "BRANCH_MATCH", "UNRESOLVED"}
+            )
+            if unsupported_states:
                 return _result(
                     "UNSUPPORTED_ROUTE_CLOSURE",
                     provider,
                     shard_id,
                     route_states=route_states,
-                    reason="shard-local replay is only authoritative for DIRECT routes",
+                    reason="shard contains unsupported route state",
                 )
-            artifact_shas = tuple(row[0] for row in current_routes)
-            if len(set(artifact_shas)) != len(artifact_shas):
+            if route_states != ["DIRECT"] and provider != "chatgpt":
+                return _result(
+                    "UNSUPPORTED_ROUTE_CLOSURE",
+                    provider,
+                    shard_id,
+                    route_states=route_states,
+                    reason="non-DIRECT family closure is only defined for ChatGPT",
+                )
+            target_artifact_shas = tuple(row[0] for row in current_routes)
+            if len(set(target_artifact_shas)) != len(target_artifact_shas):
                 return _result(
                     "RECONCILIATION_REQUIRED",
                     provider,
                     shard_id,
                     reason="duplicate routed artifact identity",
                 )
-            missing = [sha for sha in artifact_shas if sha not in accepted]
+            all_routes = _all_route_rows(con)
+            closure_artifact_shas, family_ids = _chatgpt_family_closure_shas(
+                all_routes, current_routes
+            )
+            missing = [sha for sha in sorted(closure_artifact_shas) if sha not in accepted]
             if missing:
                 return _result(
                     "RECONCILIATION_REQUIRED",
@@ -134,7 +189,8 @@ def verify_shard_source_integrity(
                     reason="routed artifact missing from accepted ledger",
                     missing_artifacts=len(missing),
                 )
-            selected_entries = {sha: accepted[sha] for sha in artifact_shas}
+            selected_entries = {sha: accepted[sha] for sha in sorted(closure_artifact_shas)}
+            current_closure_routes = [row for row in all_routes if row[0] in closure_artifact_shas]
             current_sessions, current_messages = _load_rows_for_sessions(con, session_ids)
         finally:
             con.close()
@@ -191,7 +247,7 @@ def verify_shard_source_integrity(
                     str(row[0])
                     for row in replay.execute("SELECT session_id FROM sessions ORDER BY session_id")
                 )
-                if set(replay_session_ids) != set(session_ids):
+                if not set(session_ids).issubset(set(replay_session_ids)):
                     return _result(
                         "RECONCILIATION_REQUIRED",
                         provider,
@@ -199,11 +255,11 @@ def verify_shard_source_integrity(
                         reason="replayed session membership mismatch",
                     )
                 replay_sessions, replay_messages = _load_rows_for_sessions(replay, session_ids)
-                replay_routes = _route_rows(replay, session_ids)
+                replay_routes = _route_rows_for_artifacts(replay, set(selected_entries))
             finally:
                 replay.close()
 
-        if replay_routes != current_routes:
+        if replay_routes != current_closure_routes:
             return _result(
                 "RECONCILIATION_REQUIRED",
                 provider,
@@ -247,8 +303,10 @@ def verify_shard_source_integrity(
             shard_id,
             accepted_artifact_count=len(accepted_shas),
             accepted_set_sha256=set_digest(accepted_shas),
-            shard_artifact_count=len(selected_entries),
-            route_states=["DIRECT"],
+            shard_artifact_count=len(set(target_artifact_shas)),
+            closure_artifact_count=len(selected_entries),
+            route_states=route_states,
+            family_closure_count=len(family_ids),
             session_count=len(current_sessions),
             message_count=len(current_messages),
             searchable_text_bytes=current_manifest["searchable_text_bytes"],
@@ -262,7 +320,7 @@ def verify_shard_source_integrity(
                 "global_artifact_route_membership",
                 "selected_accepted_blob_hash_and_metadata",
                 "provider_aware_allocator_membership",
-                "direct_route_replay",
+                "bounded_route_family_replay",
                 "session_projection_replay",
                 "searchable_message_projection_replay",
                 "source_manifest_identity",
