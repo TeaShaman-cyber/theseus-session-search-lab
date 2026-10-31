@@ -31,6 +31,18 @@ A fresh host acceptance must:
 
 The **live shard catalog** is runtime evidence and may evolve. Compare observed provenance with current deployment/project evidence when shard topology matters.
 
+### Verified 2026-10-31 acceptance
+
+After issue #126 promoted the accepted ChatGPT corpus into the live catalog, a fresh App-backed host smoke verified:
+- `chatgpt-0001`;
+- `chatgpt-0002`;
+- `deepseek-0001`;
+- `xai-0001`;
+- terminal status `FOUND`;
+- `unavailable_shards=[]`.
+
+This is a point-in-time acceptance checkpoint, not a hard-coded future topology requirement.
+
 ## Historical #64 acceptance
 
 The historical #64 synthetic acceptance used:
