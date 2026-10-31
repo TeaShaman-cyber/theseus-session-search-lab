@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from typing import Any
+from collections.abc import Iterable, Iterator
 from urllib.parse import quote
 
 NEON_API_BASE = 'https://console.neon.tech/api/v2'
@@ -132,11 +133,22 @@ def classify_existing_generation(row: tuple[Any, ...] | None, expected: dict[str
     raise TargetMaterializationError('TARGET_EXISTING_GENERATION_STATE_INVALID')
 
 
+
+def _batches(rows: Iterable[tuple[Any, ...]], batch_size: int) -> Iterator[list[tuple[Any, ...]]]:
+    batch: list[tuple[Any, ...]] = []
+    for row in rows:
+        batch.append(row)
+        if len(batch) >= batch_size:
+            yield batch
+            batch = []
+    if batch:
+        yield batch
+
 def load_rows_to_building(
     *,
     manifest: dict[str, Any],
-    sessions: list[tuple[Any, ...]],
-    messages: list[tuple[Any, ...]],
+    sessions: Iterable[tuple[Any, ...]],
+    messages: Iterable[tuple[Any, ...]],
     database_url: str,
     batch_size: int = 500,
     connect: Any | None = None,
@@ -184,11 +196,6 @@ def load_rows_to_building(
                         'loaded_messages': int(manifest['message_count']),
                     }
 
-                if len(sessions) != int(manifest['session_count']):
-                    raise TargetMaterializationError('BUNDLE_SESSION_COUNT_MISMATCH')
-                if len(messages) != int(manifest['message_count']):
-                    raise TargetMaterializationError('BUNDLE_MESSAGE_COUNT_MISMATCH')
-
                 cur.execute(
                     "INSERT INTO session_search.generations("
                     "generation_id,shard_id,provider,source_manifest_sha256,projection_schema_version"
@@ -198,19 +205,24 @@ def load_rows_to_building(
                         manifest['source_manifest_sha256'], manifest['projection_schema_version'],
                     ),
                 )
-                execute_values_fn(
-                    cur,
-                    "INSERT INTO session_search.sessions("
-                    "generation_id,session_id,title,coverage_state,time_min,time_max"
-                    ") VALUES %s",
-                    [(manifest['generation_id'], *row) for row in sessions],
-                    page_size=batch_size,
-                )
-                for start in range(0, len(messages), batch_size):
-                    page = [
-                        (manifest['generation_id'], *row)
-                        for row in messages[start:start + batch_size]
-                    ]
+                loaded_sessions = 0
+                for rows in _batches(sessions, batch_size):
+                    page = [(manifest['generation_id'], *row) for row in rows]
+                    execute_values_fn(
+                        cur,
+                        "INSERT INTO session_search.sessions("
+                        "generation_id,session_id,title,coverage_state,time_min,time_max"
+                        ") VALUES %s",
+                        page,
+                        page_size=batch_size,
+                    )
+                    loaded_sessions += len(rows)
+                if loaded_sessions != int(manifest['session_count']):
+                    raise TargetMaterializationError('BUNDLE_SESSION_COUNT_MISMATCH')
+
+                loaded_messages = 0
+                for rows in _batches(messages, batch_size):
+                    page = [(manifest['generation_id'], *row) for row in rows]
                     execute_values_fn(
                         cur,
                         "INSERT INTO session_search.messages("
@@ -219,6 +231,9 @@ def load_rows_to_building(
                         page,
                         page_size=batch_size,
                     )
+                    loaded_messages += len(rows)
+                if loaded_messages != int(manifest['message_count']):
+                    raise TargetMaterializationError('BUNDLE_MESSAGE_COUNT_MISMATCH')
                 cur.execute(
                     "SELECT state,"
                     "(SELECT count(*) FROM session_search.sessions WHERE generation_id=%s),"

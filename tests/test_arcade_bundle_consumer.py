@@ -5,6 +5,7 @@ import json
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,6 +17,8 @@ from session_search.shard_bundle import build_bundle
 from session_search_arcade_materializer.bundle_consumer import (
     BundleVerificationError,
     download_drive_bundle,
+    iter_bundle_messages,
+    iter_bundle_sessions,
     read_verified_bundle,
     verify_bundle,
 )
@@ -83,6 +86,29 @@ class ArcadeBundleConsumerTest(unittest.TestCase):
             result = verify_bundle(bundle, expected_bundle_sha256=expected)
             self.assertEqual(result["status"], "VERIFIED")
             self.assertEqual(result["message_count"], 2)
+
+    def test_verify_bundle_does_not_use_full_row_collector(self):
+        with tempfile.TemporaryDirectory() as td:
+            bundle = self.make_bundle(Path(td))
+            expected = hashlib.sha256(bundle.read_bytes()).hexdigest()
+            with mock.patch(
+                'session_search_arcade_materializer.bundle_consumer._read_csv',
+                side_effect=AssertionError('aggregate verification must stream'),
+            ):
+                result = verify_bundle(bundle, expected_bundle_sha256=expected)
+            self.assertEqual(result['status'], 'VERIFIED')
+
+    def test_streaming_iterators_reproduce_verified_rows_without_full_bundle_result(self):
+        with tempfile.TemporaryDirectory() as td:
+            bundle = self.make_bundle(Path(td))
+            expected = hashlib.sha256(bundle.read_bytes()).hexdigest()
+            result = verify_bundle(bundle, expected_bundle_sha256=expected)
+            self.assertEqual(result['status'], 'VERIFIED')
+            sessions = list(iter_bundle_sessions(bundle))
+            messages = list(iter_bundle_messages(bundle))
+            self.assertEqual(len(sessions), result['session_count'])
+            self.assertEqual(len(messages), result['message_count'])
+            self.assertEqual(messages[0][2], 'm1')
 
     def test_expected_bundle_sha_is_required_and_must_match(self):
         with tempfile.TemporaryDirectory() as td:
