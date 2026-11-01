@@ -34,6 +34,10 @@ Read `references/gateway.md` before diagnosing routing or changing the connectio
 
 The Session Search domain capability is `TheseusSessionSearch.session_search`.
 
+Treat that name as the **stable qualified tool identity**. The Arcade gateway is an allowlist of concrete discovered tool definitions, not a transparent proxy for every tool on every registered remote server. A new router deployment must therefore replace the backend URI beneath the canonical Arcade remote server `theseus-session-search`, then refresh that worker's tool discovery, while the gateway continues to expose `TheseusSessionSearch.session_search`.
+
+Do not solve a router cutover by adding a second version-suffixed Session Search tool to the production gateway. Candidate remote servers may exist for isolated diagnostics, but they remain outside the production gateway until the canonical remote-server URI is updated.
+
 In the ChatGPT host, that domain tool may be discovered/executed through the Arcade wrapper surface rather than appearing as a raw top-level tool. Use `Arcade_SelectTools` to discover the exact current tool contract when needed, then execute it through `Arcade_UseTool`.
 
 When the current tool contract exposes `search_mode`, use its explicit retrieval policy rather than trying to simulate recall by rewriting the query:
