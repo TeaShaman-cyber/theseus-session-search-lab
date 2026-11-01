@@ -32,6 +32,10 @@ In short: **Session Search is an evidence-retrieval layer for continuity, not a 
 
 The lab studies portable, verifiable historical session retrieval for assistants while keeping capture sources, transports, browsers, and development environments replaceable.
 
+## Operational observability
+
+- [Grafana dashboard-as-code](grafana/README.md) — service-owned nine-panel candidate monitoring resource and verification procedure (issue #109).
+
 ## Runtime boundary
 
 ```text

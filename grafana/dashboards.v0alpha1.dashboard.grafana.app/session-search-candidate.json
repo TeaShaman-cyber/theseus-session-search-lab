@@ -1,0 +1,457 @@
+{
+  "apiVersion": "dashboard.grafana.app/v0alpha1",
+  "kind": "Dashboard",
+  "metadata": {
+    "labels": {},
+    "name": "session-search-candidate"
+  },
+  "spec": {
+    "annotations": {
+      "list": [
+        {
+          "builtIn": 1,
+          "datasource": {
+            "type": "grafana",
+            "uid": "-- Grafana --"
+          },
+          "enable": true,
+          "hide": true,
+          "iconColor": "rgba(0, 211, 255, 1)",
+          "name": "Annotations & Alerts",
+          "type": "dashboard"
+        }
+      ]
+    },
+    "description": "Candidate Session Search observability. Top panels are cumulative OTLP/Mimir snapshots; lower TraceQL panels are true per-span time-window semantics from Tempo. Counters may reset on serverless cold start. No alerting. Raw Tempo MCP tools remain degraded, but TraceQL metrics are independently executable through Grafana Assistant.",
+    "editable": true,
+    "fiscalYearStartMonth": 0,
+    "graphTooltip": 0,
+    "links": [],
+    "panels": [
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "grafanacloud-prom"
+        },
+        "description": "Current cumulative counter snapshot for search requests. Not a time-window total; serverless cold starts may reset counters.",
+        "fieldConfig": {
+          "defaults": {
+            "decimals": 0,
+            "unit": "short"
+          },
+          "overrides": []
+        },
+        "gridPos": {
+          "h": 6,
+          "w": 8,
+          "x": 0,
+          "y": 0
+        },
+        "id": 1,
+        "options": {
+          "colorMode": "value",
+          "graphMode": "none",
+          "justifyMode": "auto",
+          "orientation": "auto",
+          "reduceOptions": {
+            "calcs": [
+              "lastNotNull"
+            ],
+            "fields": "",
+            "values": false
+          },
+          "textMode": "auto"
+        },
+        "targets": [
+          {
+            "expr": "sum by (result_status,status_class,error_class,service_version) (session_search_requests_total{service_name=\"session-search-router\",deployment_environment_name=\"candidate\",route=\"search\"})",
+            "instant": true,
+            "legendFormat": "{{status_class}} {{result_status}} {{error_class}} @ {{service_version}}",
+            "range": false,
+            "refId": "A"
+          }
+        ],
+        "title": "Search status snapshot",
+        "type": "stat"
+      },
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "grafanacloud-prom"
+        },
+        "description": "Mean search latency from the current cumulative histogram snapshot, grouped by deployed service.version.",
+        "fieldConfig": {
+          "defaults": {
+            "decimals": 1,
+            "unit": "ms"
+          },
+          "overrides": []
+        },
+        "gridPos": {
+          "h": 6,
+          "w": 8,
+          "x": 8,
+          "y": 0
+        },
+        "id": 2,
+        "options": {
+          "colorMode": "value",
+          "graphMode": "none",
+          "justifyMode": "auto",
+          "orientation": "auto",
+          "reduceOptions": {
+            "calcs": [
+              "lastNotNull"
+            ],
+            "fields": "",
+            "values": false
+          },
+          "textMode": "auto"
+        },
+        "targets": [
+          {
+            "expr": "sum by (service_version) (session_search_request_duration_ms_milliseconds_sum{service_name=\"session-search-router\",deployment_environment_name=\"candidate\",route=\"search\"}) / sum by (service_version) (session_search_request_duration_ms_milliseconds_count{service_name=\"session-search-router\",deployment_environment_name=\"candidate\",route=\"search\"})",
+            "instant": true,
+            "legendFormat": "{{service_version}}",
+            "range": false,
+            "refId": "A"
+          }
+        ],
+        "title": "Search mean latency",
+        "type": "stat"
+      },
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "grafanacloud-prom"
+        },
+        "description": "Current router shard-dispatch counters with bounded provider/shard/status provenance.",
+        "fieldConfig": {
+          "defaults": {
+            "decimals": 0,
+            "unit": "short"
+          },
+          "overrides": []
+        },
+        "gridPos": {
+          "h": 6,
+          "w": 8,
+          "x": 16,
+          "y": 0
+        },
+        "id": 3,
+        "options": {
+          "colorMode": "value",
+          "graphMode": "none",
+          "justifyMode": "auto",
+          "orientation": "auto",
+          "reduceOptions": {
+            "calcs": [
+              "lastNotNull"
+            ],
+            "fields": "",
+            "values": false
+          },
+          "textMode": "auto"
+        },
+        "targets": [
+          {
+            "expr": "sum by (provider,shard_id,result_status,status_class,error_class,service_version) (session_search_shard_dispatches_total{service_name=\"session-search-router\",deployment_environment_name=\"candidate\"})",
+            "instant": true,
+            "legendFormat": "{{provider}}/{{shard_id}} {{status_class}} {{result_status}}",
+            "range": false,
+            "refId": "A"
+          }
+        ],
+        "title": "Shard dispatch snapshot",
+        "type": "stat"
+      },
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "grafanacloud-prom"
+        },
+        "description": "Mean dispatch latency from current cumulative histogram snapshots; not p95.",
+        "fieldConfig": {
+          "defaults": {
+            "decimals": 1,
+            "min": 0,
+            "unit": "ms"
+          },
+          "overrides": []
+        },
+        "gridPos": {
+          "h": 7,
+          "w": 12,
+          "x": 0,
+          "y": 6
+        },
+        "id": 4,
+        "options": {
+          "displayMode": "basic",
+          "orientation": "horizontal",
+          "reduceOptions": {
+            "calcs": [
+              "lastNotNull"
+            ],
+            "fields": "",
+            "values": false
+          },
+          "showUnfilled": true
+        },
+        "targets": [
+          {
+            "expr": "sum by (provider,shard_id,service_version) (session_search_shard_dispatch_duration_ms_milliseconds_sum{service_name=\"session-search-router\",deployment_environment_name=\"candidate\"}) / sum by (provider,shard_id,service_version) (session_search_shard_dispatch_duration_ms_milliseconds_count{service_name=\"session-search-router\",deployment_environment_name=\"candidate\"})",
+            "instant": true,
+            "legendFormat": "{{provider}}/{{shard_id}} @ {{service_version}}",
+            "range": false,
+            "refId": "A"
+          }
+        ],
+        "title": "Shard mean latency",
+        "type": "bargauge"
+      },
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "grafanacloud-prom"
+        },
+        "description": "Environment, exact deployed service.version, provider, and shard_id observed by the router telemetry.",
+        "gridPos": {
+          "h": 7,
+          "w": 12,
+          "x": 12,
+          "y": 6
+        },
+        "id": 5,
+        "options": {
+          "cellHeight": "sm",
+          "footer": {
+            "show": false
+          },
+          "showHeader": true
+        },
+        "targets": [
+          {
+            "expr": "max by (deployment_environment_name,service_version,provider,shard_id) (session_search_shard_dispatches_total{service_name=\"session-search-router\",deployment_environment_name=\"candidate\"})",
+            "format": "table",
+            "instant": true,
+            "range": false,
+            "refId": "A"
+          }
+        ],
+        "title": "Active provenance",
+        "type": "table"
+      },
+      {
+        "datasource": {
+          "type": "tempo",
+          "uid": "grafanacloud-traces"
+        },
+        "description": "True per-span event counts from Tempo. Uses status_class presence as the schema marker, so pre-schema traces are excluded.",
+        "fieldConfig": {
+          "defaults": {
+            "decimals": 0,
+            "unit": "short"
+          },
+          "overrides": []
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 13
+        },
+        "id": 6,
+        "options": {
+          "legend": {
+            "calcs": [],
+            "displayMode": "list",
+            "placement": "bottom",
+            "showLegend": true
+          },
+          "tooltip": {
+            "mode": "single",
+            "sort": "none"
+          }
+        },
+        "targets": [
+          {
+            "datasource": {
+              "type": "tempo",
+              "uid": "grafanacloud-traces"
+            },
+            "metricsQueryType": "range",
+            "query": "{resource.service.name=\"session-search-router\" && resource.deployment.environment.name=\"candidate\" && name=\"session_search.search\" && span.session_search.status_class != nil} | count_over_time() by (span.session_search.status_class, span.session_search.error_class)",
+            "queryType": "traceql",
+            "refId": "A",
+            "tableType": "traces"
+          }
+        ],
+        "title": "Search events over time (TraceQL)",
+        "type": "timeseries"
+      },
+      {
+        "datasource": {
+          "type": "tempo",
+          "uid": "grafanacloud-traces"
+        },
+        "description": "Window latency from stored request spans. Sparse canary traffic makes quantiles low-confidence; treat this as operational shape, not SLO evidence.",
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s"
+          },
+          "overrides": []
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 13
+        },
+        "id": 7,
+        "options": {
+          "legend": {
+            "calcs": [],
+            "displayMode": "list",
+            "placement": "bottom",
+            "showLegend": true
+          },
+          "tooltip": {
+            "mode": "single",
+            "sort": "none"
+          }
+        },
+        "targets": [
+          {
+            "datasource": {
+              "type": "tempo",
+              "uid": "grafanacloud-traces"
+            },
+            "metricsQueryType": "range",
+            "query": "{resource.service.name=\"session-search-router\" && resource.deployment.environment.name=\"candidate\" && name=\"session_search.search\" && span.session_search.status_class != nil} | quantile_over_time(duration, .5, .95)",
+            "queryType": "traceql",
+            "refId": "A",
+            "tableType": "traces"
+          }
+        ],
+        "title": "Search latency p50/p95 (TraceQL)",
+        "type": "timeseries"
+      },
+      {
+        "datasource": {
+          "type": "tempo",
+          "uid": "grafanacloud-traces"
+        },
+        "description": "True per-dispatch event counts from Tempo, split by provider, shard, and bounded status class.",
+        "fieldConfig": {
+          "defaults": {
+            "decimals": 0,
+            "unit": "short"
+          },
+          "overrides": []
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 21
+        },
+        "id": 8,
+        "options": {
+          "legend": {
+            "calcs": [],
+            "displayMode": "list",
+            "placement": "bottom",
+            "showLegend": true
+          },
+          "tooltip": {
+            "mode": "single",
+            "sort": "none"
+          }
+        },
+        "targets": [
+          {
+            "datasource": {
+              "type": "tempo",
+              "uid": "grafanacloud-traces"
+            },
+            "metricsQueryType": "range",
+            "query": "{resource.service.name=\"session-search-router\" && resource.deployment.environment.name=\"candidate\" && name=\"session_search.shard_dispatch\" && span.session_search.status_class != nil} | count_over_time() by (span.session_search.provider, span.session_search.shard_id, span.session_search.status_class)",
+            "queryType": "traceql",
+            "refId": "A",
+            "tableType": "traces"
+          }
+        ],
+        "title": "Shard dispatch events over time (TraceQL)",
+        "type": "timeseries"
+      },
+      {
+        "datasource": {
+          "type": "tempo",
+          "uid": "grafanacloud-traces"
+        },
+        "description": "Window latency from router shard-dispatch spans, split by provider and shard. Quantiles remain low-confidence at sparse canary volume.",
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s"
+          },
+          "overrides": []
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 21
+        },
+        "id": 9,
+        "options": {
+          "legend": {
+            "calcs": [],
+            "displayMode": "list",
+            "placement": "bottom",
+            "showLegend": true
+          },
+          "tooltip": {
+            "mode": "single",
+            "sort": "none"
+          }
+        },
+        "targets": [
+          {
+            "datasource": {
+              "type": "tempo",
+              "uid": "grafanacloud-traces"
+            },
+            "metricsQueryType": "range",
+            "query": "{resource.service.name=\"session-search-router\" && resource.deployment.environment.name=\"candidate\" && name=\"session_search.shard_dispatch\" && span.session_search.status_class != nil} | quantile_over_time(duration, .5, .95) by (span.session_search.provider, span.session_search.shard_id)",
+            "queryType": "traceql",
+            "refId": "A",
+            "tableType": "traces"
+          }
+        ],
+        "title": "Shard dispatch latency p50/p95 (TraceQL)",
+        "type": "timeseries"
+      }
+    ],
+    "refresh": "1m",
+    "schemaVersion": 42,
+    "tags": [
+      "theseus",
+      "session-search",
+      "candidate",
+      "otel"
+    ],
+    "templating": {
+      "list": []
+    },
+    "time": {
+      "from": "now-6h",
+      "to": "now"
+    },
+    "timepicker": {},
+    "timezone": "browser",
+    "title": "Session Search — candidate canary",
+    "weekStart": ""
+  }
+}
