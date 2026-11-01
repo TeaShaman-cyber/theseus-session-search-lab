@@ -11,6 +11,20 @@ Canonical App-backed transport:
 
 Canonical remote MCP behind Arcade is the independently deployed Session Search router. The consumer App should connect through the existing Arcade App binding, not directly to an individual Neon shard and not through a standalone packaged `mcp.json`.
 
+## Stable server and tool identity
+
+The production gateway intentionally exposes **one consumer tool**: `TheseusSessionSearch.session_search`. The gateway is an allowlist of Arcade-discovered tools; it is not a transparent proxy that automatically substitutes a newly registered sibling server/tool. Preserve both the canonical remote-server ID `theseus-session-search` and the stable qualified tool identity across router deployments.
+
+A verified router candidate may be registered separately for diagnostics, but do not add a second Session Search tool identity to the production gateway. Production cutover changes the URI/configuration of the existing Arcade worker, then refreshes its discovered tools, so `Arcade_SelectTools` and `Arcade_UseTool` continue to address the same qualified tool.
+
+The current Arcade REST API documents the supported in-place operations:
+- `PATCH /v1/workers/{id}` — update the existing worker configuration according to the current Arcade API schema;
+- `POST /v1/workers/{id}/tools/refresh` — refresh the worker's discovered tool definitions after the backend change.
+
+After those operations, verify that the `Session Search` gateway still contains exactly one Session Search consumer tool with the same qualified identity and that fresh discovery exposes the new `search_mode` schema.
+
+In the current ChatGPT-native Arcade management surface, the exposed server actions are Add/Remove/List and do not include worker PATCH or tool refresh. Therefore an in-place URI cutover is `UNAVAILABLE` through that surface alone. Use an authenticated Arcade dashboard/API surface when available; do not silently substitute delete/re-add or a second production tool identity.
+
 ## Host surface
 
 The Arcade gateway itself exposes the Session Search domain capability. The ChatGPT host may expose Arcade discovery/execution wrappers such as `Arcade_SelectTools` and `Arcade_UseTool`; therefore do not use total top-level host tool count as the acceptance invariant.

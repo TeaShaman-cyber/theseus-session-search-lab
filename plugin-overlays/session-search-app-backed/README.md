@@ -15,6 +15,16 @@ ChatGPT web/mobile
 
 The ChatGPT App binding itself is private host state and is deliberately not stored in this repository.
 
+## Stable consumer-tool identity
+
+The production Arcade gateway is an allowlist of discovered tool definitions, not a transparent pass-through for every tool exposed by every registered remote server. Session Search therefore keeps one stable qualified tool identity across router deployments:
+
+`TheseusSessionSearch.session_search`
+
+The canonical remote-server identity is likewise stable: `theseus-session-search`. A router candidate may exist as an isolated diagnostic server, but production cutover must not add a second Session Search tool such as a version-suffixed sibling to the consumer gateway. The backend router URI changes underneath the existing remote-server identity, then Arcade refreshes that worker's discovered tools; the gateway continues to expose the same one consumer tool.
+
+This indirection is the reason the App-backed ChatGPT plugin does not need a new domain-tool identity for router upgrades. Skill-overlay updates are only needed when operator/consumer guidance changes.
+
 ## Existing host maintenance
 
 The production App-backed plugin already exists. Ordinary overlay maintenance must update that existing plugin identity rather than create a replacement.

@@ -61,11 +61,15 @@ The router MCP endpoint is registered as remote server `theseus-session-search`.
 The dedicated Arcade gateway `Session Search` exposes one consumer tool:
 `TheseusSessionSearch.session_search`.
 
-The ChatGPT host binding is now an App-backed private plugin:
+This is a stable qualified tool identity. The Arcade gateway is an allowlist of discovered tool definitions, not a transparent proxy for all tools from every registered remote server. Router upgrades therefore keep both the canonical Arcade remote-server ID `theseus-session-search` and `TheseusSessionSearch.session_search` stable. A separately registered candidate server may be used for diagnostics, but must not be promoted by adding a version-suffixed sibling tool to the production gateway.
+
+The supported in-place Arcade control-plane shape is to update the existing worker with `PATCH /v1/workers/{id}`, refresh discovery with `POST /v1/workers/{id}/tools/refresh`, then verify the gateway still exposes the same one consumer tool with the refreshed schema. If the active management surface does not expose worker PATCH/refresh and no authenticated dashboard/API route is available, classify cutover as `UNAVAILABLE` rather than replacing the tool identity.
+
+The ChatGPT host binding is an App-backed private plugin with stable identities:
 - App: `asdk_app_6adcf7fcb44c8191b4a0da4d734b91da`
 - plugin: `plugin_asdk_app_6adcf7fcb44c8191b4a0da4d734b91da`
-- version: `1.0.1`
-- release: `pluginrel_6adcf9bf0fc48191a559c3b044dd7192`
+
+Plugin release/version is runtime evidence and must be read back when it matters; do not treat the historical bootstrap release as a current acceptance constant.
 
 The host-created `.app.json` binding was preserved while the checked-in
 `session-search-usage` skill overlay was added. No production `mcp.json` or
