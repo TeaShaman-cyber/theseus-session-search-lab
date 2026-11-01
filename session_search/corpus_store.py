@@ -865,6 +865,99 @@ def _session_metadata_values(conn: sqlite3.Connection, session_id: str) -> dict:
     }
 
 
+def _all_session_metadata_values(conn: sqlite3.Connection) -> dict[str, dict]:
+    """Compute verifier session metadata for all sessions with set-based SQL."""
+    rows = conn.execute(
+        """
+        WITH message_stats AS (
+            SELECT s.session_id,
+                   count(m.row_id) AS total_messages,
+                   min(m.create_time) AS first_message_time,
+                   max(m.create_time) AS last_message_time
+            FROM sessions s
+            LEFT JOIN messages m ON m.session_id=s.session_id
+            GROUP BY s.session_id
+        ),
+        artifact_stats AS (
+            SELECT r.projected_session_id AS session_id,
+                   min(a.accepted_at) AS first_accepted_at,
+                   max(a.accepted_at) AS last_accepted_at
+            FROM artifacts a
+            JOIN artifact_routes r ON r.artifact_id=a.artifact_id
+            GROUP BY r.projected_session_id
+        ),
+        ranked_titles AS (
+            SELECT r.projected_session_id AS session_id,
+                   a.observed_title,
+                   a.observed_max_time,
+                   a.sha256,
+                   row_number() OVER (
+                       PARTITION BY r.projected_session_id
+                       ORDER BY (a.observed_max_time IS NULL),
+                                a.observed_max_time DESC,
+                                a.sha256
+                   ) AS title_rank
+            FROM artifacts a
+            JOIN artifact_routes r ON r.artifact_id=a.artifact_id
+        ),
+        complete_artifact_coverage AS (
+            SELECT r.projected_session_id AS session_id,
+                   a.artifact_id,
+                   count(DISTINCT CASE
+                       WHEN m.session_id=r.projected_session_id THEN ms.message_row_id
+                   END) AS covered_messages
+            FROM artifacts a
+            JOIN artifact_routes r ON r.artifact_id=a.artifact_id
+            LEFT JOIN payload_pages p ON p.artifact_id=a.artifact_id
+            LEFT JOIN message_sources ms ON ms.page_id=p.page_id
+            LEFT JOIN messages m ON m.row_id=ms.message_row_id
+            WHERE a.coverage_state='COMPLETE_EXPOSED_CONVERSATION'
+            GROUP BY r.projected_session_id,a.artifact_id
+        ),
+        complete_sessions AS (
+            SELECT DISTINCT c.session_id
+            FROM complete_artifact_coverage c
+            JOIN message_stats m ON m.session_id=c.session_id
+            WHERE c.covered_messages=m.total_messages
+        )
+        SELECT s.session_id,
+               coalesce(t.observed_title,'') AS title,
+               CASE WHEN c.session_id IS NOT NULL
+                    THEN 'COMPLETE_EXPOSED_CONVERSATION'
+                    ELSE 'PARTIAL_SESSION_SLICE' END AS coverage_state,
+               CASE WHEN c.session_id IS NOT NULL
+                    THEN 'explicit_complete_artifact_covers_all_messages'
+                    ELSE 'no_single_complete_artifact_covers_all_messages' END AS coverage_reason,
+               m.first_message_time,
+               m.last_message_time,
+               a.first_accepted_at,
+               a.last_accepted_at,
+               t.observed_max_time AS title_source_time,
+               t.sha256 AS title_source_artifact_sha256
+        FROM sessions s
+        JOIN message_stats m ON m.session_id=s.session_id
+        LEFT JOIN artifact_stats a ON a.session_id=s.session_id
+        LEFT JOIN ranked_titles t ON t.session_id=s.session_id AND t.title_rank=1
+        LEFT JOIN complete_sessions c ON c.session_id=s.session_id
+        ORDER BY s.session_id
+        """
+    ).fetchall()
+    return {
+        str(row["session_id"]): {
+            "title": str(row["title"] or ""),
+            "coverage_state": str(row["coverage_state"]),
+            "coverage_reason": str(row["coverage_reason"]),
+            "first_message_time": row["first_message_time"],
+            "last_message_time": row["last_message_time"],
+            "first_accepted_at": row["first_accepted_at"],
+            "last_accepted_at": row["last_accepted_at"],
+            "title_source_time": row["title_source_time"],
+            "title_source_artifact_sha256": row["title_source_artifact_sha256"],
+        }
+        for row in rows
+    }
+
+
 def _recompute_session_metadata(conn: sqlite3.Connection, session_id: str) -> None:
     values = _session_metadata_values(conn, session_id)
     conn.execute(
@@ -1675,14 +1768,16 @@ def _verify_projection(
                 "searchable_messages": searchable,
                 "fts_rows": fts_rows,
             }
+        expected_sessions = _all_session_metadata_values(conn)
         for session in conn.execute("SELECT * FROM sessions ORDER BY session_id").fetchall():
-            expected = _session_metadata_values(conn, str(session["session_id"]))
+            session_id = str(session["session_id"])
+            expected = expected_sessions[session_id]
             for key, value in expected.items():
                 if session[key] != value:
                     return {
                         "status": "RECONCILIATION_REQUIRED",
                         "reason": f"session metadata mismatch: {key}",
-                        "session_id": str(session["session_id"]),
+                        "session_id": session_id,
                     }
         return {
             "status": "VERIFIED",
