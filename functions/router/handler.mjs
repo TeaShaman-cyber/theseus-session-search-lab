@@ -23,58 +23,90 @@ export function makeRouterHandler({ catalog, fetchImpl = fetch, shardTimeoutMs =
     const input = validateSearchInput(rawInput);
     const selected = selectShards(catalog, input);
 
-    const outcomes = await Promise.all(selected.map(async (shard) => telemetry.withDispatch(
-      requestContext,
-      shard,
-      { 'content-type': 'application/json' },
-      async (headers) => {
-        if (shard.state && shard.state !== 'READY') {
-          return { shard, ok: false, reason: 'NOT_READY' };
-        }
-        const controller = new AbortController();
-        let timeoutId;
-        const requestOutcome = (async () => {
-          try {
-            const response = await fetchImpl(shard.url, {
-              method: 'POST',
-              headers,
-              body: JSON.stringify({
-                query: input.query,
-                scopes: input.scopes,
-                limit: input.limit,
-                session_id: input.session_id ?? null,
-                from_time: input.from_time ?? null,
-                to_time: input.to_time ?? null,
-              }),
-              signal: controller.signal,
-            });
-            if (!response.ok) return { shard, ok: false, reason: 'QUERY_FAILED' };
-            return { shard, ok: true, body: await response.json() };
-          } catch {
-            return {
-              shard,
-              ok: false,
-              reason: controller.signal.aborted ? 'TIMEOUT' : 'QUERY_FAILED',
-            };
+    async function dispatch(searchMode) {
+      const outcomes = await Promise.all(selected.map(async (shard) => telemetry.withDispatch(
+        requestContext,
+        shard,
+        { 'content-type': 'application/json' },
+        async (headers) => {
+          if (shard.state && shard.state !== 'READY') {
+            return { shard, ok: false, reason: 'NOT_READY' };
           }
-        })();
+          const controller = new AbortController();
+          let timeoutId;
+          const requestOutcome = (async () => {
+            try {
+              const response = await fetchImpl(shard.url, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                  query: input.query,
+                  scopes: input.scopes,
+                  limit: input.limit,
+                  search_mode: searchMode,
+                  session_id: input.session_id ?? null,
+                  from_time: input.from_time ?? null,
+                  to_time: input.to_time ?? null,
+                }),
+                signal: controller.signal,
+              });
+              if (!response.ok) return { shard, ok: false, reason: 'QUERY_FAILED' };
+              return { shard, ok: true, body: await response.json() };
+            } catch {
+              return {
+                shard,
+                ok: false,
+                reason: controller.signal.aborted ? 'TIMEOUT' : 'QUERY_FAILED',
+              };
+            }
+          })();
 
-        const timeoutOutcome = new Promise((resolve) => {
-          timeoutId = setTimeout(() => {
-            controller.abort();
-            resolve({ shard, ok: false, reason: 'TIMEOUT' });
-          }, shardTimeoutMs);
-        });
+          const timeoutOutcome = new Promise((resolve) => {
+            timeoutId = setTimeout(() => {
+              controller.abort();
+              resolve({ shard, ok: false, reason: 'TIMEOUT' });
+            }, shardTimeoutMs);
+          });
 
-        try {
-          return await Promise.race([requestOutcome, timeoutOutcome]);
-        } finally {
-          clearTimeout(timeoutId);
-        }
-      },
-    )));
+          try {
+            return await Promise.race([requestOutcome, timeoutOutcome]);
+          } finally {
+            clearTimeout(timeoutId);
+          }
+        },
+      )));
 
-    return mergeShardOutcomes(selected, outcomes, input.limit);
+      return mergeShardOutcomes(selected, outcomes, input.limit);
+    }
+
+    function withReceipt(result, effectiveMode, strictHitCount) {
+      const candidateCount = result.candidate_count ?? result.hits?.length ?? 0;
+      const { candidate_count: _candidateCount, ...publicResult } = result;
+      return {
+        ...publicResult,
+        retrieval: {
+          requested_mode: input.search_mode,
+          effective_mode: effectiveMode,
+          strict_hit_count: strictHitCount,
+          candidate_count: candidateCount,
+          returned_hit_count: publicResult.hits?.length ?? 0,
+        },
+      };
+    }
+
+    if (input.search_mode !== 'auto') {
+      const result = await dispatch(input.search_mode);
+      return withReceipt(result, input.search_mode, input.search_mode === 'strict' ? result.hits.length : null);
+    }
+
+    const strictResult = await dispatch('strict');
+    const strictHitCount = strictResult.hits.length;
+    if (strictResult.status !== 'NO_SIGNAL') {
+      return withReceipt(strictResult, 'strict', strictHitCount);
+    }
+
+    const recallResult = await dispatch('recall');
+    return withReceipt(recallResult, 'recall', strictHitCount);
   }
 
   return {

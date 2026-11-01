@@ -4,6 +4,7 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SCHEMA = ROOT / "sql" / "neon" / "001_federated_shard_v1.sql"
 PRIVILEGES = ROOT / "sql" / "neon" / "002_federated_shard_privileges.sql"
+RETRIEVAL_POLICY = ROOT / "sql" / "neon" / "008_retrieval_policy.sql"
 LIFECYCLE = ROOT / "sql" / "neon" / "003_federated_generation_lifecycle.sql"
 BUILDING_LOADER = ROOT / "sql" / "neon" / "004_arcade_building_loader.sql"
 READY_MARKER = ROOT / "sql" / "neon" / "005_ready_marker_capability.sql"
@@ -12,6 +13,16 @@ FTS_GUARD = ROOT / "sql" / "neon" / "007_safe_message_tsvector.sql"
 
 
 class NeonFederatedContractTest(unittest.TestCase):
+    def test_retrieval_policy_migration_adds_versioned_strict_and_recall_query_plane(self):
+        text = RETRIEVAL_POLICY.read_text()
+        self.assertIn("CREATE FUNCTION session_search.search_generation_v2", text)
+        self.assertIn("CREATE FUNCTION session_search.search_v2", text)
+        self.assertIn("search_mode", text)
+        self.assertIn("plainto_tsquery", text)
+        self.assertIn("tsvector_to_array", text)
+        self.assertIn("' | '", text)
+        self.assertIn("GRANT EXECUTE ON FUNCTION session_search.search_v2", text)
+
     def test_query_plane_migration_exposes_generation_scoped_read_only_surface(self):
         text = SCHEMA.read_text(encoding="utf-8")
         self.assertIn("CREATE SCHEMA session_search", text)

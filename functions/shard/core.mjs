@@ -1,4 +1,5 @@
 const VALID_SCOPES = new Set(['dialogue', 'evidence', 'trace']);
+const VALID_SEARCH_MODES = new Set(['strict', 'recall']);
 
 export function buildSearchCall(input = {}) {
   const query = typeof input.query === 'string' ? input.query.trim() : '';
@@ -9,6 +10,10 @@ export function buildSearchCall(input = {}) {
 
   const limit = input.limit ?? 8;
   if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error('LIMIT_OUT_OF_BOUNDS');
+  const searchMode = input.search_mode ?? 'strict';
+  if (typeof searchMode !== 'string' || !VALID_SEARCH_MODES.has(searchMode)) {
+    throw new Error('SEARCH_MODE_OUT_OF_BOUNDS');
+  }
 
   const sessionId = input.session_id ?? null;
   if (sessionId !== null && (typeof sessionId !== 'string' || !sessionId || sessionId.length > 512)) {
@@ -25,7 +30,7 @@ export function buildSearchCall(input = {}) {
   if (fromTime !== null && toTime !== null && fromTime > toTime) throw new Error('TIME_BOUNDS_INVERTED');
 
   return {
-    text: 'SELECT session_search.search($1,$2::text[],$3,$4,$5,$6) AS result',
-    values: [query, scopes, limit, sessionId, fromTime, toTime],
+    text: 'SELECT session_search.search_v2($1,$2::text[],$3,$4,$5,$6,$7) AS result',
+    values: [query, scopes, limit, sessionId, fromTime, toTime, searchMode],
   };
 }
