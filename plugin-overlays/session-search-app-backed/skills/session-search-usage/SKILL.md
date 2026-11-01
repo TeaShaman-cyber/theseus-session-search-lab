@@ -36,6 +36,14 @@ The Session Search domain capability is `TheseusSessionSearch.session_search`.
 
 In the ChatGPT host, that domain tool may be discovered/executed through the Arcade wrapper surface rather than appearing as a raw top-level tool. Use `Arcade_SelectTools` to discover the exact current tool contract when needed, then execute it through `Arcade_UseTool`.
 
+When the current tool contract exposes `search_mode`, use its explicit retrieval policy rather than trying to simulate recall by rewriting the query:
+- `strict` is the default and preserves the bounded lexical AND-style behavior;
+- `recall` broadens lexical candidate retrieval and remains candidate evidence rather than semantic authority;
+- `auto` is bounded policy: run strict first and escalate only after a clean strict `NO_SIGNAL`; it must not hide or retry a `PARTIAL` result;
+- a clean strict+recall miss remains `NO_SIGNAL` / `UNKNOWN_WITHIN_CURRENT_SURFACE`, not proof that history is absent.
+
+For `auto`, inspect the returned `retrieval` receipt. At minimum preserve `requested_mode`, `effective_mode`, `strict_hit_count`, `candidate_count`, and `returned_hit_count`. A claim that auto recall helped is justified only when the receipt shows `requested_mode=auto`, `strict_hit_count=0`, and `effective_mode=recall`.
+
 Start with the smallest useful query:
 - `query` is required;
 - use `provider` only when the user clearly scopes the search and that provider is supported by the current serving/catalog evidence;
@@ -122,10 +130,12 @@ After updating the existing App-backed plugin:
 1. start a fresh ChatGPT conversation on the intended host surface;
 2. select the existing Session Search App-backed plugin; do not create a replacement identity;
 3. use `Arcade_SelectTools` to confirm the Session Search domain capability resolves to `TheseusSessionSearch.session_search`;
-4. use `Arcade_UseTool` to run a bounded safe probe such as `copper compass`;
-5. require a contract-valid terminal status and explicit `queried_shards` / `unavailable_shards`;
-6. require `unavailable_shards=[]` before calling the serving path healthy;
-7. if the result is `PARTIAL`, classify the host path as executable but serving as DEGRADED;
-8. compare observed provenance with the current live shard catalog/deployment evidence instead of historical #64 shard names.
+4. use `Arcade_UseTool` to run a bounded safe strict control probe;
+5. confirm the current tool schema exposes `search_mode` = `strict|recall|auto` with default `strict`;
+6. run a bounded `search_mode=auto` probe that is known to strict-miss and require a `retrieval` receipt showing bounded strict-to-recall escalation;
+7. require a contract-valid terminal status and explicit `queried_shards` / `unavailable_shards`;
+8. require `unavailable_shards=[]` before calling the serving path healthy;
+9. if the result is `PARTIAL`, classify the host path as executable but serving as DEGRADED and do not escalate it through auto;
+10. compare observed provenance with the current live shard catalog/deployment evidence instead of historical #64 shard names.
 
 Do not infer host success from Arcade control-plane state alone. Do not infer corpus absence merely because a provider/shard family is not present in the current live catalog.
