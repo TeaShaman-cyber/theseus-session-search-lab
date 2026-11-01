@@ -987,6 +987,8 @@ def apply_normalized_artifact_to_projection(
     artifact: NormalizedArtifact,
     accepted_at: str,
     route: ProjectionRoute | None = None,
+    *,
+    finalize_session_state: bool = True,
 ) -> dict:
     route = route or ProjectionRoute(
         accepted_session_id=artifact.session_id,
@@ -1002,10 +1004,11 @@ def apply_normalized_artifact_to_projection(
     _insert_route_row(conn, artifact_id, route)
     page_ids = _insert_pages(conn, artifact, artifact_id, route.projected_session_id)
     delta = _upsert_messages(conn, paths, artifact, page_ids, route.projected_session_id)
-    _recompute_ordinals(conn, route.projected_session_id)
-    _recompute_session_metadata(conn, route.projected_session_id)
-    if route.projected_session_id != artifact.session_id:
-        _recompute_session_metadata(conn, artifact.session_id)
+    if finalize_session_state:
+        _recompute_ordinals(conn, route.projected_session_id)
+        _recompute_session_metadata(conn, route.projected_session_id)
+        if route.projected_session_id != artifact.session_id:
+            _recompute_session_metadata(conn, artifact.session_id)
     return {
         "artifact_id": artifact_id,
         "projected_session_id": route.projected_session_id,
@@ -1870,7 +1873,12 @@ def _populate_projection_from_entries(
         for sha, entry in sorted(entries.items()):
             artifact = _normalize_accepted_entry(paths, sha, entry)
             apply_normalized_artifact_to_projection(
-                conn, paths, artifact, str(entry["accepted_at"]), routes[sha]
+                conn,
+                paths,
+                artifact,
+                str(entry["accepted_at"]),
+                routes[sha],
+                finalize_session_state=False,
             )
             assert_transaction_invariants(conn, artifact, check_global=False)
         for row in conn.execute("SELECT session_id FROM sessions ORDER BY session_id").fetchall():
