@@ -1,0 +1,478 @@
+{
+  "authority": "retrieval output remains candidate evidence; benchmark proves retrieval-policy parity only",
+  "case_count": 4,
+  "cases": [
+    {
+      "authority_expectation": "reconciliation must not degrade a strong exact lexical result",
+      "baseline_disposition": "SUPPORTED_BY_STRICT",
+      "checks": {
+        "all_shards_available": true,
+        "auto_matches_bounded_policy": true,
+        "auto_stays_strict": true,
+        "plugin_recall_matches_cli_recall": true,
+        "plugin_strict_matches_cli_strict": true,
+        "receipt_matches_policy": true,
+        "target_is_strict_rank_one": true
+      },
+      "class": "PRECISE_LOOKUP",
+      "cli": {
+        "recall_result_count": 2,
+        "recall_sessions": [
+          "exact-target",
+          "exact-noise"
+        ],
+        "recall_target_rank": 1,
+        "strict_result_count": 1,
+        "strict_sessions": [
+          "exact-target"
+        ],
+        "strict_target_rank": 1
+      },
+      "id": "precise-lookup",
+      "intended_session": "exact-target",
+      "pass": true,
+      "plugin": {
+        "auto": {
+          "dispatch_modes": [
+            "strict"
+          ],
+          "identities": [
+            {
+              "message_id": "e1",
+              "ordinal": 0,
+              "search_class": "dialogue",
+              "session_id": "exact-target"
+            }
+          ],
+          "queried_shards": [
+            "fixture-0001"
+          ],
+          "retrieval": {
+            "candidate_count": 1,
+            "effective_mode": "strict",
+            "requested_mode": "auto",
+            "returned_hit_count": 1,
+            "strict_hit_count": 1
+          },
+          "sessions": [
+            "exact-target"
+          ],
+          "status": "FOUND",
+          "unavailable_shards": []
+        },
+        "recall": {
+          "dispatch_modes": [
+            "recall"
+          ],
+          "identities": [
+            {
+              "message_id": "e1",
+              "ordinal": 0,
+              "search_class": "dialogue",
+              "session_id": "exact-target"
+            },
+            {
+              "message_id": "e2",
+              "ordinal": 0,
+              "search_class": "dialogue",
+              "session_id": "exact-noise"
+            }
+          ],
+          "queried_shards": [
+            "fixture-0001"
+          ],
+          "retrieval": {
+            "candidate_count": 2,
+            "effective_mode": "recall",
+            "requested_mode": "recall",
+            "returned_hit_count": 2,
+            "strict_hit_count": null
+          },
+          "sessions": [
+            "exact-target",
+            "exact-noise"
+          ],
+          "status": "FOUND",
+          "unavailable_shards": []
+        },
+        "strict": {
+          "dispatch_modes": [
+            "strict"
+          ],
+          "identities": [
+            {
+              "message_id": "e1",
+              "ordinal": 0,
+              "search_class": "dialogue",
+              "session_id": "exact-target"
+            }
+          ],
+          "queried_shards": [
+            "fixture-0001"
+          ],
+          "retrieval": {
+            "candidate_count": 1,
+            "effective_mode": "strict",
+            "requested_mode": "strict",
+            "returned_hit_count": 1,
+            "strict_hit_count": 1
+          },
+          "sessions": [
+            "exact-target"
+          ],
+          "status": "FOUND",
+          "unavailable_shards": []
+        },
+        "unavailable_shards": []
+      },
+      "query": "immutable artifact provenance"
+    },
+    {
+      "authority_expectation": "strict lexical miss may escalate to recall; recall remains candidate retrieval",
+      "baseline_disposition": "AUTO_SHOULD_ESCALATE_TO_RECALL",
+      "checks": {
+        "all_shards_available": true,
+        "auto_escalates_to_recall": true,
+        "auto_matches_bounded_policy": true,
+        "plugin_recall_matches_cli_recall": true,
+        "plugin_strict_matches_cli_strict": true,
+        "recall_surfaces_target": true,
+        "receipt_matches_policy": true,
+        "strict_misses_target": true
+      },
+      "class": "OVERSPECIFIED_NATURAL_LANGUAGE",
+      "cli": {
+        "recall_result_count": 2,
+        "recall_sessions": [
+          "overspecified-target"
+        ],
+        "recall_target_rank": 1,
+        "strict_result_count": 0,
+        "strict_sessions": [],
+        "strict_target_rank": null
+      },
+      "id": "overspecified-natural-language",
+      "intended_session": "overspecified-target",
+      "pass": true,
+      "plugin": {
+        "auto": {
+          "dispatch_modes": [
+            "strict",
+            "recall"
+          ],
+          "identities": [
+            {
+              "message_id": "o2",
+              "ordinal": 1,
+              "search_class": "dialogue",
+              "session_id": "overspecified-target"
+            },
+            {
+              "message_id": "o1",
+              "ordinal": 0,
+              "search_class": "dialogue",
+              "session_id": "overspecified-target"
+            }
+          ],
+          "queried_shards": [
+            "fixture-0001"
+          ],
+          "retrieval": {
+            "candidate_count": 2,
+            "effective_mode": "recall",
+            "requested_mode": "auto",
+            "returned_hit_count": 2,
+            "strict_hit_count": 0
+          },
+          "sessions": [
+            "overspecified-target"
+          ],
+          "status": "FOUND",
+          "unavailable_shards": []
+        },
+        "recall": {
+          "dispatch_modes": [
+            "recall"
+          ],
+          "identities": [
+            {
+              "message_id": "o2",
+              "ordinal": 1,
+              "search_class": "dialogue",
+              "session_id": "overspecified-target"
+            },
+            {
+              "message_id": "o1",
+              "ordinal": 0,
+              "search_class": "dialogue",
+              "session_id": "overspecified-target"
+            }
+          ],
+          "queried_shards": [
+            "fixture-0001"
+          ],
+          "retrieval": {
+            "candidate_count": 2,
+            "effective_mode": "recall",
+            "requested_mode": "recall",
+            "returned_hit_count": 2,
+            "strict_hit_count": null
+          },
+          "sessions": [
+            "overspecified-target"
+          ],
+          "status": "FOUND",
+          "unavailable_shards": []
+        },
+        "strict": {
+          "dispatch_modes": [
+            "strict"
+          ],
+          "identities": [],
+          "queried_shards": [
+            "fixture-0001"
+          ],
+          "retrieval": {
+            "candidate_count": 0,
+            "effective_mode": "strict",
+            "requested_mode": "strict",
+            "returned_hit_count": 0,
+            "strict_hit_count": 0
+          },
+          "sessions": [],
+          "status": "NO_SIGNAL",
+          "unavailable_shards": []
+        },
+        "unavailable_shards": []
+      },
+      "query": "Session Search architecture CLI plugin App-backed interface retrieval completeness"
+    },
+    {
+      "authority_expectation": "session aggregation may join lexical evidence across messages; messages remain separate evidence",
+      "baseline_disposition": "SUPPORTED_BY_CURRENT_RECALL",
+      "checks": {
+        "all_shards_available": true,
+        "auto_escalates_to_recall": true,
+        "auto_matches_bounded_policy": true,
+        "plugin_recall_matches_cli_recall": true,
+        "plugin_strict_matches_cli_strict": true,
+        "recall_surfaces_target": true,
+        "receipt_matches_policy": true,
+        "strict_misses_target": true
+      },
+      "class": "SESSION_LEVEL_CONCEPT_SPLIT",
+      "cli": {
+        "recall_result_count": 3,
+        "recall_sessions": [
+          "split-target",
+          "split-noise"
+        ],
+        "recall_target_rank": 1,
+        "strict_result_count": 0,
+        "strict_sessions": [],
+        "strict_target_rank": null
+      },
+      "id": "split-across-messages",
+      "intended_session": "split-target",
+      "pass": true,
+      "plugin": {
+        "auto": {
+          "dispatch_modes": [
+            "strict",
+            "recall"
+          ],
+          "identities": [
+            {
+              "message_id": "s2",
+              "ordinal": 1,
+              "search_class": "dialogue",
+              "session_id": "split-target"
+            },
+            {
+              "message_id": "s3",
+              "ordinal": 0,
+              "search_class": "dialogue",
+              "session_id": "split-noise"
+            },
+            {
+              "message_id": "s1",
+              "ordinal": 0,
+              "search_class": "dialogue",
+              "session_id": "split-target"
+            }
+          ],
+          "queried_shards": [
+            "fixture-0001"
+          ],
+          "retrieval": {
+            "candidate_count": 3,
+            "effective_mode": "recall",
+            "requested_mode": "auto",
+            "returned_hit_count": 3,
+            "strict_hit_count": 0
+          },
+          "sessions": [
+            "split-target",
+            "split-noise"
+          ],
+          "status": "FOUND",
+          "unavailable_shards": []
+        },
+        "recall": {
+          "dispatch_modes": [
+            "recall"
+          ],
+          "identities": [
+            {
+              "message_id": "s2",
+              "ordinal": 1,
+              "search_class": "dialogue",
+              "session_id": "split-target"
+            },
+            {
+              "message_id": "s3",
+              "ordinal": 0,
+              "search_class": "dialogue",
+              "session_id": "split-noise"
+            },
+            {
+              "message_id": "s1",
+              "ordinal": 0,
+              "search_class": "dialogue",
+              "session_id": "split-target"
+            }
+          ],
+          "queried_shards": [
+            "fixture-0001"
+          ],
+          "retrieval": {
+            "candidate_count": 3,
+            "effective_mode": "recall",
+            "requested_mode": "recall",
+            "returned_hit_count": 3,
+            "strict_hit_count": null
+          },
+          "sessions": [
+            "split-target",
+            "split-noise"
+          ],
+          "status": "FOUND",
+          "unavailable_shards": []
+        },
+        "strict": {
+          "dispatch_modes": [
+            "strict"
+          ],
+          "identities": [],
+          "queried_shards": [
+            "fixture-0001"
+          ],
+          "retrieval": {
+            "candidate_count": 0,
+            "effective_mode": "strict",
+            "requested_mode": "strict",
+            "returned_hit_count": 0,
+            "strict_hit_count": 0
+          },
+          "sessions": [],
+          "status": "NO_SIGNAL",
+          "unavailable_shards": []
+        },
+        "unavailable_shards": []
+      },
+      "query": "authority reconciliation"
+    },
+    {
+      "authority_expectation": "alias reconciliation may add a candidate but must preserve the original RAG mention and provenance",
+      "baseline_disposition": "GAP_CANDIDATE_FOR_RECONCILIATION",
+      "checks": {
+        "all_shards_available": true,
+        "auto_matches_bounded_policy": true,
+        "auto_remains_no_signal": true,
+        "plugin_recall_matches_cli_recall": true,
+        "plugin_strict_matches_cli_strict": true,
+        "recall_is_empty": true,
+        "receipt_matches_policy": true,
+        "strict_is_empty": true
+      },
+      "class": "CLEAN_MISS_UNKNOWN",
+      "cli": {
+        "recall_result_count": 0,
+        "recall_sessions": [],
+        "recall_target_rank": null,
+        "strict_result_count": 0,
+        "strict_sessions": [],
+        "strict_target_rank": null
+      },
+      "id": "clean-miss-unknown",
+      "intended_session": "alias-target",
+      "pass": true,
+      "plugin": {
+        "auto": {
+          "dispatch_modes": [
+            "strict",
+            "recall"
+          ],
+          "identities": [],
+          "queried_shards": [
+            "fixture-0001"
+          ],
+          "retrieval": {
+            "candidate_count": 0,
+            "effective_mode": "recall",
+            "requested_mode": "auto",
+            "returned_hit_count": 0,
+            "strict_hit_count": 0
+          },
+          "sessions": [],
+          "status": "NO_SIGNAL",
+          "unavailable_shards": []
+        },
+        "recall": {
+          "dispatch_modes": [
+            "recall"
+          ],
+          "identities": [],
+          "queried_shards": [
+            "fixture-0001"
+          ],
+          "retrieval": {
+            "candidate_count": 0,
+            "effective_mode": "recall",
+            "requested_mode": "recall",
+            "returned_hit_count": 0,
+            "strict_hit_count": null
+          },
+          "sessions": [],
+          "status": "NO_SIGNAL",
+          "unavailable_shards": []
+        },
+        "strict": {
+          "dispatch_modes": [
+            "strict"
+          ],
+          "identities": [],
+          "queried_shards": [
+            "fixture-0001"
+          ],
+          "retrieval": {
+            "candidate_count": 0,
+            "effective_mode": "strict",
+            "requested_mode": "strict",
+            "returned_hit_count": 0,
+            "strict_hit_count": 0
+          },
+          "sessions": [],
+          "status": "NO_SIGNAL",
+          "unavailable_shards": []
+        },
+        "unavailable_shards": []
+      },
+      "query": "retrieval augmented generation"
+    }
+  ],
+  "comparison": "local CLI search_corpus strict/recall vs plugin-facing MCP router strict/recall/auto",
+  "overall": "PASS",
+  "pass_count": 4,
+  "schema": "theseus.session-search-plugin-retrieval-policy-usability.v0"
+}
