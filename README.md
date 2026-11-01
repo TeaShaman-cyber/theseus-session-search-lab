@@ -162,11 +162,19 @@ Each corpus search hit carries session identity, title, coverage state, message 
 python3 -m session_search.search "previous decision" --session <stable-session-id>
 ```
 
-Verify durable membership, immutable artifact bytes, relational/FTS invariants, and coverage summaries:
+Verify full derivation from durable accepted evidence, including immutable artifact bytes and semantic projection equivalence:
 
 ```bash
 python3 -m session_search.corpus verify
 ```
+
+For normal refresh completion when a full derivation audit is disproportionate, run the explicitly weaker projection-consistency layer:
+
+```bash
+python3 -m session_search.corpus verify --mode projection --json
+```
+
+A successful projection check reports `PROJECTION_CONSISTENT`, `verification_level=projection_consistency`, and `derivation_verified=false`. It checks accepted-ledger/projection membership and ledger digests, artifact routing/session/page consistency, and searchable-message/FTS row coverage. It deliberately does **not** re-hash accepted artifact blobs, run the full SQLite/semantic derivation audit, or prove that projection contents derive from accepted bytes. Use the default full `verify` path for that stronger claim.
 
 Inspect the observed corpus watermark without pretending the archive is current with any live provider:
 
@@ -220,7 +228,7 @@ Use this checklist whenever a newer source export or capture should become the c
 - [ ] **Check whether work is actually pending.** When using an inbox, run `python3 -m session_search.refresh_readiness --inbox <path> --corpus <active-or-candidate-corpus> --json`. Treat `NO_NEW_ARTIFACTS` only as local accepted-membership evidence, not live-provider freshness.
 - [ ] **Preserve the rollback target before mutation or promotion.** Record the currently served corpus target and its observable identity/generation. Do not destroy or overwrite it while preparing the replacement.
 - [ ] **Build or update a versioned candidate separately from the stable runtime binding.** Ingest through the repository adapter/handoff paths; do not edit accepted-ledger entries or SQLite rows manually. Record the resulting accepted-artifact count, projection identity, and relevant adapter/export receipt.
-- [ ] **Run candidate checks and name the verification level honestly.** Inspect `corpus status`; run `python3 -m session_search.corpus verify --corpus <candidate>` when the full derivation claim is required and executable. If full verification is blocked or fails for an execution/resource reason, record the exact weaker checks that did pass and do not label the candidate `VERIFIED`.
+- [ ] **Run candidate checks and name the verification level honestly.** Inspect `corpus status`; use `python3 -m session_search.corpus verify --mode projection --corpus <candidate> --json` for the bounded ledger/projection/routing/search consistency claim, and run default `verify` when full artifact-byte derivation is required and executable. `PROJECTION_CONSISTENT` is not `VERIFIED`. If full verification is blocked or fails for an execution/resource reason, record the exact weaker checks that did pass and do not upgrade the claim.
 - [ ] **Promote by changing only the stable runtime binding.** Prefer an atomic pointer/binding switch from the old versioned corpus to the candidate. Read back the resolved target plus bounded identity/count postconditions after the switch. Keep the previous target for rollback.
 - [ ] **Keep runtime configuration bound to the stable pointer, not to a versioned corpus directory.** A deployment-local `runtime.env`, service unit, container configuration, wrapper, or scheduler must resolve the same stable binding that was promoted. Search for stale hard-coded corpus paths before declaring the refresh complete.
 - [ ] **Refresh the bound implementation/runtime helper when repository main changed.** Bring the clean runtime implementation checkout/ref to the intended current revision and, where deployment helpers are projected from another repository, rematerialize or verify that projection through its canonical procedure. Do not equate an arbitrary checkout HEAD with the selected canonical ref.
