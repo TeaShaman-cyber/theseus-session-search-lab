@@ -128,3 +128,60 @@ test('router times out a stalled shard and preserves healthy hits as PARTIAL', a
   assert.deepEqual(result.hits.map((x) => x.shard_id), ['chatgpt-0001']);
   assert.deepEqual(result.unavailable_shards, [{ shard_id: 'hermes-0001', reason: 'TIMEOUT' }]);
 });
+
+
+test('router auto mode escalates NO_SIGNAL strict search to recall and returns retrieval receipt', async () => {
+  const catalog = [
+    { shard_id: 'chatgpt-0001', provider: 'chatgpt', generation_id: 'a'.repeat(64), state: 'READY', url: 'https://a.test/search' },
+  ];
+  const seenModes = [];
+  const fakeFetch = async (_url, init) => {
+    const request = JSON.parse(init.body);
+    seenModes.push(request.search_mode);
+    if (request.search_mode === 'strict') {
+      return Response.json({ status: 'NO_SIGNAL', generation_id: 'a'.repeat(64), hits: [] });
+    }
+    return Response.json({
+      status: 'FOUND', generation_id: 'a'.repeat(64),
+      hits: [{ session_id: 'ca', message_id: 'c1', ordinal: 1, text: 'recalled' }],
+    });
+  };
+  const handler = makeRouterHandler({ catalog, fetchImpl: fakeFetch });
+  const response = await handler.fetch(new Request('https://router.test/search', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ query: 'architecture plugin CLI completeness', search_mode: 'auto', limit: 8 }),
+  }));
+  const result = await response.json();
+  assert.equal(result.status, 'FOUND');
+  assert.deepEqual(seenModes, ['strict', 'recall']);
+  assert.deepEqual(result.retrieval, {
+    requested_mode: 'auto',
+    effective_mode: 'recall',
+    strict_hit_count: 0,
+    candidate_count: 1,
+    returned_hit_count: 1,
+  });
+});
+
+test('router auto mode does not hide PARTIAL by escalating', async () => {
+  const catalog = [
+    { shard_id: 'chatgpt-0001', provider: 'chatgpt', generation_id: 'a'.repeat(64), state: 'READY', url: 'https://a.test/search' },
+    { shard_id: 'chatgpt-0002', provider: 'chatgpt', generation_id: 'b'.repeat(64), state: 'READY', url: 'https://b.test/search' },
+  ];
+  const seenModes = [];
+  const fakeFetch = async (url, init) => {
+    const request = JSON.parse(init.body);
+    seenModes.push(request.search_mode);
+    if (String(url).includes('b.test')) return new Response('bad', { status: 503 });
+    return Response.json({ status: 'NO_SIGNAL', generation_id: 'a'.repeat(64), hits: [] });
+  };
+  const handler = makeRouterHandler({ catalog, fetchImpl: fakeFetch });
+  const response = await handler.fetch(new Request('https://router.test/search', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ query: 'needle', search_mode: 'auto' }),
+  }));
+  const result = await response.json();
+  assert.equal(result.status, 'PARTIAL');
+  assert.deepEqual(seenModes, ['strict', 'strict']);
+  assert.equal(result.retrieval.effective_mode, 'strict');
+});

@@ -1,4 +1,5 @@
 const VALID_SCOPES = new Set(['dialogue', 'evidence', 'trace']);
+const VALID_SEARCH_MODES = new Set(['strict', 'recall', 'auto']);
 
 function validateSearchInput(input = {}) {
   const query = typeof input.query === 'string' ? input.query.trim() : '';
@@ -7,6 +8,10 @@ function validateSearchInput(input = {}) {
   if (!scopes.every((scope) => VALID_SCOPES.has(scope))) throw new Error('SCOPES_OUT_OF_BOUNDS');
   const limit = input.limit ?? 8;
   if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error('LIMIT_OUT_OF_BOUNDS');
+  const searchMode = input.search_mode ?? 'strict';
+  if (typeof searchMode !== 'string' || !VALID_SEARCH_MODES.has(searchMode)) {
+    throw new Error('SEARCH_MODE_OUT_OF_BOUNDS');
+  }
 
   const sessionId = input.session_id ?? null;
   if (sessionId !== null && (typeof sessionId !== 'string' || !sessionId || sessionId.length > 512)) {
@@ -29,6 +34,7 @@ function validateSearchInput(input = {}) {
     query,
     scopes,
     limit,
+    search_mode: searchMode,
     session_id: sessionId,
     from_time: fromTime,
     to_time: toTime,
@@ -95,10 +101,12 @@ export function mergeShardOutcomes(selected, outcomes, limit) {
     String(a.hit.message_id ?? '').localeCompare(String(b.hit.message_id ?? ''))
   );
   unavailable.sort((a, b) => a.shard_id.localeCompare(b.shard_id));
+  const candidateCount = ranked.length;
   const hits = ranked.slice(0, limit).map((item) => item.hit);
   return {
     status: unavailable.length ? 'PARTIAL' : hits.length ? 'FOUND' : 'NO_SIGNAL',
     hits,
+    candidate_count: candidateCount,
     queried_shards: queried,
     unavailable_shards: unavailable,
   };
@@ -137,6 +145,7 @@ export async function handleMcpRequest(request, searchFn) {
               query: { type: 'string', minLength: 1, maxLength: 512 },
               scopes: { type: 'array', items: { enum: ['dialogue', 'evidence', 'trace'] }, minItems: 1 },
               limit: { type: 'integer', minimum: 1, maximum: 100, default: 8 },
+              search_mode: { type: 'string', enum: ['strict', 'recall', 'auto'], default: 'strict' },
               provider: { type: 'string' },
               session_id: { type: 'string' },
               from_time: { type: 'number' },

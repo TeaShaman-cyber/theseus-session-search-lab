@@ -14,7 +14,7 @@ test('shard request becomes one bounded SQL function call', () => {
     to_time: 2000,
   });
   assert.match(call.text, /session_search\.search/);
-  assert.deepEqual(call.values, ['copper compass', ['dialogue'], 8, 'session-a', 1000, 2000]);
+  assert.deepEqual(call.values, ['copper compass', ['dialogue'], 8, 'session-a', 1000, 2000, 'strict']);
 });
 
 test('router scopes by provider before fanout', () => {
@@ -83,5 +83,36 @@ test('router rejects invalid routing filters before shard selection', () => {
   assert.throws(
     () => validateSearchInput({ query: 'needle', from_time: 70, to_time: 20 }),
     /TIME_BOUNDS_INVERTED/,
+  );
+});
+
+
+test('router retrieval policy defaults to strict and validates explicit modes', () => {
+  assert.equal(validateSearchInput({ query: 'needle' }).search_mode, 'strict');
+  assert.equal(validateSearchInput({ query: 'needle', search_mode: 'recall' }).search_mode, 'recall');
+  assert.equal(validateSearchInput({ query: 'needle', search_mode: 'auto' }).search_mode, 'auto');
+  assert.throws(
+    () => validateSearchInput({ query: 'needle', search_mode: 'semantic' }),
+    /SEARCH_MODE_OUT_OF_BOUNDS/,
+  );
+});
+
+test('MCP advertises strict recall auto retrieval policy', async () => {
+  const listed = await handleMcpRequest({ jsonrpc: '2.0', id: 21, method: 'tools/list', params: {} }, async () => ({}));
+  const schema = listed.result.tools[0].inputSchema.properties.search_mode;
+  assert.deepEqual(schema.enum, ['strict', 'recall', 'auto']);
+  assert.equal(schema.default, 'strict');
+});
+
+test('shard bounded SQL call carries strict or recall mode through versioned search_v2', () => {
+  const strict = buildSearchCall({ query: 'copper compass', search_mode: 'strict' });
+  assert.match(strict.text, /session_search\.search_v2/);
+  assert.equal(strict.values.at(-1), 'strict');
+
+  const recall = buildSearchCall({ query: 'copper compass', search_mode: 'recall' });
+  assert.equal(recall.values.at(-1), 'recall');
+  assert.throws(
+    () => buildSearchCall({ query: 'copper compass', search_mode: 'auto' }),
+    /SEARCH_MODE_OUT_OF_BOUNDS/,
   );
 });
