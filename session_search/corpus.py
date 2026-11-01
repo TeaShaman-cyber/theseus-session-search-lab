@@ -13,6 +13,7 @@ from .corpus_store import (
     rebuild_corpus,
     resolve_corpus_root,
     verify_corpus,
+    verify_projection_consistency,
 )
 
 
@@ -30,6 +31,7 @@ def main(argv: list[str] | None = None) -> int:
     _add_common_corpus_args(ingest)
 
     verify = sub.add_parser("verify", help="verify accepted artifacts and the current projection")
+    verify.add_argument("--mode", choices=("full", "projection"), default="full")
     _add_common_corpus_args(verify)
 
     rebuild = sub.add_parser("rebuild", help="rebuild projection from accepted artifact membership")
@@ -48,8 +50,12 @@ def main(argv: list[str] | None = None) -> int:
             result = ingest_many(args.captures, root)
             exit_code = 0 if result.get("status") == "COMPLETE" else 1
         elif args.command == "verify":
-            result = verify_corpus(root)
-            exit_code = 0 if result.get("status") == "VERIFIED" else 1
+            if args.mode == "projection":
+                result = verify_projection_consistency(root)
+                exit_code = 0 if result.get("status") == "PROJECTION_CONSISTENT" else 1
+            else:
+                result = verify_corpus(root)
+                exit_code = 0 if result.get("status") == "VERIFIED" else 1
         elif args.command == "rebuild":
             result = rebuild_corpus(root)
             exit_code = 0 if result.get("status") == "REBUILT" else 1

@@ -1932,6 +1932,148 @@ def _semantic_projection_equal(left_db: pathlib.Path, right_db: pathlib.Path) ->
         right.close()
 
 
+def verify_projection_consistency(corpus_root: pathlib.Path) -> dict:
+    """Verify cheap ledger/projection/routing/search consistency without blob derivation."""
+    paths = CorpusPaths.from_root(pathlib.Path(corpus_root))
+    paths.ensure_layout()
+    ledger = read_accepted_ledger(paths)
+    conn = _open_existing_projection(paths.db)
+    if conn is None:
+        if ledger:
+            return {
+                "status": "RECONCILIATION_REQUIRED",
+                "reason": "projection missing",
+                "verification_level": "projection_consistency",
+                "derivation_verified": False,
+                "artifact_bytes_verified": False,
+            }
+        return {
+            "status": "RECONCILIATION_REQUIRED",
+            "reason": "corpus projection not initialized",
+            "verification_level": "projection_consistency",
+            "derivation_verified": False,
+            "artifact_bytes_verified": False,
+        }
+
+    base = {
+        "verification_level": "projection_consistency",
+        "derivation_verified": False,
+        "artifact_bytes_verified": False,
+    }
+    try:
+        try:
+            schema_row = conn.execute(
+                "SELECT value FROM corpus_meta WHERE key='schema_version'"
+            ).fetchone()
+        except sqlite3.Error as exc:
+            return {
+                **base,
+                "status": "RECONCILIATION_REQUIRED",
+                "reason": f"projection schema unreadable: {exc}",
+            }
+        if schema_row is None or schema_row[0] != CORPUS_SCHEMA_VERSION:
+            return {**base, "status": "RECONCILIATION_REQUIRED", "reason": "projection schema mismatch"}
+
+        db_rows = conn.execute("SELECT * FROM artifacts ORDER BY sha256").fetchall()
+        db_map = {str(row["sha256"]): row for row in db_rows}
+        if set(db_map) != set(ledger):
+            return {
+                **base,
+                "status": "RECONCILIATION_REQUIRED",
+                "reason": "accepted ledger/projection membership disagreement",
+                "ledger_members": len(ledger),
+                "projection_members": len(db_map),
+            }
+
+        try:
+            route_rows = conn.execute(
+                """
+                SELECT a.sha256,a.session_id AS artifact_session_id,
+                       r.accepted_session_id,r.projected_session_id,r.route_state,r.route_version
+                FROM artifacts a
+                LEFT JOIN artifact_routes r ON r.artifact_id=a.artifact_id
+                ORDER BY a.sha256
+                """
+            ).fetchall()
+        except sqlite3.Error:
+            return {**base, "status": "RECONCILIATION_REQUIRED", "reason": "artifact routing projection missing"}
+        if len(route_rows) != len(db_rows):
+            return {**base, "status": "RECONCILIATION_REQUIRED", "reason": "artifact routing membership disagreement"}
+
+        session_ids = {str(row[0]) for row in conn.execute("SELECT session_id FROM sessions")}
+        misplaced_pages = {
+            str(row[0])
+            for row in conn.execute(
+                """
+                SELECT DISTINCT a.sha256
+                FROM payload_pages p
+                JOIN artifacts a ON a.artifact_id=p.artifact_id
+                JOIN artifact_routes r ON r.artifact_id=a.artifact_id
+                WHERE p.session_id<>r.projected_session_id
+                """
+            )
+        }
+        for route_row in route_rows:
+            sha = str(route_row["sha256"])
+            if route_row["accepted_session_id"] is None:
+                return {**base, "status": "RECONCILIATION_REQUIRED", "reason": "artifact route missing", "artifact_sha256": sha}
+            if route_row["accepted_session_id"] != route_row["artifact_session_id"]:
+                return {**base, "status": "RECONCILIATION_REQUIRED", "reason": "artifact route source identity mismatch", "artifact_sha256": sha}
+            if route_row["route_version"] != ROUTING_VERSION:
+                return {**base, "status": "RECONCILIATION_REQUIRED", "reason": "artifact route version mismatch", "artifact_sha256": sha}
+            if route_row["route_state"] not in {"DIRECT", "BRANCH_MATCH", "UNRESOLVED"}:
+                return {**base, "status": "RECONCILIATION_REQUIRED", "reason": "artifact route state invalid", "artifact_sha256": sha}
+            if str(route_row["projected_session_id"]) not in session_ids:
+                return {**base, "status": "RECONCILIATION_REQUIRED", "reason": "artifact projected session missing", "artifact_sha256": sha}
+            if sha in misplaced_pages:
+                return {**base, "status": "RECONCILIATION_REQUIRED", "reason": "artifact page route mismatch", "artifact_sha256": sha}
+
+        for sha, entry in ledger.items():
+            row = db_map[sha]
+            if row["ledger_sha256"] != accepted_entry_digest(entry):
+                return {**base, "status": "RECONCILIATION_REQUIRED", "reason": "ledger digest mismatch", "artifact_sha256": sha}
+            if str(row["session_id"]) != str(entry["session_id"]):
+                return {**base, "status": "RECONCILIATION_REQUIRED", "reason": "session identity mismatch", "artifact_sha256": sha}
+            if int(row["size_bytes"]) != int(entry["size_bytes"]):
+                return {**base, "status": "RECONCILIATION_REQUIRED", "reason": "artifact size metadata mismatch", "artifact_sha256": sha}
+            if str(row["accepted_at"]) != str(entry["accepted_at"]):
+                return {**base, "status": "RECONCILIATION_REQUIRED", "reason": "accepted timestamp mismatch", "artifact_sha256": sha}
+
+        searchable = int(
+            conn.execute(
+                "SELECT count(*) FROM messages WHERE text<>'' AND search_class<>'hidden'"
+            ).fetchone()[0]
+        )
+        fts_rows = int(conn.execute("SELECT count(*) FROM messages_fts").fetchone()[0])
+        if searchable != fts_rows:
+            return {
+                **base,
+                "status": "RECONCILIATION_REQUIRED",
+                "reason": "fts row coverage mismatch",
+                "searchable_messages": searchable,
+                "fts_rows": fts_rows,
+            }
+        return {
+            **base,
+            "status": "PROJECTION_CONSISTENT",
+            "sessions": len(session_ids),
+            "artifacts": len(db_rows),
+            "messages": int(conn.execute("SELECT count(*) FROM messages").fetchone()[0]),
+            "payload_pages": int(conn.execute("SELECT count(*) FROM payload_pages").fetchone()[0]),
+            "message_sources": int(conn.execute("SELECT count(*) FROM message_sources").fetchone()[0]),
+            "searchable_messages": searchable,
+            "fts_rows": fts_rows,
+        }
+    except sqlite3.Error as exc:
+        return {
+            **base,
+            "status": "RECONCILIATION_REQUIRED",
+            "reason": f"projection unreadable: {exc}",
+        }
+    finally:
+        conn.close()
+
+
 def verify_corpus(corpus_root: pathlib.Path) -> dict:
     paths = CorpusPaths.from_root(pathlib.Path(corpus_root))
     paths.ensure_layout()
