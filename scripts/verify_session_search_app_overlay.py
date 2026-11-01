@@ -33,6 +33,13 @@ for marker in (
     "unavailable_shards",
     "live shard catalog",
     "historical #64",
+    "search_mode",
+    "strict",
+    "recall",
+    "auto",
+    "requested_mode",
+    "effective_mode",
+    "strict_hit_count",
 ):
     if marker not in skill:
         raise SystemExit(f"SESSION_SEARCH_APP_OVERLAY_FAIL SKILL marker: {marker}")
@@ -43,6 +50,9 @@ for marker in (
     "TheseusSessionSearch.session_search",
     "historical #64",
     "live shard catalog",
+    "search_mode",
+    "auto",
+    "retrieval",
 ):
     if marker not in gateway:
         raise SystemExit(f"SESSION_SEARCH_APP_OVERLAY_FAIL gateway marker: {marker}")

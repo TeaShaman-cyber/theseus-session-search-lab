@@ -17,6 +17,8 @@ The Arcade gateway itself exposes the Session Search domain capability. The Chat
 
 The invariant is that the existing App-backed host can discover and execute `TheseusSessionSearch.session_search` through the Arcade surface while preserving web/mobile compatibility.
 
+For retrieval-policy capable deployments, fresh discovery must expose `search_mode` with `strict`, `recall`, and `auto` (default `strict`). `auto` must return a `retrieval` receipt that distinguishes requested from effective mode; a strict miss may escalate to recall, while `PARTIAL` must remain visible and must not be hidden by retry.
+
 ## Current acceptance
 
 Gateway/control-plane existence is not host acceptance.
@@ -27,7 +29,8 @@ A fresh host acceptance must:
 3. execute a bounded live probe;
 4. receive a terminal `FOUND`, `NO_SIGNAL`, or `PARTIAL` result with explicit `queried_shards` and `unavailable_shards`;
 5. preserve returned shard/generation provenance;
-6. require no unavailable shards before declaring the serving path healthy.
+6. require no unavailable shards before declaring the serving path healthy;
+7. for an `auto` acceptance probe, require a `retrieval` receipt with `requested_mode`, `effective_mode`, and `strict_hit_count` consistent with the observed bounded policy.
 
 The **live shard catalog** is runtime evidence and may evolve. Compare observed provenance with current deployment/project evidence when shard topology matters.
 
