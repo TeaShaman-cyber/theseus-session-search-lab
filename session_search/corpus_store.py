@@ -1608,6 +1608,23 @@ def _verify_projection(
             return {"status": "RECONCILIATION_REQUIRED", "reason": "artifact routing projection missing"}
         if len(route_rows) != len(db_rows):
             return {"status": "RECONCILIATION_REQUIRED", "reason": "artifact routing membership disagreement"}
+        # Set-based route membership checks avoid two extra SQL reads per artifact.
+        # Preserve the per-row failure classification and ordering below.
+        session_ids = {
+            str(row[0]) for row in conn.execute("SELECT session_id FROM sessions")
+        }
+        misplaced_pages = {
+            str(row[0])
+            for row in conn.execute(
+                """
+                SELECT DISTINCT a.sha256
+                FROM payload_pages p
+                JOIN artifacts a ON a.artifact_id=p.artifact_id
+                JOIN artifact_routes r ON r.artifact_id=a.artifact_id
+                WHERE p.session_id<>r.projected_session_id
+                """
+            )
+        }
         for route_row in route_rows:
             if route_row["accepted_session_id"] is None:
                 return {"status": "RECONCILIATION_REQUIRED", "reason": "artifact route missing", "artifact_sha256": route_row["sha256"]}
@@ -1617,21 +1634,9 @@ def _verify_projection(
                 return {"status": "RECONCILIATION_REQUIRED", "reason": "artifact route version mismatch", "artifact_sha256": route_row["sha256"]}
             if route_row["route_state"] not in {"DIRECT", "BRANCH_MATCH", "UNRESOLVED"}:
                 return {"status": "RECONCILIATION_REQUIRED", "reason": "artifact route state invalid", "artifact_sha256": route_row["sha256"]}
-            session_exists = conn.execute(
-                "SELECT count(*) FROM sessions WHERE session_id=?",
-                (route_row["projected_session_id"],),
-            ).fetchone()[0]
-            if int(session_exists) != 1:
+            if str(route_row["projected_session_id"]) not in session_ids:
                 return {"status": "RECONCILIATION_REQUIRED", "reason": "artifact projected session missing", "artifact_sha256": route_row["sha256"]}
-            page_mismatch = conn.execute(
-                """
-                SELECT count(*) FROM payload_pages p
-                JOIN artifacts a ON a.artifact_id=p.artifact_id
-                WHERE a.sha256=? AND p.session_id<>?
-                """,
-                (route_row["sha256"], route_row["projected_session_id"]),
-            ).fetchone()[0]
-            if int(page_mismatch):
+            if str(route_row["sha256"]) in misplaced_pages:
                 return {"status": "RECONCILIATION_REQUIRED", "reason": "artifact page route mismatch", "artifact_sha256": route_row["sha256"]}
         for sha, entry in ledger.items():
             row = db_map[sha]
