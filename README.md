@@ -263,7 +263,7 @@ The adapter treats the DeepSeek `parent`/`children` graph as ordering authority,
 
 ### Official ChatGPT account export adapter
 
-Official ChatGPT account-export ZIPs can be transcoded into portable Session Search artifacts without flattening provider branches. The adapter accepts either `conversations.json` or numbered `conversations-NNN.json` shards, reconstructs child edges from each node's authoritative `parent` link, validates a single rooted acyclic graph, and materializes one root-to-leaf artifact for every observable terminal branch.
+Official ChatGPT account-export ZIPs can be transcoded into portable Session Search artifacts without flattening provider branches. Exact empty `{}` array entries are skipped with an explicit `empty_record_count` in the ingest result; a snapshot with no valid conversations still fails closed, as do nonempty records without identity. The adapter accepts either `conversations.json` or numbered `conversations-NNN.json` shards, reconstructs child edges from each node's authoritative `parent` link, validates a single rooted acyclic graph, and materializes one root-to-leaf artifact for every observable terminal branch.
 
 ```bash
 python3 -m session_search.chatgpt_export chatgpt-export.zip --output-dir ./chatgpt-artifacts

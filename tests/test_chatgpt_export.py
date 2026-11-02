@@ -11,6 +11,53 @@ from session_search.artifact import normalize_artifact
 
 
 class ChatGPTExportAdapterTest(unittest.TestCase):
+    def test_exact_empty_export_item_is_counted_and_skipped(self):
+        from session_search.chatgpt_export import ingest_export
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            source = self.write_export(
+                root, [self.conversation(cid="one"), {}, self.conversation(cid="two")], split=True
+            )
+            result = ingest_export(source, root / "corpus")
+            self.assertEqual(result["status"], "COMPLETE")
+            self.assertEqual(result["conversation_count"], 2)
+            self.assertEqual(result["branch_count"], 4)
+            self.assertEqual(result["artifact_count"], 4)
+            self.assertEqual(result["empty_record_count"], 1)
+            self.assertEqual(result["source_export_sha256"], hashlib.sha256(source.read_bytes()).hexdigest())
+
+    def test_all_empty_export_records_are_not_accepted_as_a_snapshot(self):
+        from session_search.chatgpt_export import materialize_export
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            source = self.write_export(root, [{}, {}], split=True)
+            with self.assertRaisesRegex(ValueError, "no valid conversations"):
+                materialize_export(source, root / "artifacts")
+
+    def test_empty_record_count_is_preserved_without_ijson(self):
+        import sys
+        from session_search.chatgpt_export import ingest_export
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            source = self.write_export(root, [{}, self.conversation(cid="stdlib")])
+            with mock.patch.dict(sys.modules, {"ijson": None}):
+                result = ingest_export(source, root / "corpus")
+            self.assertEqual(result["status"], "COMPLETE")
+            self.assertEqual(result["empty_record_count"], 1)
+            self.assertEqual(result["conversation_count"], 1)
+
+    def test_nonempty_record_missing_conversation_identity_still_fails_closed(self):
+        from session_search.chatgpt_export import materialize_export
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            source = self.write_export(root, [self.conversation(cid="good"), {"title": "incomplete"}])
+            with self.assertRaisesRegex(ValueError, "conversation id missing"):
+                materialize_export(source, root / "artifacts")
+
     def message(self, mid, role, content_type, parts, create_time):
         return {
             "id": mid,
