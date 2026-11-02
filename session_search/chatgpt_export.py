@@ -30,6 +30,7 @@ class _MaterializedSnapshot:
     conversation_count: int
     branch_count: int
     parser_mode: str
+    empty_record_count: int
 
 
 def _stable_json_bytes(obj: object) -> bytes:
@@ -595,6 +596,7 @@ def _materialize_export_snapshot(source: pathlib.Path, output_dir: pathlib.Path)
     seen_session_ids: set[str] = set()
     conversation_count = 0
     branch_count = 0
+    empty_record_count = 0
     parser_modes: set[str] = set()
 
     staging_root = pathlib.Path(tempfile.mkdtemp(prefix="session-search-chatgpt-stage-"))
@@ -610,6 +612,9 @@ def _materialize_export_snapshot(source: pathlib.Path, output_dir: pathlib.Path)
                 parser_mode, conversations = _iter_member_conversations(zf, member)
                 parser_modes.add(parser_mode)
                 for conversation in conversations:
+                    if conversation == {}:
+                        empty_record_count += 1
+                        continue
                     conversation_count += 1
                     source_id = _source_conversation_id(conversation)
                     if source_id in seen_source_ids:
@@ -649,6 +654,8 @@ def _materialize_export_snapshot(source: pathlib.Path, output_dir: pathlib.Path)
                         pending.append((target, stage_path))
                         outputs.append(target)
 
+        if conversation_count == 0:
+            raise ValueError("BLOCKED_UNSUPPORTED_CHATGPT_EXPORT: no valid conversations")
         output_dir.mkdir(parents=True, exist_ok=True)
         for target, stage_path in pending:
             _publish_content_addressed(target, stage_path.read_bytes())
@@ -656,7 +663,7 @@ def _materialize_export_snapshot(source: pathlib.Path, output_dir: pathlib.Path)
         import shutil
         shutil.rmtree(staging_root, ignore_errors=True)
     parser_mode = "+".join(sorted(parser_modes)) or "UNKNOWN"
-    return _MaterializedSnapshot(tuple(outputs), parent_sha, conversation_count, branch_count, parser_mode)
+    return _MaterializedSnapshot(tuple(outputs), parent_sha, conversation_count, branch_count, parser_mode, empty_record_count)
 
 
 def materialize_export(source: pathlib.Path, output_dir: pathlib.Path) -> list[pathlib.Path]:
@@ -682,6 +689,7 @@ def ingest_export(source: pathlib.Path, corpus_root: pathlib.Path) -> dict:
         "source_export_sha256": snapshot.source_export_sha256,
         "snapshot_scope": SNAPSHOT_SCOPE,
         "parser_mode": snapshot.parser_mode,
+        "empty_record_count": snapshot.empty_record_count,
     }
 
 
