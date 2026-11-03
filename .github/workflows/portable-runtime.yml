@@ -228,7 +228,7 @@ jobs:
           search = json.loads(pathlib.Path('search.json').read_text())
           assert ingest['status'] == 'COMPLETE'
           assert verify['status'] == 'VERIFIED'
-          assert status['projection_status'] == 'VERIFIED'
+          assert status['projection_status'] == 'PROJECTION_CONSISTENT'
           assert status['currentness'] == 'UNKNOWN_WITHOUT_SOURCE_WATERMARK'
           assert len(search) == 1 and search[0]['text'] == 'portable-runtime-canary'
           receipt = {
@@ -238,7 +238,7 @@ jobs:
               'postconditions': {
                   'ingest': 'COMPLETE',
                   'verify': 'VERIFIED',
-                  'projection': 'VERIFIED',
+                  'projection': 'PROJECTION_CONSISTENT',
                   'currentness': 'UNKNOWN_WITHOUT_SOURCE_WATERMARK',
                   'search_canary': 'PASS',
               },
