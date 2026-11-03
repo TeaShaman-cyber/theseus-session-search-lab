@@ -948,7 +948,7 @@ class CorpusStatusTest(unittest.TestCase):
 
             status = corpus_status(corpus)
             self.assertEqual(status["status"], "OBSERVED")
-            self.assertEqual(status["projection_status"], "VERIFIED")
+            self.assertEqual(status["projection_status"], "PROJECTION_CONSISTENT")
             self.assertEqual(status["currentness"], "UNKNOWN_WITHOUT_SOURCE_WATERMARK")
             self.assertEqual(status["accepted_artifacts"], 2)
             self.assertEqual(status["sessions"], 2)
@@ -963,6 +963,28 @@ class CorpusStatusTest(unittest.TestCase):
             })
             self.assertIsNotNone(status["latest_accepted_at"])
             self.assertEqual(status["latest_observed_message_time"], expected_latest)
+
+    def test_status_uses_projection_consistency_without_hashing_accepted_blobs(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus"
+            capture = _write_capture(
+                root / "capture.zip",
+                "status-session",
+                [_message("m1", "status watermark", 100.0)],
+                complete=True,
+            )
+            ingest_artifact(capture, corpus)
+            paths = CorpusPaths.from_root(corpus)
+            sha = next(iter(read_accepted_ledger(paths)))
+            blob = paths.artifacts_sha256 / f"{sha}.zip"
+            blob.write_bytes(blob.read_bytes() + b"tamper")
+
+            status = corpus_status(corpus)
+
+            self.assertEqual(status["projection_status"], "PROJECTION_CONSISTENT")
+            self.assertEqual(status["sessions"], 1)
+            self.assertEqual(status["messages"], 1)
 
     def test_status_empty_uninitialized_corpus_is_observed_but_currentness_unknown(self):
         with tempfile.TemporaryDirectory() as td:

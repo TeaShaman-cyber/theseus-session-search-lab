@@ -1587,9 +1587,9 @@ def corpus_status(corpus_root: pathlib.Path) -> dict:
             "messages": 0,
         }
 
-    verification = verify_corpus(paths.root)
+    verification = verify_projection_consistency(paths.root)
     base["projection_status"] = str(verification.get("status") or "UNKNOWN")
-    if verification.get("status") != "VERIFIED":
+    if verification.get("status") != "PROJECTION_CONSISTENT":
         return {
             **base,
             "sessions": None,
@@ -1616,7 +1616,7 @@ def corpus_status(corpus_root: pathlib.Path) -> dict:
         ).fetchone()[0]
         return {
             **base,
-            "projection_status": "VERIFIED",
+            "projection_status": "PROJECTION_CONSISTENT",
             "sessions": int(verification.get("sessions", 0)),
             "messages": int(verification.get("messages", 0)),
             "coverage_states": coverage_states,
