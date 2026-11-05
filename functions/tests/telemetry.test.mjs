@@ -4,8 +4,41 @@ import assert from 'node:assert/strict';
 import { InMemoryMetricExporter, AggregationTemporality } from '@opentelemetry/sdk-metrics';
 import { InMemorySpanExporter } from '@opentelemetry/sdk-trace';
 import { createNoopTelemetry, createTelemetryRuntime } from '../telemetry.mjs';
-import { makeRouterHandler } from '../router/handler.mjs';
-import { makeShardHandler } from '../shard/handler.mjs';
+import { makeRouterHandler as makeRouterHandlerImpl } from '../router/handler.mjs';
+import { makeShardHandler as makeShardHandlerImpl } from '../shard/handler.mjs';
+
+
+const ROUTER_TOKEN = 'router-test-token';
+const SHARD_TOKEN = 'shard-test-token';
+
+function withBearer(handler, token) {
+  return {
+    async fetch(request) {
+      const headers = new Headers(request.headers);
+      headers.set('authorization', 'Bearer ' + token);
+      return handler.fetch(new Request(request, { headers }));
+    },
+  };
+}
+
+function makeShardHandler(executeSearch, options = {}) {
+  return withBearer(
+    makeShardHandlerImpl(executeSearch, { ...options, authToken: SHARD_TOKEN }),
+    SHARD_TOKEN,
+  );
+}
+
+function makeRouterHandler(options) {
+  return withBearer(
+    makeRouterHandlerImpl({
+      ...options,
+      authToken: ROUTER_TOKEN,
+      shardAuthToken: SHARD_TOKEN,
+    }),
+    ROUTER_TOKEN,
+  );
+}
+
 
 function runtime() {
   const spanExporter = new InMemorySpanExporter();

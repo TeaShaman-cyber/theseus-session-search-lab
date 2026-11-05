@@ -82,6 +82,23 @@ Host execution is VERIFIED. In the selected App-backed ChatGPT plugin:
 4. `unavailable_shards=[]`;
 5. the same host smoke passed again after the skill overlay update.
 
+## HTTP authentication boundary
+
+The public serving endpoints are fail-closed even when reached outside Arcade:
+
+- router `POST /search` and `POST /mcp` require `SESSION_SEARCH_ROUTER_AUTH_TOKEN`;
+- router-to-shard fan-out uses the separate `SESSION_SEARCH_SHARD_AUTH_TOKEN`;
+- shard `POST /search` requires that shard token before query execution;
+- `GET /health` remains unauthenticated and returns no corpus content;
+- missing or invalid bearer credentials return `401 UNAUTHORIZED` before telemetry export or shard dispatch.
+
+The ChatGPT-facing Arcade remote server supplies the router bearer from a
+control-plane secret-backed `Authorization` header. The literal credential
+must not appear in repository files, endpoint URLs, logs, or tool output.
+Any candidate or duplicate remote-server registration that can resolve to the
+same protected router must either carry the same secret-backed header or remain
+disabled from production discovery.
+
 ## Credential boundary
 
 Both synthetic shard Functions use dedicated SQL-created
