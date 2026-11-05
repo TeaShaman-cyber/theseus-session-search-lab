@@ -1,0 +1,92 @@
+name: repository-map
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/repository-map.yml
+
+permissions:
+  contents: read
+
+jobs:
+  build-map:
+    name: build-map
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify source identity
+        run: |
+          set -euo pipefail
+          observed="$(git rev-parse HEAD)"
+          test "$observed" = "$SOURCE_SHA"
+          printf 'SOURCE_SHA=%s\n' "$SOURCE_SHA"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install pinned map generator
+        run: python -m pip install --disable-pip-version-check --quiet "dekko==1.9.0"
+
+      - name: Build non-authoritative repository map
+        run: |
+          set -euo pipefail
+
+          dekko map
+
+          mkdir -p repository-map
+          dekko summary > repository-map/SUMMARY.txt
+          cp .dekko/MAP.md repository-map/MAP.md
+          cp .dekko/map.json repository-map/map.json
+          cp -R .dekko/map repository-map/map
+          git ls-files > repository-map/TRACKED_FILES.txt
+
+          {
+            printf 'source_sha=%s\n' "$SOURCE_SHA"
+            printf 'generator=dekko==1.9.0\n'
+            printf 'authority=derived-non-authoritative\n'
+          } > repository-map/METADATA.txt
+
+          for path in \
+            functions/router \
+            functions/shard \
+            session_search/corpus_store.py \
+            session_search/chatgpt_export.py \
+            session_search/deepseek_export.py \
+            session_search/xai_export.py \
+            session_search/speed_booster_export.py \
+            session_search/barn_recovery.py \
+            session_search/shard_integrity.py
+          do
+            grep -Fq "$path" repository-map/MAP.md
+          done
+
+          grep -Fqx 'tools/dev/check' repository-map/TRACKED_FILES.txt
+
+          test -s repository-map/SUMMARY.txt
+          test -s repository-map/MAP.md
+          test -s repository-map/map.json
+
+          # Generated outputs are untracked artifacts only; source state stays clean.
+          test -z "$(git status --porcelain --untracked-files=no)"
+
+      - name: Upload repository map
+        uses: actions/upload-artifact@v4
+        with:
+          name: session-search-repository-map-${{ env.SOURCE_SHA }}
+          path: repository-map/
+          if-no-files-found: error
+          retention-days: 14
