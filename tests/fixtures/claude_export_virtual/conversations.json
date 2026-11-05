@@ -1,0 +1,104 @@
+[
+  {
+    "uuid": "virtual-branch-conversation",
+    "name": "Synthetic branch and tools",
+    "summary": "Synthetic only; reconstructed from public 2026 schema evidence.",
+    "created_at": "2026-06-09T10:00:00.000000Z",
+    "updated_at": "2026-06-09T10:00:06.000000Z",
+    "account": {"uuid": "virtual-account"},
+    "chat_messages": [
+      {
+        "uuid": "v-user-root",
+        "parent_message_uuid": "00000000-0000-4000-8000-000000000000",
+        "sender": "human",
+        "text": "Find the current value.",
+        "created_at": "2026-06-09T10:00:00.000000Z",
+        "updated_at": "2026-06-09T10:00:00.000000Z",
+        "content": [{"type": "text", "text": "Find the current value.", "citations": []}],
+        "attachments": [],
+        "files": []
+      },
+      {
+        "uuid": "v-assistant-tool",
+        "parent_message_uuid": "v-user-root",
+        "sender": "assistant",
+        "text": "I will check.",
+        "created_at": "2026-06-09T10:00:01.000000Z",
+        "updated_at": "2026-06-09T10:00:01.000000Z",
+        "content": [
+          {"type": "thinking", "thinking": "Synthetic reasoning", "summaries": [{"summary": "Plan"}], "cut_off": false, "truncated": false, "hidden": false},
+          {"type": "text", "text": "I will check.", "citations": []},
+          {"type": "tool_use", "id": "toolu_virtual_1", "name": "web_search", "input": {"query": "synthetic canary"}, "integration_name": "web"},
+          {"type": "token_budget", "remaining": null}
+        ],
+        "attachments": [],
+        "files": []
+      },
+      {
+        "uuid": "v-assistant-result",
+        "parent_message_uuid": "v-assistant-tool",
+        "sender": "assistant",
+        "text": "",
+        "created_at": "2026-06-09T10:00:02.000000Z",
+        "updated_at": "2026-06-09T10:00:02.000000Z",
+        "content": [{"type": "tool_result", "tool_use_id": "toolu_virtual_1", "name": "web_search", "content": [{"type": "text", "text": "synthetic result"}], "is_error": false}],
+        "attachments": [],
+        "files": []
+      },
+      {
+        "uuid": "v-branch-a",
+        "parent_message_uuid": "v-assistant-result",
+        "sender": "assistant",
+        "text": "Branch A answer.",
+        "created_at": "2026-06-09T10:00:03.000000Z",
+        "updated_at": "2026-06-09T10:00:03.000000Z",
+        "content": [{"type": "text", "text": "Branch A answer.", "citations": []}],
+        "attachments": [{"file_name": "notes.txt", "file_size": 16, "file_type": "txt", "extracted_content": "attachment canary"}],
+        "files": [{"file_uuid": "virtual-file-1", "file_name": "diagram.png"}]
+      },
+      {
+        "uuid": "v-branch-b",
+        "parent_message_uuid": "v-assistant-result",
+        "sender": "assistant",
+        "text": "Branch B answer.",
+        "created_at": "2026-06-09T10:00:04.000000Z",
+        "updated_at": "2026-06-09T10:00:04.000000Z",
+        "content": [{"type": "text", "text": "Branch B answer.", "citations": []}],
+        "attachments": [],
+        "files": []
+      }
+    ]
+  },
+  {
+    "uuid": "virtual-fallback-conversation",
+    "name": "Synthetic top-level text fallback",
+    "summary": "Synthetic only.",
+    "created_at": "2026-06-09T11:00:00.000000Z",
+    "updated_at": "2026-06-09T11:00:01.000000Z",
+    "account": {"uuid": "virtual-account"},
+    "chat_messages": [
+      {
+        "uuid": "v-fallback-user",
+        "parent_message_uuid": "00000000-0000-4000-8000-000000000000",
+        "sender": "human",
+        "text": "fallback text canary",
+        "created_at": "2026-06-09T11:00:00.000000Z",
+        "updated_at": "2026-06-09T11:00:00.000000Z",
+        "content": [],
+        "attachments": [],
+        "files": []
+      },
+      {
+        "uuid": "v-voice-user",
+        "parent_message_uuid": "v-fallback-user",
+        "sender": "human",
+        "text": "",
+        "created_at": "2026-06-09T11:00:01.000000Z",
+        "updated_at": "2026-06-09T11:00:01.000000Z",
+        "content": [{"type": "voice_note", "title": "Synthetic voice note", "text": "voice transcript canary"}],
+        "attachments": [],
+        "files": []
+      }
+    ]
+  }
+]

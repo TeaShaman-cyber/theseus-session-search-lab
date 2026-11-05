@@ -24,6 +24,7 @@ class PortableRuntimeBuildTest(unittest.TestCase):
             "xai_export",
             "speed_booster_export",
             "chatgpt_export",
+            "claude_export",
             "barn_recovery",
             "handoff",
             "refresh_readiness",
@@ -93,6 +94,10 @@ class PortableRuntimeBuildTest(unittest.TestCase):
                 self.assertEqual(receipt["manifest_sha256"], hashlib.sha256(manifest_raw).hexdigest())
                 self.assertIn(
                     "python3 -m session_search.chatgpt_export",
+                    manifest["entrypoints"],
+                )
+                self.assertIn(
+                    "python3 -m session_search.claude_export",
                     manifest["entrypoints"],
                 )
                 self.assertIn(
