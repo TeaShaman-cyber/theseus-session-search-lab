@@ -12,6 +12,7 @@ from session_search_arcade_materializer.bundle_consumer import (
     iter_bundle_sessions,
     verify_bundle,
 )
+from session_search_arcade_materializer.stage_ready import stage_bundle_to_ready
 from session_search_arcade_materializer.neon_loader import (
     ACTIVATOR_ROLE,
     LOADER_ROLE,
@@ -25,7 +26,7 @@ from session_search_arcade_materializer.neon_loader import (
 )
 
 DRIVE_READONLY = "https://www.googleapis.com/auth/drive.readonly"
-app = MCPApp(name="session_search_materializer", version="0.5.0", log_level="INFO")
+app = MCPApp(name="session_search_materializer", version="0.6.0", log_level="INFO")
 
 
 @app.tool(requires_auth=Google(scopes=[DRIVE_READONLY]))
@@ -131,6 +132,48 @@ async def mark_bundle_ready(
         "neon_database_name": neon_database_name,
         "ready_role": READY_ROLE,
     }
+
+
+@app.tool(
+    requires_auth=Google(scopes=[DRIVE_READONLY]),
+    requires_secrets=["NEON_API_KEY"],
+)
+async def stage_bundle_ready(
+    context: Context,
+    drive_file_id: Annotated[str, "Exact private Google Drive file ID for the shard bundle."],
+    expected_bundle_sha256: Annotated[str, "Expected SHA-256 recorded from accepted source authority."],
+    neon_project_id: Annotated[str, "Project-scoped Neon target project ID."],
+    neon_branch_id: Annotated[str, "Exact Neon target branch ID."],
+    neon_database_name: Annotated[str, "Neon database name."] = "neondb",
+) -> Annotated[dict[str, Any], "Idempotent BUILDING-to-READY staging receipt; never activates serving."]:
+    """Verify/materialize one exact bundle and stop after the exact generation is READY."""
+
+    async def materialize() -> dict[str, Any]:
+        return await materialize_bundle(
+            context,
+            drive_file_id,
+            expected_bundle_sha256,
+            neon_project_id,
+            neon_branch_id,
+            neon_database_name,
+        )
+
+    async def mark_ready(materialized: dict[str, Any]) -> dict[str, Any]:
+        return await mark_bundle_ready(
+            context,
+            neon_project_id,
+            neon_branch_id,
+            materialized["generation_id"],
+            materialized["source_manifest_sha256"],
+            materialized["session_count"],
+            materialized["message_count"],
+            neon_database_name,
+        )
+
+    return await stage_bundle_to_ready(
+        materialize=materialize,
+        mark_ready=mark_ready,
+    )
 
 
 @app.tool(requires_secrets=["NEON_API_KEY"])
