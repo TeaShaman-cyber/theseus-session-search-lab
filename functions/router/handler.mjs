@@ -1,3 +1,4 @@
+import { hasValidBearerToken } from '../auth.mjs';
 import { createNoopTelemetry } from '../telemetry.mjs';
 import { handleMcpRequest, mergeShardOutcomes, selectShards, validateSearchInput } from './core.mjs';
 
@@ -15,10 +16,24 @@ function routeFor(request, url) {
   return 'not_found';
 }
 
-export function makeRouterHandler({ catalog, fetchImpl = fetch, shardTimeoutMs = 5000, telemetry = createNoopTelemetry() }) {
+export function makeRouterHandler({
+  catalog,
+  fetchImpl = fetch,
+  shardTimeoutMs = 5000,
+  telemetry = createNoopTelemetry(),
+  authToken,
+  shardAuthToken,
+}) {
+  if (typeof authToken !== 'string' || authToken.length === 0) {
+    throw new Error('HTTP_AUTH_TOKEN_MISSING');
+  }
+  if (typeof shardAuthToken !== 'string' || shardAuthToken.length === 0) {
+    throw new Error('SHARD_AUTH_TOKEN_MISSING');
+  }
   if (!Number.isFinite(shardTimeoutMs) || shardTimeoutMs <= 0) {
     throw new Error('SHARD_TIMEOUT_OUT_OF_BOUNDS');
   }
+
   async function searchFederated(rawInput, requestContext) {
     const input = validateSearchInput(rawInput);
     const selected = selectShards(catalog, input);
@@ -27,7 +42,7 @@ export function makeRouterHandler({ catalog, fetchImpl = fetch, shardTimeoutMs =
       const outcomes = await Promise.all(selected.map(async (shard) => telemetry.withDispatch(
         requestContext,
         shard,
-        { 'content-type': 'application/json' },
+        { 'content-type': 'application/json', authorization: 'Bearer ' + shardAuthToken },
         async (headers) => {
           if (shard.state && shard.state !== 'READY') {
             return { shard, ok: false, reason: 'NOT_READY' };
@@ -112,6 +127,11 @@ export function makeRouterHandler({ catalog, fetchImpl = fetch, shardTimeoutMs =
   return {
     async fetch(request) {
       const url = new URL(request.url);
+      const protectedRoute = request.method === 'POST'
+        && (url.pathname === '/search' || url.pathname === '/mcp');
+      if (protectedRoute && !hasValidBearerToken(request, authToken)) {
+        return json({ error: 'UNAUTHORIZED' }, 401);
+      }
       return telemetry.withRequest(request, routeFor(request, url), async (observation) => {
         if (request.method === 'GET' && url.pathname === '/health') {
           observation.setResult({ resultStatus: 'OK' });

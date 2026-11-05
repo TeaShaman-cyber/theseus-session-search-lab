@@ -3,7 +3,9 @@ import { createTelemetryFromEnv } from '../telemetry.mjs';
 import { makeShardHandler } from './handler.mjs';
 
 const databaseUrl = process.env.SESSION_SEARCH_DATABASE_URL ?? process.env.DATABASE_URL;
+const authToken = process.env.SESSION_SEARCH_SHARD_AUTH_TOKEN;
 if (!databaseUrl) throw new Error('DATABASE_URL_MISSING');
+if (!authToken) throw new Error('SESSION_SEARCH_SHARD_AUTH_TOKEN_MISSING');
 
 const sql = neon(databaseUrl);
 const telemetry = createTelemetryFromEnv({ serviceName: 'session-search-shard' });
@@ -13,4 +15,4 @@ export default makeShardHandler(async (call) => {
   const value = rows?.[0]?.result;
   if (!value) throw new Error('QUERY_RESULT_MISSING');
   return value;
-}, { telemetry });
+}, { telemetry, authToken });

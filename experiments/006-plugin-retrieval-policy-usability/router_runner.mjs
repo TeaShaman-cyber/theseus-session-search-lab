@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import { makeRouterHandler } from '../../functions/router/handler.mjs';
 
 const input = JSON.parse(fs.readFileSync(0, 'utf8'));
+const ROUTER_TOKEN = 'benchmark-router-token';
+const SHARD_TOKEN = 'benchmark-shard-token';
 
 const catalog = [{
   shard_id: 'fixture-0001',
@@ -15,6 +17,8 @@ async function runMode(searchMode) {
   const dispatchModes = [];
   const handler = makeRouterHandler({
     catalog,
+    authToken: ROUTER_TOKEN,
+    shardAuthToken: SHARD_TOKEN,
     fetchImpl: async (_url, options) => {
       const body = JSON.parse(options.body);
       dispatchModes.push(body.search_mode);
@@ -31,7 +35,7 @@ async function runMode(searchMode) {
 
   const response = await handler.fetch(new Request('https://router.invalid/mcp', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', authorization: 'Bearer ' + ROUTER_TOKEN },
     body: JSON.stringify({
       jsonrpc: '2.0',
       id: searchMode,

@@ -1,3 +1,4 @@
+import { hasValidBearerToken } from '../auth.mjs';
 import { createNoopTelemetry } from '../telemetry.mjs';
 import { buildSearchCall } from './core.mjs';
 
@@ -14,7 +15,11 @@ function routeFor(request, url) {
   return 'not_found';
 }
 
-export function makeShardHandler(executeSearch, { telemetry = createNoopTelemetry() } = {}) {
+export function makeShardHandler(executeSearch, { telemetry = createNoopTelemetry(), authToken } = {}) {
+  if (typeof authToken !== 'string' || authToken.length === 0) {
+    throw new Error('HTTP_AUTH_TOKEN_MISSING');
+  }
+
   return {
     async fetch(request) {
       const url = new URL(request.url);
@@ -26,6 +31,10 @@ export function makeShardHandler(executeSearch, { telemetry = createNoopTelemetr
         if (request.method !== 'POST' || url.pathname !== '/search') {
           observation.setErrorClass('not_found');
           return json({ error: 'NOT_FOUND' }, 404);
+        }
+        if (!hasValidBearerToken(request, authToken)) {
+          observation.setErrorClass('unauthorized');
+          return json({ error: 'UNAUTHORIZED' }, 401);
         }
         try {
           const input = await request.json();
