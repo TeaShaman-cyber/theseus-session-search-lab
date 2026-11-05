@@ -3,8 +3,37 @@ from __future__ import annotations
 import asyncio
 import inspect
 import sys
+import types
 import unittest
 from pathlib import Path
+
+
+class _FakeMCPApp:
+    def __init__(self, **_kwargs):
+        self.registered = []
+
+    def tool(self, **_kwargs):
+        def decorator(fn):
+            self.registered.append(fn.__name__)
+            return fn
+        return decorator
+
+    def run(self):
+        raise AssertionError("unit test must not start MCP runtime")
+
+
+class _FakeGoogle:
+    def __init__(self, **_kwargs):
+        pass
+
+
+arcade_module = types.ModuleType("arcade_mcp_server")
+arcade_module.Context = object
+arcade_module.MCPApp = _FakeMCPApp
+auth_module = types.ModuleType("arcade_mcp_server.auth")
+auth_module.Google = _FakeGoogle
+sys.modules["arcade_mcp_server"] = arcade_module
+sys.modules["arcade_mcp_server.auth"] = auth_module
 
 ROOT = Path(__file__).resolve().parents[1]
 PKG_SRC = ROOT / "arcade" / "session-search-materializer" / "src"
@@ -51,6 +80,9 @@ def ready_receipt() -> dict:
 
 
 class StageBundleReadyServerTest(unittest.TestCase):
+    def test_tool_is_registered_on_maintenance_app(self) -> None:
+        self.assertIn("stage_bundle_ready", server.app.registered)
+
     def test_tool_has_only_bundle_identity_and_target_inputs(self) -> None:
         sig = inspect.signature(server.stage_bundle_ready)
         self.assertEqual(
