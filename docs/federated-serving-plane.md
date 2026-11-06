@@ -26,6 +26,24 @@ The same federated search implementation serves both:
 - `POST /search`;
 - the MCP `session_search` tool at `POST /mcp`.
 
+### Source-only stage 1 compatibility contract (issue #166)
+
+This is a **migration candidate in source**, not evidence of a live shard deployment
+or permission to change the router/catalog:
+
+- Requests **without** `generation_id` keep the legacy `search_v2` / ACTIVE path,
+  so the deployed old router does not require an immediate change.
+- An explicitly supplied, lowercase 64-hex `generation_id` selects
+  `search_generation_v2(generation_id, ...)`, which retains the database READY
+  and projection-schema checks. No ACTIVE fallback is allowed on this path.
+- Explicit null or malformed IDs fail as `400 GENERATION_OUT_OF_BOUNDS`.
+- A successful pinned response must echo the SQL-returned matching
+  `generation_id` and receives additive `generation_binding=router_pinned_v1`.
+  A mismatch or failed SQL call returns `503 QUERY_FAILED` without that witness.
+  This witness identifies protocol behavior; it is **not** a cryptographic proof.
+- A future router must require this witness before claiming pinned serving; until
+  then the production router, catalog and deployment sequencing stay unchanged.
+
 ## Failure semantics
 
 - `FOUND`: every selected shard responded and at least one hit exists.

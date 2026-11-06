@@ -39,14 +39,18 @@ export function makeShardHandler(executeSearch, { telemetry = createNoopTelemetr
         try {
           const input = await request.json();
           const call = buildSearchCall(input);
+          const pinned = Object.prototype.hasOwnProperty.call(input, 'generation_id');
           const result = await executeSearch(call);
+          if (pinned && result?.generation_id !== input.generation_id) {
+            throw new Error('PINNED_GENERATION_MISMATCH');
+          }
           observation.setResult({
             resultStatus: result?.status,
             provider: result?.provider,
             shardId: result?.shard_id,
             generationId: result?.generation_id,
           });
-          return json(result);
+          return json(pinned ? { ...result, generation_binding: 'router_pinned_v1' } : result);
         } catch (error) {
           const message = String(error?.message ?? error);
           const clientError = message.endsWith('_OUT_OF_BOUNDS') || message === 'TIME_BOUNDS_INVERTED';
