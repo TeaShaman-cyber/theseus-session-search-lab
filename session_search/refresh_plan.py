@@ -9,6 +9,7 @@ from urllib.parse import urlsplit
 
 PLAN_SCHEMA = "theseus.session-search-refresh-plan.v1"
 PREPARED_SCHEMA = "theseus.session-search-refresh-prepared.v1"
+STAGE_READY_PLAN_SCHEMA = "theseus.session-search-stage-ready-plan.v1"
 
 _HEX40 = re.compile(r"^[0-9a-f]{40}$")
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
@@ -203,9 +204,53 @@ def _activate_action(shard: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _stage_ready_plan(
+    *,
+    source_commit: str,
+    parent_plan_digest: str,
+    shards: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "schema": STAGE_READY_PLAN_SCHEMA,
+        "source_commit": source_commit,
+        "parent_plan_digest": parent_plan_digest,
+        "shards": [
+            {
+                "shard_id": shard["shard_id"],
+                "inputs": {
+                    "drive_file_id": shard["drive_file_id"],
+                    "expected_bundle_sha256": shard["expected_bundle_sha256"],
+                    "neon_project_id": shard["neon_project_id"],
+                    "neon_branch_id": shard["neon_branch_id"],
+                    "neon_database_name": shard["neon_database_name"],
+                },
+                "expected_receipt": {
+                    "bundle_sha256": shard["expected_bundle_sha256"],
+                    "generation_id": shard["generation_id"],
+                    "source_manifest_sha256": shard["source_manifest_sha256"],
+                    "provider": shard["provider"],
+                    "shard_id": shard["shard_id"],
+                    "session_count": shard["expected_session_count"],
+                    "message_count": shard["expected_message_count"],
+                    "neon_project_id": shard["neon_project_id"],
+                    "neon_branch_id": shard["neon_branch_id"],
+                    "neon_database_name": shard["neon_database_name"],
+                },
+            }
+            for shard in shards
+        ],
+    }
+
+
 def prepare_refresh_plan(raw: Any) -> dict[str, Any]:
     normalized = normalize_refresh_manifest(raw)
     shards = normalized["shards"]
+    plan_digest = _canonical_digest(normalized)
+    stage_ready_plan = _stage_ready_plan(
+        source_commit=normalized["source_commit"],
+        parent_plan_digest=plan_digest,
+        shards=shards,
+    )
 
     actions = [
         *(_stage_ready_action(shard) for shard in shards),
@@ -232,7 +277,9 @@ def prepare_refresh_plan(raw: Any) -> dict[str, Any]:
     return {
         "schema": PREPARED_SCHEMA,
         "source_commit": normalized["source_commit"],
-        "plan_digest": _canonical_digest(normalized),
+        "plan_digest": plan_digest,
+        "stage_ready_plan": stage_ready_plan,
+        "stage_ready_plan_digest": _canonical_digest(stage_ready_plan),
         "promotion_boundary": "EXPLICIT_APPLY_REQUIRED",
         "mutates_state": False,
         "actions": actions,

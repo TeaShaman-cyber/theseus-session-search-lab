@@ -92,6 +92,14 @@ class RefreshPlanTest(unittest.TestCase):
 
         self.assertEqual(prepared_left["plan_digest"], prepared_right["plan_digest"])
         self.assertEqual(prepared_left["actions"], prepared_right["actions"])
+        self.assertEqual(
+            prepared_left["stage_ready_plan_digest"],
+            prepared_right["stage_ready_plan_digest"],
+        )
+        self.assertEqual(
+            prepared_left["stage_ready_plan"],
+            prepared_right["stage_ready_plan"],
+        )
 
     def test_prepare_emits_ordered_non_mutating_plan_with_explicit_promotion_boundary(self) -> None:
         prepared = prepare_refresh_plan(valid_manifest())
@@ -115,6 +123,55 @@ class RefreshPlanTest(unittest.TestCase):
             prepared["plan_digest"],
             "c8bc27da48d7b306a227aa1015e59383b2d5d58753bf813c763cb9eb49e73521",
         )
+
+        stage_plan = prepared["stage_ready_plan"]
+        self.assertEqual(
+            stage_plan["schema"],
+            "theseus.session-search-stage-ready-plan.v1",
+        )
+        self.assertEqual(stage_plan["source_commit"], "a" * 40)
+        self.assertEqual(
+            stage_plan["parent_plan_digest"],
+            prepared["plan_digest"],
+        )
+        self.assertRegex(prepared["stage_ready_plan_digest"], r"^[0-9a-f]{64}$")
+        self.assertEqual(
+            [entry["shard_id"] for entry in stage_plan["shards"]],
+            ["chatgpt-0001", "chatgpt-0002"],
+        )
+
+        stage_entry = stage_plan["shards"][0]
+        self.assertEqual(
+            set(stage_entry["inputs"]),
+            {
+                "drive_file_id",
+                "expected_bundle_sha256",
+                "neon_project_id",
+                "neon_branch_id",
+                "neon_database_name",
+            },
+        )
+        self.assertEqual(
+            set(stage_entry["expected_receipt"]),
+            {
+                "bundle_sha256",
+                "generation_id",
+                "source_manifest_sha256",
+                "provider",
+                "shard_id",
+                "session_count",
+                "message_count",
+                "neon_project_id",
+                "neon_branch_id",
+                "neon_database_name",
+            },
+        )
+        flattened = json.dumps(stage_plan, sort_keys=True)
+        self.assertNotIn("activate_generation", flattened)
+        self.assertNotIn("expected_previous_generation_id", flattened)
+        self.assertNotIn("serving_url", flattened)
+        self.assertNotIn("update_router_catalog", flattened)
+        self.assertNotIn("app_smoke", flattened)
 
         stage = prepared["actions"][0]
         self.assertEqual(
