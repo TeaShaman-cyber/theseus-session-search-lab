@@ -186,3 +186,99 @@ test('unavailable exact generation stays PARTIAL; never silently replaces with A
     { shard_id: 's1', reason: 'QUERY_FAILED' },
   ]);
 });
+
+// Version-matrix checks represent old routers by their unchanged HTTP payload,
+// without vendoring a second implementation of the legacy router.
+test('S1: old-router request still works against transitional shard via ACTIVE SQL', async () => {
+  const seen = [];
+  const shard = makeShardHandler(async sql => {
+    seen.push(sql);
+    return { status: 'FOUND', shard_id: 's1', generation_id: A,
+      hits: [{ session_id: 'legacy', message_id: 'm', text: 'old' }] };
+  }, { authToken: STOKEN });
+  const response = await shard.fetch(new Request('https://s1.test/search', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: 'Bearer ' + STOKEN },
+    body: JSON.stringify({ query: 'legacy', search_mode: 'strict' }),
+  }));
+  assert.equal(response.status, 200);
+  assert.match(seen[0].text, /session_search\.search_v2\(/);
+  assert.deepEqual((await response.json()).generation_binding, undefined);
+});
+
+test('S2: pinned router chooses B while transitional shard legacy ACTIVE remains A', async () => {
+  const seen = [];
+  const shard = makeShardHandler(async sql => {
+    seen.push(sql);
+    const pinned = sql.text.includes('search_generation_v2');
+    const generation_id = pinned ? sql.values[0] : A;
+    return { status: 'FOUND', shard_id: 's1', generation_id,
+      hits: [{ session_id: generation_id, message_id: 'm', text: 'hit' }] };
+  }, { authToken: STOKEN });
+  const fetchImpl = (url, init) => shard.fetch(new Request(url, {
+    method: 'POST', headers: init.headers, body: init.body,
+  }));
+  const pinnedB = await ask(routerFor(catalog(B), fetchImpl));
+  assert.equal(pinnedB.status, 'FOUND');
+  assert.deepEqual(pinnedB.hits.map(h => h.generation_id), [B]);
+  assert.match(seen[0].text, /search_generation_v2\(/);
+
+  const legacyResponse = await shard.fetch(new Request('https://s1.test/search', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: 'Bearer ' + STOKEN },
+    body: JSON.stringify({ query: 'legacy' }),
+  }));
+  assert.equal((await legacyResponse.json()).generation_id, A);
+  assert.match(seen[1].text, /search_v2\(/);
+});
+
+test('S2 interleaving: in-flight catalog A remains pinned as concurrent router B finishes', async () => {
+  let releaseA;
+  let signalledA;
+  const startedA = new Promise(resolve => { signalledA = resolve; });
+  const holdA = new Promise(resolve => { releaseA = resolve; });
+  const seen = [];
+  const fakeFetch = async (_url, init) => {
+    const request = JSON.parse(init.body);
+    seen.push(request.generation_id);
+    if (request.generation_id === A) {
+      signalledA();
+      await holdA;
+    }
+    return Response.json({
+      status: 'FOUND', generation_binding: 'router_pinned_v1',
+      generation_id: request.generation_id,
+      hits: [{ session_id: request.generation_id, message_id: 'm', text: 'hit' }],
+    });
+  };
+  const pendingA = ask(routerFor(catalog(A), fakeFetch));
+  await startedA;
+  const outcomeB = await ask(routerFor(catalog(B), fakeFetch));
+  releaseA();
+  const outcomeA = await pendingA;
+  assert.deepEqual(seen, [A, B]);
+  assert.equal(outcomeA.status, 'FOUND');
+  assert.equal(outcomeB.status, 'FOUND');
+  assert.deepEqual(outcomeA.hits.map(x => x.generation_id), [A]);
+  assert.deepEqual(outcomeB.hits.map(x => x.generation_id), [B]);
+});
+
+test('S4: a pinned-only shard rejects legacy payload, but works through pinned router', async () => {
+  const strictOnlyFetch = async (_url, init) => {
+    const request = JSON.parse(init.body);
+    if (!Object.hasOwn(request, 'generation_id')) {
+      return Response.json({ error: 'GENERATION_OUT_OF_BOUNDS' }, { status: 400 });
+    }
+    return Response.json({
+      status: 'NO_SIGNAL', generation_binding: 'router_pinned_v1',
+      generation_id: request.generation_id, hits: [],
+    });
+  };
+  const legacy = await strictOnlyFetch('https://s1.test/search', {
+    body: JSON.stringify({ query: 'legacy' }),
+  });
+  assert.equal(legacy.status, 400);
+  const current = await ask(routerFor(catalog(A), strictOnlyFetch));
+  assert.equal(current.status, 'NO_SIGNAL');
+  assert.deepEqual(current.unavailable_shards, []);
+});
