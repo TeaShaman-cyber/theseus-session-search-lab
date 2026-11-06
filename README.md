@@ -34,7 +34,9 @@ The lab studies portable, verifiable historical session retrieval for assistants
 
 ## Operational observability
 
-- [Grafana dashboard-as-code](grafana/README.md) — service-owned nine-panel candidate monitoring resource and verification procedure (issue #109).
+**First read-only stop for live router/shard diagnostics:** [Grafana observability runbook](grafana/README.md) (issue #109), before reconstructing Neon projects from history. Grafana Mimir + Tempo can show shard dispatches, service version, environment, and observed generation; compare these with the current Neon READY/ACTIVE pointers and Arcade registration. Telemetry does **not** prove endpoint URLs or replace live configuration readback.
+
+- [Nine-panel Grafana dashboard-as-code](grafana/README.md) — the saved dashboard uses the historical `candidate` filter; an empty panel is not proof of missing live signals. Inspect current environment labels first.
 
 ## Runtime boundary
 
