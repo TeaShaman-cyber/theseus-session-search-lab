@@ -85,6 +85,7 @@ test('router propagates W3C trace context to shard and flushes serverless teleme
       fetchImpl: async (_url, init) => {
         traceparent = new Headers(init.headers).get('traceparent');
         return Response.json({
+          generation_binding: 'router_pinned_v1',
           status: 'FOUND', generation_id: 'a'.repeat(64), provider: 'deepseek', shard_id: 'deepseek-0001', hits: [],
         });
       },
@@ -138,7 +139,7 @@ test('request spans expose bounded status and error class for TraceQL window met
         state: 'READY', url: 'https://deepseek.test/search',
       }],
       telemetry,
-      fetchImpl: async () => Response.json({ status: 'NO_SIGNAL', generation_id: 'd'.repeat(64), hits: [] }),
+      fetchImpl: async () => Response.json({ status: 'NO_SIGNAL', generation_id: 'd'.repeat(64), generation_binding: 'router_pinned_v1', hits: [] }),
     });
     const response = await handler.fetch(new Request('https://router.test/search', {
       method: 'POST',
@@ -166,7 +167,7 @@ test('dispatch spans expose bounded status and error class for TraceQL window me
         state: 'READY', url: 'https://deepseek.test/search',
       }],
       telemetry,
-      fetchImpl: async () => Response.json({ status: 'NO_SIGNAL', generation_id: 'e'.repeat(64), hits: [] }),
+      fetchImpl: async () => Response.json({ status: 'NO_SIGNAL', generation_id: 'e'.repeat(64), generation_binding: 'router_pinned_v1', hits: [] }),
     });
     const response = await handler.fetch(new Request('https://router.test/search', {
       method: 'POST',
@@ -250,6 +251,7 @@ test('untrusted inbound tracestate is not exported or propagated to shards', asy
       fetchImpl: async (_url, init) => {
         outboundHeaders = new Headers(init.headers);
         return Response.json({
+          generation_binding: 'router_pinned_v1',
           status: 'FOUND', generation_id: 'c'.repeat(64), provider: 'deepseek', shard_id: 'deepseek-0001', hits: [],
         });
       },

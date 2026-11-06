@@ -24,6 +24,7 @@ async function runMode(searchMode) {
       dispatchModes.push(body.search_mode);
       const hits = body.search_mode === 'strict' ? input.strict_hits : input.recall_hits;
       return new Response(JSON.stringify({
+        generation_binding: 'router_pinned_v1',
         generation_id: 'fixture-generation',
         hits,
       }), {
