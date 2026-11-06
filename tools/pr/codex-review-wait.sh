@@ -19,11 +19,6 @@ case "$TIMEOUT:$POLL" in
 esac
 
 STATUS_CMD=${CODEX_REVIEW_STATUS_CMD:-$ROOT/tools/pr/codex-review-status.sh}
-command -v timeout >/dev/null 2>&1 || {
-    printf '%s\n' 'codex-review-wait: GNU timeout is required' >&2
-    exit 2
-}
-
 START=$(date +%s)
 LAST_STATE=
 while :; do
@@ -50,7 +45,7 @@ print(json.dumps(status_request_timeout_result(sys.argv[1], elapsed_seconds=int(
 
     REMAINING=$((TIMEOUT - ELAPSED))
     set +e
-    STATE=$(timeout --signal=KILL "$REMAINING" "$STATUS_CMD" "$PR" "$EXPECTED_HEAD" 2>&1)
+    STATE=$(python3 "$ROOT/scripts/codex_review_bounded_status.py" "$REMAINING" "$STATUS_CMD" "$PR" "$EXPECTED_HEAD" 2>&1)
     STATUS_RC=$?
     set -e
     if [ "$STATUS_RC" -ne 0 ]; then

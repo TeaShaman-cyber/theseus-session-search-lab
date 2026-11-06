@@ -220,7 +220,8 @@ class CodexReviewStatusTest(unittest.TestCase):
         self.assertIn("EXPECTED_HEAD=${2:-}", wait)
         self.assertIn("TIMEOUT=${3:-120}", wait)
         self.assertIn('STATUS_CMD=${CODEX_REVIEW_STATUS_CMD:-$ROOT/tools/pr/codex-review-status.sh}', wait)
-        self.assertIn('timeout --signal=KILL "$REMAINING" "$STATUS_CMD" "$PR" "$EXPECTED_HEAD"', wait)
+        self.assertIn('scripts/codex_review_bounded_status.py', wait)
+        self.assertNotIn('timeout --signal=KILL', wait)
         self.assertNotIn("pr merge", wait)
 
 
