@@ -175,9 +175,9 @@ def _canonical_digest(normalized: dict[str, Any]) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def _materialize_action(shard: dict[str, Any]) -> dict[str, Any]:
+def _stage_ready_action(shard: dict[str, Any]) -> dict[str, Any]:
     return {
-        "stage": "materialize_building",
+        "stage": "stage_bundle_ready",
         "shard_id": shard["shard_id"],
         "inputs": {
             "drive_file_id": shard["drive_file_id"],
@@ -185,22 +185,6 @@ def _materialize_action(shard: dict[str, Any]) -> dict[str, Any]:
             "neon_project_id": shard["neon_project_id"],
             "neon_branch_id": shard["neon_branch_id"],
             "neon_database_name": shard["neon_database_name"],
-        },
-    }
-
-
-def _ready_action(shard: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "stage": "mark_ready",
-        "shard_id": shard["shard_id"],
-        "inputs": {
-            "neon_project_id": shard["neon_project_id"],
-            "neon_branch_id": shard["neon_branch_id"],
-            "neon_database_name": shard["neon_database_name"],
-            "generation_id": shard["generation_id"],
-            "expected_source_manifest_sha256": shard["source_manifest_sha256"],
-            "expected_session_count": shard["expected_session_count"],
-            "expected_message_count": shard["expected_message_count"],
         },
     }
 
@@ -224,8 +208,7 @@ def prepare_refresh_plan(raw: Any) -> dict[str, Any]:
     shards = normalized["shards"]
 
     actions = [
-        *(_materialize_action(shard) for shard in shards),
-        *(_ready_action(shard) for shard in shards),
+        *(_stage_ready_action(shard) for shard in shards),
         *(_activate_action(shard) for shard in shards),
         {
             "stage": "update_router_catalog",
