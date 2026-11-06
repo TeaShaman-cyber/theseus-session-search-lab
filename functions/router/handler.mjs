@@ -56,6 +56,7 @@ export function makeRouterHandler({
                 headers,
                 body: JSON.stringify({
                   query: input.query,
+                  generation_id: shard.generation_id,
                   scopes: input.scopes,
                   limit: input.limit,
                   search_mode: searchMode,
@@ -66,7 +67,17 @@ export function makeRouterHandler({
                 signal: controller.signal,
               });
               if (!response.ok) return { shard, ok: false, reason: 'QUERY_FAILED' };
-              return { shard, ok: true, body: await response.json() };
+              const body = await response.json();
+              if (body?.generation_binding !== 'router_pinned_v1') {
+                return { shard, ok: false, reason: 'PINNING_NOT_CONFIRMED' };
+              }
+              if (body.shard_id != null && body.shard_id !== shard.shard_id) {
+                return { shard, ok: false, reason: 'SHARD_ID_MISMATCH' };
+              }
+              if (body.provider != null && body.provider !== shard.provider) {
+                return { shard, ok: false, reason: 'PROVIDER_MISMATCH' };
+              }
+              return { shard, ok: true, body };
             } catch {
               return {
                 shard,

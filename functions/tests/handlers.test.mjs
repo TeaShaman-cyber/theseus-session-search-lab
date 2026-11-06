@@ -86,7 +86,7 @@ test('router HTTP adapter fans out and merges the same search path', async () =>
     const request = JSON.parse(init.body);
     assert.equal(request.query, 'copper compass');
     const a = String(url).includes('a.test');
-    return Response.json({
+    return Response.json({ generation_binding: 'router_pinned_v1',
       status: 'FOUND',
       generation_id: a ? 'a'.repeat(64) : 'b'.repeat(64),
       hits: [{ session_id: a ? 'ca' : 'hb', message_id: a ? 'c1' : 'h1', ordinal: 1, text: 'shared' }],
@@ -108,7 +108,7 @@ test('router MCP tool call reuses federated search', async () => {
   const catalog = [
     { shard_id: 'chatgpt-0001', provider: 'chatgpt', generation_id: 'a'.repeat(64), state: 'READY', url: 'https://a.test/search' },
   ];
-  const fakeFetch = async () => Response.json({
+  const fakeFetch = async () => Response.json({ generation_binding: 'router_pinned_v1',
     status: 'FOUND',
     generation_id: 'a'.repeat(64),
     hits: [{ session_id: 'ca', message_id: 'c1', ordinal: 1, text: 'shared' }],
@@ -137,7 +137,7 @@ test('router times out a stalled shard and preserves healthy hits as PARTIAL', a
   ];
   const fakeFetch = async (url) => {
     if (String(url).includes('a.test')) {
-      return Response.json({
+      return Response.json({ generation_binding: 'router_pinned_v1',
         status: 'FOUND', generation_id: 'a'.repeat(64),
         hits: [{ session_id: 'ca', message_id: 'c1', ordinal: 1, text: 'healthy' }],
       });
@@ -171,9 +171,9 @@ test('router auto mode escalates NO_SIGNAL strict search to recall and returns r
     const request = JSON.parse(init.body);
     seenModes.push(request.search_mode);
     if (request.search_mode === 'strict') {
-      return Response.json({ status: 'NO_SIGNAL', generation_id: 'a'.repeat(64), hits: [] });
+      return Response.json({ generation_binding: 'router_pinned_v1', status: 'NO_SIGNAL', generation_id: 'a'.repeat(64), hits: [] });
     }
-    return Response.json({
+    return Response.json({ generation_binding: 'router_pinned_v1',
       status: 'FOUND', generation_id: 'a'.repeat(64),
       hits: [{ session_id: 'ca', message_id: 'c1', ordinal: 1, text: 'recalled' }],
     });
@@ -205,7 +205,7 @@ test('router auto mode does not hide PARTIAL by escalating', async () => {
     const request = JSON.parse(init.body);
     seenModes.push(request.search_mode);
     if (String(url).includes('b.test')) return new Response('bad', { status: 503 });
-    return Response.json({ status: 'NO_SIGNAL', generation_id: 'a'.repeat(64), hits: [] });
+    return Response.json({ generation_binding: 'router_pinned_v1', status: 'NO_SIGNAL', generation_id: 'a'.repeat(64), hits: [] });
   };
   const handler = makeRouterHandler({ catalog, fetchImpl: fakeFetch });
   const response = await handler.fetch(new Request('https://router.test/search', {

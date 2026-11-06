@@ -41,8 +41,18 @@ or permission to change the router/catalog:
   `generation_id` and receives additive `generation_binding=router_pinned_v1`.
   A mismatch or failed SQL call returns `503 QUERY_FAILED` without that witness.
   This witness identifies protocol behavior; it is **not** a cryptographic proof.
-- A future router must require this witness before claiming pinned serving; until
-  then the production router, catalog and deployment sequencing stay unchanged.
+- A staged router (issue #166, stage 2) passes the exact per-shard catalog
+  `generation_id` to the shard and requires the witness
+  `generation_binding=router_pinned_v1` on every successful response.
+  A shard missing the witness is reported as `PINNING_NOT_CONFIRMED` /
+  `PARTIAL` even if its ACTIVE generation happens to match the catalog.
+  Contradictory returned shard/provider identities also fail closed.
+  `auto` never escalates `PARTIAL`; strict and recall use the same
+  selected per-request catalog generation vector.
+- Both source stages are **candidates only**. First deploy all transitional
+  shards and verify old-router compatibility; only then consider deploying the
+  new router. No catalog change, live deployment, or source promotion is
+  implied by these changes.
 
 ## Failure semantics
 
