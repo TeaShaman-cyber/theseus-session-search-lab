@@ -102,10 +102,8 @@ class RefreshPlanTest(unittest.TestCase):
         self.assertEqual(
             [(action["stage"], action.get("shard_id")) for action in prepared["actions"]],
             [
-                ("materialize_building", "chatgpt-0001"),
-                ("materialize_building", "chatgpt-0002"),
-                ("mark_ready", "chatgpt-0001"),
-                ("mark_ready", "chatgpt-0002"),
+                ("stage_bundle_ready", "chatgpt-0001"),
+                ("stage_bundle_ready", "chatgpt-0002"),
                 ("activate_generation", "chatgpt-0001"),
                 ("activate_generation", "chatgpt-0002"),
                 ("update_router_catalog", None),
@@ -113,6 +111,33 @@ class RefreshPlanTest(unittest.TestCase):
             ],
         )
         self.assertFalse(prepared["mutates_state"])
+        self.assertEqual(
+            prepared["plan_digest"],
+            "c8bc27da48d7b306a227aa1015e59383b2d5d58753bf813c763cb9eb49e73521",
+        )
+
+        stage = prepared["actions"][0]
+        self.assertEqual(
+            set(stage["inputs"]),
+            {
+                "drive_file_id",
+                "expected_bundle_sha256",
+                "neon_project_id",
+                "neon_branch_id",
+                "neon_database_name",
+            },
+        )
+        self.assertEqual(stage["shard_id"], "chatgpt-0001")
+        self.assertNotIn("generation_id", stage["inputs"])
+        self.assertNotIn("expected_session_count", stage["inputs"])
+        self.assertNotIn("expected_message_count", stage["inputs"])
+
+        activation = prepared["actions"][2]
+        self.assertEqual(activation["stage"], "activate_generation")
+        self.assertEqual(
+            activation["inputs"]["expected_previous_generation_id"],
+            "c" * 64,
+        )
 
     def test_generation_id_must_match_source_manifest_identity(self) -> None:
         manifest = valid_manifest()
