@@ -48,7 +48,10 @@ jobs:
           dekko map
 
           mkdir -p repository-map
-          dekko summary > repository-map/SUMMARY.txt
+          # Surface source-owned operational navigation in the generated map.
+          # The map remains derived; the runbook and live telemetry are separate.
+          printf '%s\\n\\n' 'Operational diagnostics: start with Grafana Mimir + Tempo; see grafana/README.md (#109). Check live environment filters and shard/generation provenance before Neon/Arcade topology work; traces do not prove endpoint URLs.' > repository-map/SUMMARY.txt
+          dekko summary >> repository-map/SUMMARY.txt
           cp .dekko/MAP.md repository-map/MAP.md
           cp .dekko/map.json repository-map/map.json
           cp -R .dekko/map repository-map/map
