@@ -188,5 +188,85 @@ class StageBundleReadyServerTest(unittest.TestCase):
         self.assertFalse(result["ready_transition_performed"])
 
 
+    def test_stage_refresh_plan_tool_is_registered(self) -> None:
+        self.assertIn("stage_refresh_plan_ready", server.app.registered)
+
+    def test_stage_refresh_plan_tool_has_only_plan_and_digest_inputs(self) -> None:
+        sig = inspect.signature(server.stage_refresh_plan_ready)
+        self.assertEqual(
+            list(sig.parameters),
+            [
+                "context",
+                "stage_ready_plan_json",
+                "expected_stage_ready_plan_digest",
+            ],
+        )
+
+    def test_stage_refresh_plan_tool_delegates_only_to_stage_bundle_ready(self) -> None:
+        calls = []
+        original_execute = server.execute_stage_ready_plan
+        original_stage = server.stage_bundle_ready
+        original_activate = server.activate_ready_generation
+
+        async def fake_stage(context, drive_file_id, expected_bundle_sha256,
+                             neon_project_id, neon_branch_id,
+                             neon_database_name="neondb"):
+            calls.append((
+                drive_file_id,
+                expected_bundle_sha256,
+                neon_project_id,
+                neon_branch_id,
+                neon_database_name,
+            ))
+            return {"status": "READY"}
+
+        async def fake_execute(*, stage_ready_plan_json,
+                               expected_stage_ready_plan_digest, stage_one):
+            self.assertEqual(stage_ready_plan_json, '{"schema":"fake"}')
+            self.assertEqual(expected_stage_ready_plan_digest, "d" * 64)
+            await stage_one({
+                "drive_file_id": "drive_chatgpt_0001_12345",
+                "expected_bundle_sha256": "a" * 64,
+                "neon_project_id": "project-a",
+                "neon_branch_id": "br-project-a",
+                "neon_database_name": "neondb",
+            })
+            await stage_one({
+                "drive_file_id": "drive_chatgpt_0002_12345",
+                "expected_bundle_sha256": "b" * 64,
+                "neon_project_id": "project-b",
+                "neon_branch_id": "br-project-b",
+                "neon_database_name": "neondb",
+            })
+            return {
+                "status": "READY",
+                "promotion_boundary": "READY_ONLY_STOP",
+            }
+
+        async def forbidden_activate(*_args, **_kwargs):
+            raise AssertionError("READY-plan executor must not activate")
+
+        server.execute_stage_ready_plan = fake_execute
+        server.stage_bundle_ready = fake_stage
+        server.activate_ready_generation = forbidden_activate
+        try:
+            result = asyncio.run(
+                server.stage_refresh_plan_ready(
+                    object(),
+                    '{"schema":"fake"}',
+                    "d" * 64,
+                )
+            )
+        finally:
+            server.execute_stage_ready_plan = original_execute
+            server.stage_bundle_ready = original_stage
+            server.activate_ready_generation = original_activate
+
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0][0], "drive_chatgpt_0001_12345")
+        self.assertEqual(calls[1][0], "drive_chatgpt_0002_12345")
+        self.assertEqual(result["promotion_boundary"], "READY_ONLY_STOP")
+
+
 if __name__ == "__main__":
     unittest.main()

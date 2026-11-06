@@ -13,6 +13,7 @@ from session_search_arcade_materializer.bundle_consumer import (
     verify_bundle,
 )
 from session_search_arcade_materializer.stage_ready import stage_bundle_to_ready
+from session_search_arcade_materializer.stage_ready_plan import execute_stage_ready_plan
 from session_search_arcade_materializer.neon_loader import (
     ACTIVATOR_ROLE,
     LOADER_ROLE,
@@ -26,7 +27,7 @@ from session_search_arcade_materializer.neon_loader import (
 )
 
 DRIVE_READONLY = "https://www.googleapis.com/auth/drive.readonly"
-app = MCPApp(name="session_search_materializer", version="0.6.0", log_level="INFO")
+app = MCPApp(name="session_search_materializer", version="0.7.0", log_level="INFO")
 
 
 @app.tool(requires_auth=Google(scopes=[DRIVE_READONLY]))
@@ -173,6 +174,34 @@ async def stage_bundle_ready(
     return await stage_bundle_to_ready(
         materialize=materialize,
         mark_ready=mark_ready,
+    )
+
+
+@app.tool(
+    requires_auth=Google(scopes=[DRIVE_READONLY]),
+    requires_secrets=["NEON_API_KEY"],
+)
+async def stage_refresh_plan_ready(
+    context: Context,
+    stage_ready_plan_json: Annotated[str, "Exact READY-only staging subplan JSON produced by the repository planner."],
+    expected_stage_ready_plan_digest: Annotated[str, "Expected SHA-256 digest for the exact READY-only staging subplan."],
+) -> Annotated[dict[str, Any], "Sequential multi-shard READY-only staging receipt; never activates serving."]:
+    """Execute one verified READY-only staging subplan and stop before activation."""
+
+    async def stage_one(inputs: dict[str, Any]) -> dict[str, Any]:
+        return await stage_bundle_ready(
+            context,
+            inputs["drive_file_id"],
+            inputs["expected_bundle_sha256"],
+            inputs["neon_project_id"],
+            inputs["neon_branch_id"],
+            inputs["neon_database_name"],
+        )
+
+    return await execute_stage_ready_plan(
+        stage_ready_plan_json=stage_ready_plan_json,
+        expected_stage_ready_plan_digest=expected_stage_ready_plan_digest,
+        stage_one=stage_one,
     )
 
 
