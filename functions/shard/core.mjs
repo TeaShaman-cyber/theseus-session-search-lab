@@ -2,6 +2,11 @@ const VALID_SCOPES = new Set(['dialogue', 'evidence', 'trace']);
 const VALID_SEARCH_MODES = new Set(['strict', 'recall']);
 
 export function buildSearchCall(input = {}) {
+  const pinned = Object.prototype.hasOwnProperty.call(input, 'generation_id');
+  const generationId = input.generation_id;
+  if (pinned && (typeof generationId !== 'string' || !/^[0-9a-f]{64}$/.test(generationId))) {
+    throw new Error('GENERATION_OUT_OF_BOUNDS');
+  }
   const query = typeof input.query === 'string' ? input.query.trim() : '';
   if (!query || query.length > 512) throw new Error('QUERY_OUT_OF_BOUNDS');
 
@@ -29,8 +34,15 @@ export function buildSearchCall(input = {}) {
   }
   if (fromTime !== null && toTime !== null && fromTime > toTime) throw new Error('TIME_BOUNDS_INVERTED');
 
-  return {
-    text: 'SELECT session_search.search_v2($1,$2::text[],$3,$4,$5,$6,$7) AS result',
-    values: [query, scopes, limit, sessionId, fromTime, toTime, searchMode],
-  };
+  // The ACTIVE path is temporary compatibility for routers that omit generation_id.
+  // Once supplied, generation_id must control the database query without fallback.
+  return pinned
+    ? {
+      text: 'SELECT session_search.search_generation_v2($1,$2,$3::text[],$4,$5,$6,$7,$8) AS result',
+      values: [generationId, query, scopes, limit, sessionId, fromTime, toTime, searchMode],
+    }
+    : {
+      text: 'SELECT session_search.search_v2($1,$2::text[],$3,$4,$5,$6,$7) AS result',
+      values: [query, scopes, limit, sessionId, fromTime, toTime, searchMode],
+    };
 }
