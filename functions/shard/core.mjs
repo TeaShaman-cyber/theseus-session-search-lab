@@ -46,3 +46,15 @@ export function buildSearchCall(input = {}) {
       values: [query, scopes, limit, sessionId, fromTime, toTime, searchMode],
     };
 }
+
+export function buildGroupedSearchCall(input = {}) {
+  const pinned = Object.prototype.hasOwnProperty.call(input, 'generation_id');
+  if (!pinned) throw new Error('GENERATION_REQUIRED_FOR_GROUPED_SEARCH');
+  if (input.search_mode !== 'recall') throw new Error('GROUPED_SEARCH_RECALL_ONLY');
+
+  const validated = buildSearchCall(input);
+  return {
+    text: 'SELECT session_search.search_generation_grouped_v1($1,$2,$3::text[],$4,$5,$6,$7,$8) AS result',
+    values: validated.values,
+  };
+}

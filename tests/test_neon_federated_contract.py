@@ -10,6 +10,7 @@ BUILDING_LOADER = ROOT / "sql" / "neon" / "004_arcade_building_loader.sql"
 READY_MARKER = ROOT / "sql" / "neon" / "005_ready_marker_capability.sql"
 ACTIVATION_MARKER = ROOT / "sql" / "neon" / "006_activation_marker_capability.sql"
 FTS_GUARD = ROOT / "sql" / "neon" / "007_safe_message_tsvector.sql"
+GROUPED_RETRIEVAL = ROOT / "sql" / "neon" / "009_exact_text_grouped_retrieval.sql"
 
 
 class NeonFederatedContractTest(unittest.TestCase):
@@ -22,6 +23,21 @@ class NeonFederatedContractTest(unittest.TestCase):
         self.assertIn("tsvector_to_array", text)
         self.assertIn("' | '", text)
         self.assertIn("GRANT EXECUTE ON FUNCTION session_search.search_v2", text)
+
+    def test_exact_grouped_retrieval_is_versioned_bounded_and_recall_only(self):
+        text = GROUPED_RETRIEVAL.read_text()
+        self.assertIn("CREATE FUNCTION session_search.search_generation_grouped_v1", text)
+        self.assertIn("search mode must be recall for grouped v1", text)
+        self.assertIn("candidate_limit := LEAST(300, result_limit * 3)", text)
+        self.assertIn("ORDER BY score DESC,session_id,ordinal,message_id", text)
+        self.assertIn("GROUP BY c.text", text)
+        self.assertIn("'occurrences'", text)
+        self.assertIn("'occurrence_count'", text)
+        self.assertIn("'representative'", text)
+        self.assertIn("'candidate_count'", text)
+        self.assertIn("'groups'", text)
+        self.assertNotIn("md5(", text.lower())
+        self.assertNotIn("activate_generation", text)
 
     def test_query_plane_migration_exposes_generation_scoped_read_only_surface(self):
         text = SCHEMA.read_text(encoding="utf-8")

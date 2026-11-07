@@ -1,0 +1,31 @@
+{
+  "schema": "theseus.session-search-serverless-grouped-smoke.v1",
+  "date": "2026-11-07",
+  "issue": 188,
+  "execution": {
+    "runtime": "isolated_postgresql_benchmark_branch",
+    "transactional_sequence": [
+      "SET LOCAL ROLE session_search_owner",
+      "CREATE search_generation_grouped_v1",
+      "bounded grouped recall probe",
+      "DROP search_generation_grouped_v1"
+    ],
+    "production_serving_changed": false,
+    "function_present_after_smoke": false
+  },
+  "result": {
+    "status": "FOUND",
+    "grouping": "exact_text_v1",
+    "candidate_count": 30,
+    "returned_group_count": 10,
+    "selected_occurrence_count": 12
+  },
+  "boundary": {
+    "search_mode": "recall_only",
+    "generation_binding": "explicit_pinned_generation",
+    "candidate_budget": "min(300, result_limit * 3)",
+    "result_limit": 10,
+    "text_or_message_identifiers_exported": false
+  },
+  "disposition": "SERVERLESS_GROUPED_SQL_RUNTIME_SMOKE_PASS / NET_ZERO_DATABASE_STATE / NO_CUTOVER"
+}

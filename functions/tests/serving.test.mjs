@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildSearchCall } from '../shard/core.mjs';
+import { buildGroupedSearchCall, buildSearchCall } from '../shard/core.mjs';
 import { mergeShardOutcomes, selectShards, handleMcpRequest, validateSearchInput } from '../router/core.mjs';
 
 test('shard request becomes one bounded SQL function call', () => {
@@ -114,5 +114,40 @@ test('shard bounded SQL call carries strict or recall mode through versioned sea
   assert.throws(
     () => buildSearchCall({ query: 'copper compass', search_mode: 'auto' }),
     /SEARCH_MODE_OUT_OF_BOUNDS/,
+  );
+});
+
+
+test('opt-in grouped shard call requires pinned generation and recall without changing legacy call', () => {
+  const generation = 'c'.repeat(64);
+  const grouped = buildGroupedSearchCall({
+    generation_id: generation,
+    query: 'needle',
+    scopes: ['dialogue', 'evidence'],
+    limit: 10,
+    search_mode: 'recall',
+  });
+  assert.equal(
+    grouped.text,
+    'SELECT session_search.search_generation_grouped_v1($1,$2,$3::text[],$4,$5,$6,$7,$8) AS result',
+  );
+  assert.deepEqual(grouped.values, [
+    generation, 'needle', ['dialogue', 'evidence'], 10, null, null, null, 'recall',
+  ]);
+
+  const legacy = buildSearchCall({
+    generation_id: generation,
+    query: 'needle',
+    limit: 10,
+    search_mode: 'recall',
+  });
+  assert.match(legacy.text, /search_generation_v2/);
+  assert.throws(
+    () => buildGroupedSearchCall({ query: 'needle', search_mode: 'recall' }),
+    /GENERATION_REQUIRED_FOR_GROUPED_SEARCH/,
+  );
+  assert.throws(
+    () => buildGroupedSearchCall({ generation_id: generation, query: 'needle', search_mode: 'strict' }),
+    /GROUPED_SEARCH_RECALL_ONLY/,
   );
 });
