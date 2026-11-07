@@ -84,3 +84,21 @@ implement the measured algorithm.
 
 Implementation helper: `functions/grouping.mjs`.
 Real-corpus evidence: `receipts/188-exact-grouping-real-corpus.public.json`.
+
+## Local SQLite reference implementation
+
+`session_search.search.search_corpus_grouped_recall()` is an opt-in local
+reference implementation. It reuses the same internal recall candidate query and
+reranker as `search_corpus(..., recall=True)`, then applies exact-text grouping
+before the final group Top-K. Existing flat `search_corpus()` behavior remains the
+default and is unchanged.
+
+Acceptance on the private frozen 20-row gold set:
+- flat ranks from the refactored core matched the previously accepted #188 public
+  receipt exactly;
+- grouped ranks from `search_corpus_grouped_recall()` matched the accepted #188
+  grouped ranks exactly for 20/20 cases;
+- no CLI, HTTP, MCP, shard SQL or serving route uses grouped results by default.
+
+This function is a reference seam for algorithm/conformance work, not a production
+backend decision.

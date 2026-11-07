@@ -106,6 +106,112 @@ def search(db: str, query: str, scopes: list[str], limit: int) -> list[dict]:
         conn.close()
 
 
+
+_OCCURRENCE_FIELDS = (
+    "session_id",
+    "message_id",
+    "ordinal",
+    "session_title",
+    "session_coverage",
+    "role",
+    "search_class",
+    "create_time",
+)
+
+
+def group_exact_search_rows(rows: list[dict]) -> list[dict]:
+    groups: list[dict] = []
+    by_text: dict[str, dict] = {}
+    for row in rows:
+        text = row.get("text")
+        if not isinstance(text, str):
+            raise ValueError("GROUP_TEXT_INVALID")
+        group = by_text.get(text)
+        if group is None:
+            group = {
+                "text": text,
+                "representative": {key: value for key, value in row.items() if key != "text"},
+                "occurrence_count": 0,
+                "occurrences": [],
+            }
+            by_text[text] = group
+            groups.append(group)
+        group["occurrences"].append(
+            {key: row[key] for key in _OCCURRENCE_FIELDS if key in row}
+        )
+        group["occurrence_count"] = len(group["occurrences"])
+    return groups
+
+
+def _recall_candidate_rows(
+    conn: sqlite3.Connection,
+    query: str,
+    scopes: list[str],
+    limit: int,
+    session_id: str | None,
+) -> list[dict]:
+    placeholders = ",".join("?" for _ in scopes)
+    where = ["messages_fts MATCH ?", f"m.search_class IN ({placeholders})"]
+    params: list[object] = [fts_query(query, operator="OR"), *scopes]
+    if session_id is not None:
+        where.append("m.session_id=?")
+        params.append(session_id)
+
+    per_session_limit = limit if session_id is not None else min(3, limit)
+    candidate_limit = limit * 3
+    sql = f"""
+        SELECT * FROM (
+            SELECT
+                m.session_id,
+                s.title AS session_title,
+                s.coverage_state AS session_coverage,
+                m.ordinal,
+                m.message_id,
+                m.role,
+                m.content_type,
+                m.search_class,
+                m.create_time,
+                m.text,
+                messages_fts.rank AS score,
+                row_number() OVER (
+                    PARTITION BY m.session_id
+                    ORDER BY messages_fts.rank, m.ordinal
+                ) AS session_rank
+            FROM messages_fts
+            JOIN messages m ON m.row_id=messages_fts.rowid
+            JOIN sessions s ON s.session_id=m.session_id
+            WHERE {' AND '.join(where)}
+        )
+        WHERE session_rank <= ?
+        ORDER BY score, session_id, ordinal
+        LIMIT ?
+    """
+    params.extend([per_session_limit, candidate_limit])
+    rows = [dict(row) for row in conn.execute(sql, params).fetchall()]
+    for row in rows:
+        row.pop("session_rank", None)
+    return rerank_recall_rows(rows, query, candidate_limit)
+
+
+def search_corpus_grouped_recall(
+    corpus_root: pathlib.Path,
+    query: str,
+    scopes: list[str],
+    limit: int,
+    session_id: str | None = None,
+) -> list[dict]:
+    paths = CorpusPaths.from_root(pathlib.Path(corpus_root))
+    if not paths.db.exists():
+        raise ValueError("CORPUS_PROJECTION_MISSING")
+    conn = sqlite3.connect(paths.db)
+    conn.row_factory = sqlite3.Row
+    try:
+        candidates = _recall_candidate_rows(conn, query, scopes, limit, session_id)
+        return group_exact_search_rows(candidates)[:limit]
+    finally:
+        conn.close()
+
+
 def search_corpus(
     corpus_root: pathlib.Path,
     query: str,
@@ -128,40 +234,7 @@ def search_corpus(
             where.append("m.session_id=?")
             params.append(session_id)
         if recall:
-            per_session_limit = limit if session_id is not None else min(3, limit)
-            candidate_limit = limit * 3
-            sql = f"""
-                SELECT * FROM (
-                    SELECT
-                        m.session_id,
-                        s.title AS session_title,
-                        s.coverage_state AS session_coverage,
-                        m.ordinal,
-                        m.message_id,
-                        m.role,
-                        m.content_type,
-                        m.search_class,
-                        m.create_time,
-                        m.text,
-                        messages_fts.rank AS score,
-                        row_number() OVER (
-                            PARTITION BY m.session_id
-                            ORDER BY messages_fts.rank, m.ordinal
-                        ) AS session_rank
-                    FROM messages_fts
-                    JOIN messages m ON m.row_id=messages_fts.rowid
-                    JOIN sessions s ON s.session_id=m.session_id
-                    WHERE {' AND '.join(where)}
-                )
-                WHERE session_rank <= ?
-                ORDER BY score, session_id, ordinal
-                LIMIT ?
-            """
-            params.extend([per_session_limit, candidate_limit])
-            rows = [dict(row) for row in conn.execute(sql, params).fetchall()]
-            for row in rows:
-                row.pop("session_rank", None)
-            return rerank_recall_rows(rows, query, limit)
+            return _recall_candidate_rows(conn, query, scopes, limit, session_id)[:limit]
 
         sql = f"""
             SELECT
