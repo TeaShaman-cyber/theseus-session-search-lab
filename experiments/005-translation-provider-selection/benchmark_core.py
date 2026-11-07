@@ -14,6 +14,33 @@ from statistics import fmean
 from typing import Iterable, Mapping, Sequence
 
 
+
+def canonical_gold_payload(rows: Iterable[Mapping[str, str]]) -> str:
+    ordered = sorted(
+        (
+            {
+                "case_id": row["case_id"],
+                "query_lang": row["query_lang"],
+                "query_text": row["query_text"],
+                "target_content_fp": row["target_content_fp"],
+            }
+            for row in rows
+        ),
+        key=lambda row: (row["case_id"], row["query_lang"]),
+    )
+    return json.dumps(
+        ordered,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+
+
+def gold_digest(rows: Iterable[Mapping[str, str]]) -> str:
+    payload = canonical_gold_payload(rows)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def canonical_translation_payload(rows: Iterable[Mapping[str, str]]) -> str:
     ordered = sorted(
         (
