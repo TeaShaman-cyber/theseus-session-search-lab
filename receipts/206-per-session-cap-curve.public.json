@@ -1,0 +1,810 @@
+{
+  "candidate_budget": 30,
+  "gold_rows": 20,
+  "k": 10,
+  "points": [
+    {
+      "candidate_reachable": 8,
+      "candidate_recall": 0.4,
+      "count": 20,
+      "marginal": null,
+      "mean_candidate_count": 30.0,
+      "mean_max_session_share": 0.03333333333333333,
+      "mean_topk_unique_sessions": 10.0,
+      "mean_unique_sessions": 30.0,
+      "mrr": 0.2813405797101449,
+      "per_session_cap": 1,
+      "r_at_k": 0.35,
+      "topk_hits": 7,
+      "vs_current": {
+        "rank_improved": 3,
+        "rank_same": 14,
+        "rank_worse": 3,
+        "topk_gained": 0,
+        "topk_lost": 0
+      }
+    },
+    {
+      "candidate_reachable": 9,
+      "candidate_recall": 0.45,
+      "count": 20,
+      "marginal": {
+        "delta_candidate_recall": 0.04999999999999999,
+        "delta_mean_max_session_share": 0.03333333333333333,
+        "delta_mrr": -0.03666666666666668,
+        "delta_r_at_k": 0.0
+      },
+      "mean_candidate_count": 30.0,
+      "mean_max_session_share": 0.06666666666666667,
+      "mean_topk_unique_sessions": 10.0,
+      "mean_unique_sessions": 24.35,
+      "mrr": 0.24467391304347824,
+      "per_session_cap": 2,
+      "r_at_k": 0.35,
+      "topk_hits": 7,
+      "vs_current": {
+        "rank_improved": 2,
+        "rank_same": 15,
+        "rank_worse": 3,
+        "topk_gained": 0,
+        "topk_lost": 0
+      }
+    },
+    {
+      "candidate_reachable": 11,
+      "candidate_recall": 0.55,
+      "count": 20,
+      "marginal": {
+        "delta_candidate_recall": 0.10000000000000003,
+        "delta_mean_max_session_share": 0.02500000000000001,
+        "delta_mrr": -0.03708538587848931,
+        "delta_r_at_k": 0.0
+      },
+      "mean_candidate_count": 30.0,
+      "mean_max_session_share": 0.09166666666666667,
+      "mean_topk_unique_sessions": 10.0,
+      "mean_unique_sessions": 22.95,
+      "mrr": 0.20758852716498893,
+      "per_session_cap": 3,
+      "r_at_k": 0.35,
+      "topk_hits": 7,
+      "vs_current": {
+        "rank_improved": 0,
+        "rank_same": 20,
+        "rank_worse": 0,
+        "topk_gained": 0,
+        "topk_lost": 0
+      }
+    },
+    {
+      "candidate_reachable": 11,
+      "candidate_recall": 0.55,
+      "count": 20,
+      "marginal": {
+        "delta_candidate_recall": 0.0,
+        "delta_mean_max_session_share": 0.01833333333333334,
+        "delta_mrr": 0.0010401635401635634,
+        "delta_r_at_k": 0.0
+      },
+      "mean_candidate_count": 30.0,
+      "mean_max_session_share": 0.11000000000000001,
+      "mean_topk_unique_sessions": 10.0,
+      "mean_unique_sessions": 22.15,
+      "mrr": 0.2086286907051525,
+      "per_session_cap": 4,
+      "r_at_k": 0.35,
+      "topk_hits": 7,
+      "vs_current": {
+        "rank_improved": 2,
+        "rank_same": 18,
+        "rank_worse": 0,
+        "topk_gained": 0,
+        "topk_lost": 0
+      }
+    },
+    {
+      "candidate_reachable": 12,
+      "candidate_recall": 0.6,
+      "count": 20,
+      "marginal": {
+        "delta_candidate_recall": 0.04999999999999993,
+        "delta_mean_max_session_share": 0.014999999999999986,
+        "delta_mrr": 0.0028670403670403577,
+        "delta_r_at_k": 0.050000000000000044
+      },
+      "mean_candidate_count": 30.0,
+      "mean_max_session_share": 0.125,
+      "mean_topk_unique_sessions": 9.85,
+      "mean_unique_sessions": 21.55,
+      "mrr": 0.21149573107219286,
+      "per_session_cap": 5,
+      "r_at_k": 0.4,
+      "topk_hits": 8,
+      "vs_current": {
+        "rank_improved": 4,
+        "rank_same": 16,
+        "rank_worse": 0,
+        "topk_gained": 1,
+        "topk_lost": 0
+      }
+    },
+    {
+      "candidate_reachable": 12,
+      "candidate_recall": 0.6,
+      "count": 20,
+      "marginal": {
+        "delta_candidate_recall": 0.0,
+        "delta_mean_max_session_share": 0.011666666666666659,
+        "delta_mrr": 0.0017150155081189222,
+        "delta_r_at_k": 0.0
+      },
+      "mean_candidate_count": 30.0,
+      "mean_max_session_share": 0.13666666666666666,
+      "mean_topk_unique_sessions": 9.65,
+      "mean_unique_sessions": 21.15,
+      "mrr": 0.21321074658031178,
+      "per_session_cap": 6,
+      "r_at_k": 0.4,
+      "topk_hits": 8,
+      "vs_current": {
+        "rank_improved": 4,
+        "rank_same": 16,
+        "rank_worse": 0,
+        "topk_gained": 1,
+        "topk_lost": 0
+      }
+    },
+    {
+      "candidate_reachable": 13,
+      "candidate_recall": 0.65,
+      "count": 20,
+      "marginal": {
+        "delta_candidate_recall": 0.050000000000000044,
+        "delta_mean_max_session_share": 0.008333333333333331,
+        "delta_mrr": 0.001861500568397123,
+        "delta_r_at_k": 0.0
+      },
+      "mean_candidate_count": 30.0,
+      "mean_max_session_share": 0.145,
+      "mean_topk_unique_sessions": 9.6,
+      "mean_unique_sessions": 21.0,
+      "mrr": 0.2150722471487089,
+      "per_session_cap": 7,
+      "r_at_k": 0.4,
+      "topk_hits": 8,
+      "vs_current": {
+        "rank_improved": 5,
+        "rank_same": 15,
+        "rank_worse": 0,
+        "topk_gained": 1,
+        "topk_lost": 0
+      }
+    },
+    {
+      "candidate_reachable": 13,
+      "candidate_recall": 0.65,
+      "count": 20,
+      "marginal": {
+        "delta_candidate_recall": 0.0,
+        "delta_mean_max_session_share": 0.006666666666666682,
+        "delta_mrr": 0.0,
+        "delta_r_at_k": 0.0
+      },
+      "mean_candidate_count": 30.0,
+      "mean_max_session_share": 0.15166666666666667,
+      "mean_topk_unique_sessions": 9.6,
+      "mean_unique_sessions": 20.95,
+      "mrr": 0.2150722471487089,
+      "per_session_cap": 8,
+      "r_at_k": 0.4,
+      "topk_hits": 8,
+      "vs_current": {
+        "rank_improved": 5,
+        "rank_same": 15,
+        "rank_worse": 0,
+        "topk_gained": 1,
+        "topk_lost": 0
+      }
+    },
+    {
+      "candidate_reachable": 13,
+      "candidate_recall": 0.65,
+      "count": 20,
+      "marginal": {
+        "delta_candidate_recall": 0.0,
+        "delta_mean_max_session_share": 0.006666666666666654,
+        "delta_mrr": 0.0013386243386243613,
+        "delta_r_at_k": 0.0
+      },
+      "mean_candidate_count": 30.0,
+      "mean_max_session_share": 0.15833333333333333,
+      "mean_topk_unique_sessions": 9.55,
+      "mean_unique_sessions": 20.85,
+      "mrr": 0.21641087148733326,
+      "per_session_cap": 9,
+      "r_at_k": 0.4,
+      "topk_hits": 8,
+      "vs_current": {
+        "rank_improved": 5,
+        "rank_same": 15,
+        "rank_worse": 0,
+        "topk_gained": 1,
+        "topk_lost": 0
+      }
+    },
+    {
+      "candidate_reachable": 13,
+      "candidate_recall": 0.65,
+      "count": 20,
+      "marginal": {
+        "delta_candidate_recall": 0.0,
+        "delta_mean_max_session_share": 0.006666666666666654,
+        "delta_mrr": 0.000287970331073778,
+        "delta_r_at_k": 0.0
+      },
+      "mean_candidate_count": 30.0,
+      "mean_max_session_share": 0.16499999999999998,
+      "mean_topk_unique_sessions": 9.55,
+      "mean_unique_sessions": 20.75,
+      "mrr": 0.21669884181840704,
+      "per_session_cap": 10,
+      "r_at_k": 0.4,
+      "topk_hits": 8,
+      "vs_current": {
+        "rank_improved": 5,
+        "rank_same": 15,
+        "rank_worse": 0,
+        "topk_gained": 1,
+        "topk_lost": 0
+      }
+    },
+    {
+      "candidate_reachable": 13,
+      "candidate_recall": 0.65,
+      "count": 20,
+      "marginal": {
+        "delta_candidate_recall": 0.0,
+        "delta_mean_max_session_share": 0.006666666666666682,
+        "delta_mrr": 0.00032206119162642155,
+        "delta_r_at_k": 0.0
+      },
+      "mean_candidate_count": 30.0,
+      "mean_max_session_share": 0.17166666666666666,
+      "mean_topk_unique_sessions": 9.55,
+      "mean_unique_sessions": 20.65,
+      "mrr": 0.21702090301003346,
+      "per_session_cap": 11,
+      "r_at_k": 0.4,
+      "topk_hits": 8,
+      "vs_current": {
+        "rank_improved": 5,
+        "rank_same": 15,
+        "rank_worse": 0,
+        "topk_gained": 1,
+        "topk_lost": 0
+      }
+    },
+    {
+      "candidate_reachable": 13,
+      "candidate_recall": 0.65,
+      "count": 20,
+      "marginal": {
+        "delta_candidate_recall": 0.0,
+        "delta_mean_max_session_share": 0.006666666666666682,
+        "delta_mrr": 0.00026449275362316893,
+        "delta_r_at_k": 0.0
+      },
+      "mean_candidate_count": 30.0,
+      "mean_max_session_share": 0.17833333333333334,
+      "mean_topk_unique_sessions": 9.5,
+      "mean_unique_sessions": 20.55,
+      "mrr": 0.21728539576365663,
+      "per_session_cap": 12,
+      "r_at_k": 0.4,
+      "topk_hits": 8,
+      "vs_current": {
+        "rank_improved": 5,
+        "rank_same": 15,
+        "rank_worse": 0,
+        "topk_gained": 1,
+        "topk_lost": 0
+      }
+    },
+    {
+      "candidate_reachable": 13,
+      "candidate_recall": 0.65,
+      "count": 20,
+      "marginal": {
+        "delta_candidate_recall": 0.0,
+        "delta_mean_max_session_share": 0.006666666666666654,
+        "delta_mrr": 0.00040466779597214675,
+        "delta_r_at_k": 0.0
+      },
+      "mean_candidate_count": 30.0,
+      "mean_max_session_share": 0.185,
+      "mean_topk_unique_sessions": 9.4,
+      "mean_unique_sessions": 20.35,
+      "mrr": 0.21769006355962878,
+      "per_session_cap": 13,
+      "r_at_k": 0.4,
+      "topk_hits": 8,
+      "vs_current": {
+        "rank_improved": 5,
+        "rank_same": 15,
+        "rank_worse": 0,
+        "topk_gained": 1,
+        "topk_lost": 0
+      }
+    },
+    {
+      "candidate_reachable": 13,
+      "candidate_recall": 0.65,
+      "count": 20,
+      "marginal": {
+        "delta_candidate_recall": 0.0,
+        "delta_mean_max_session_share": 0.003333333333333327,
+        "delta_mrr": 0.00022727272727271486,
+        "delta_r_at_k": 0.0
+      },
+      "mean_candidate_count": 30.0,
+      "mean_max_session_share": 0.18833333333333332,
+      "mean_topk_unique_sessions": 9.4,
+      "mean_unique_sessions": 20.35,
+      "mrr": 0.2179173362869015,
+      "per_session_cap": 14,
+      "r_at_k": 0.4,
+      "topk_hits": 8,
+      "vs_current": {
+        "rank_improved": 5,
+        "rank_same": 15,
+        "rank_worse": 0,
+        "topk_gained": 1,
+        "topk_lost": 0
+      }
+    },
+    {
+      "candidate_reachable": 13,
+      "candidate_recall": 0.65,
+      "count": 20,
+      "marginal": {
+        "delta_candidate_recall": 0.0,
+        "delta_mean_max_session_share": 0.003333333333333355,
+        "delta_mrr": 0.00011904761904760197,
+        "delta_r_at_k": 0.0
+      },
+      "mean_candidate_count": 30.0,
+      "mean_max_session_share": 0.19166666666666668,
+      "mean_topk_unique_sessions": 9.4,
+      "mean_unique_sessions": 20.3,
+      "mrr": 0.2180363839059491,
+      "per_session_cap": 15,
+      "r_at_k": 0.4,
+      "topk_hits": 8,
+      "vs_current": {
+        "rank_improved": 5,
+        "rank_same": 15,
+        "rank_worse": 0,
+        "topk_gained": 1,
+        "topk_lost": 0
+      }
+    },
+    {
+      "candidate_reachable": 13,
+      "candidate_recall": 0.65,
+      "count": 20,
+      "marginal": {
+        "delta_candidate_recall": 0.0,
+        "delta_mean_max_session_share": 0.0016666666666666496,
+        "delta_mrr": 0.00013157894736848252,
+        "delta_r_at_k": 0.0
+      },
+      "mean_candidate_count": 30.0,
+      "mean_max_session_share": 0.19333333333333333,
+      "mean_topk_unique_sessions": 9.4,
+      "mean_unique_sessions": 20.25,
+      "mrr": 0.21816796285331758,
+      "per_session_cap": 16,
+      "r_at_k": 0.4,
+      "topk_hits": 8,
+      "vs_current": {
+        "rank_improved": 5,
+        "rank_same": 15,
+        "rank_worse": 0,
+        "topk_gained": 1,
+        "topk_lost": 0
+      }
+    },
+    {
+      "candidate_reachable": 13,
+      "candidate_recall": 0.65,
+      "count": 20,
+      "marginal": {
+        "delta_candidate_recall": 0.0,
+        "delta_mean_max_session_share": 0.0016666666666666774,
+        "delta_mrr": 0.00014619883040931092,
+        "delta_r_at_k": 0.0
+      },
+      "mean_candidate_count": 30.0,
+      "mean_max_session_share": 0.195,
+      "mean_topk_unique_sessions": 9.4,
+      "mean_unique_sessions": 20.2,
+      "mrr": 0.2183141616837269,
+      "per_session_cap": 17,
+      "r_at_k": 0.4,
+      "topk_hits": 8,
+      "vs_current": {
+        "rank_improved": 5,
+        "rank_same": 15,
+        "rank_worse": 0,
+        "topk_gained": 1,
+        "topk_lost": 0
+      }
+    },
+    {
+      "candidate_reachable": 13,
+      "candidate_recall": 0.65,
+      "count": 20,
+      "marginal": {
+        "delta_candidate_recall": 0.0,
+        "delta_mean_max_session_share": 0.0016666666666666774,
+        "delta_mrr": 0.00016339869281045694,
+        "delta_r_at_k": 0.0
+      },
+      "mean_candidate_count": 30.0,
+      "mean_max_session_share": 0.19666666666666668,
+      "mean_topk_unique_sessions": 9.4,
+      "mean_unique_sessions": 20.15,
+      "mrr": 0.21847756037653734,
+      "per_session_cap": 18,
+      "r_at_k": 0.4,
+      "topk_hits": 8,
+      "vs_current": {
+        "rank_improved": 5,
+        "rank_same": 15,
+        "rank_worse": 0,
+        "topk_gained": 1,
+        "topk_lost": 0
+      }
+    },
+    {
+      "candidate_reachable": 13,
+      "candidate_recall": 0.65,
+      "count": 20,
+      "marginal": {
+        "delta_candidate_recall": 0.0,
+        "delta_mean_max_session_share": 0.0,
+        "delta_mrr": 0.0,
+        "delta_r_at_k": 0.0
+      },
+      "mean_candidate_count": 30.0,
+      "mean_max_session_share": 0.19666666666666668,
+      "mean_topk_unique_sessions": 9.4,
+      "mean_unique_sessions": 20.15,
+      "mrr": 0.21847756037653734,
+      "per_session_cap": 19,
+      "r_at_k": 0.4,
+      "topk_hits": 8,
+      "vs_current": {
+        "rank_improved": 5,
+        "rank_same": 15,
+        "rank_worse": 0,
+        "topk_gained": 1,
+        "topk_lost": 0
+      }
+    },
+    {
+      "candidate_reachable": 13,
+      "candidate_recall": 0.65,
+      "count": 20,
+      "marginal": {
+        "delta_candidate_recall": 0.0,
+        "delta_mean_max_session_share": 0.0,
+        "delta_mrr": 0.0,
+        "delta_r_at_k": 0.0
+      },
+      "mean_candidate_count": 30.0,
+      "mean_max_session_share": 0.19666666666666668,
+      "mean_topk_unique_sessions": 9.4,
+      "mean_unique_sessions": 20.15,
+      "mrr": 0.21847756037653734,
+      "per_session_cap": 20,
+      "r_at_k": 0.4,
+      "topk_hits": 8,
+      "vs_current": {
+        "rank_improved": 5,
+        "rank_same": 15,
+        "rank_worse": 0,
+        "topk_gained": 1,
+        "topk_lost": 0
+      }
+    },
+    {
+      "candidate_reachable": 13,
+      "candidate_recall": 0.65,
+      "count": 20,
+      "marginal": {
+        "delta_candidate_recall": 0.0,
+        "delta_mean_max_session_share": 0.0,
+        "delta_mrr": 0.0,
+        "delta_r_at_k": 0.0
+      },
+      "mean_candidate_count": 30.0,
+      "mean_max_session_share": 0.19666666666666668,
+      "mean_topk_unique_sessions": 9.4,
+      "mean_unique_sessions": 20.15,
+      "mrr": 0.21847756037653734,
+      "per_session_cap": 21,
+      "r_at_k": 0.4,
+      "topk_hits": 8,
+      "vs_current": {
+        "rank_improved": 5,
+        "rank_same": 15,
+        "rank_worse": 0,
+        "topk_gained": 1,
+        "topk_lost": 0
+      }
+    },
+    {
+      "candidate_reachable": 13,
+      "candidate_recall": 0.65,
+      "count": 20,
+      "marginal": {
+        "delta_candidate_recall": 0.0,
+        "delta_mean_max_session_share": 0.0,
+        "delta_mrr": 0.0,
+        "delta_r_at_k": 0.0
+      },
+      "mean_candidate_count": 30.0,
+      "mean_max_session_share": 0.19666666666666668,
+      "mean_topk_unique_sessions": 9.4,
+      "mean_unique_sessions": 20.15,
+      "mrr": 0.21847756037653734,
+      "per_session_cap": 22,
+      "r_at_k": 0.4,
+      "topk_hits": 8,
+      "vs_current": {
+        "rank_improved": 5,
+        "rank_same": 15,
+        "rank_worse": 0,
+        "topk_gained": 1,
+        "topk_lost": 0
+      }
+    },
+    {
+      "candidate_reachable": 13,
+      "candidate_recall": 0.65,
+      "count": 20,
+      "marginal": {
+        "delta_candidate_recall": 0.0,
+        "delta_mean_max_session_share": 0.0,
+        "delta_mrr": 0.0,
+        "delta_r_at_k": 0.0
+      },
+      "mean_candidate_count": 30.0,
+      "mean_max_session_share": 0.19666666666666668,
+      "mean_topk_unique_sessions": 9.4,
+      "mean_unique_sessions": 20.15,
+      "mrr": 0.21847756037653734,
+      "per_session_cap": 23,
+      "r_at_k": 0.4,
+      "topk_hits": 8,
+      "vs_current": {
+        "rank_improved": 5,
+        "rank_same": 15,
+        "rank_worse": 0,
+        "topk_gained": 1,
+        "topk_lost": 0
+      }
+    },
+    {
+      "candidate_reachable": 13,
+      "candidate_recall": 0.65,
+      "count": 20,
+      "marginal": {
+        "delta_candidate_recall": 0.0,
+        "delta_mean_max_session_share": 0.0,
+        "delta_mrr": 0.0,
+        "delta_r_at_k": 0.0
+      },
+      "mean_candidate_count": 30.0,
+      "mean_max_session_share": 0.19666666666666668,
+      "mean_topk_unique_sessions": 9.4,
+      "mean_unique_sessions": 20.15,
+      "mrr": 0.21847756037653734,
+      "per_session_cap": 24,
+      "r_at_k": 0.4,
+      "topk_hits": 8,
+      "vs_current": {
+        "rank_improved": 5,
+        "rank_same": 15,
+        "rank_worse": 0,
+        "topk_gained": 1,
+        "topk_lost": 0
+      }
+    },
+    {
+      "candidate_reachable": 13,
+      "candidate_recall": 0.65,
+      "count": 20,
+      "marginal": {
+        "delta_candidate_recall": 0.0,
+        "delta_mean_max_session_share": 0.0,
+        "delta_mrr": 0.0,
+        "delta_r_at_k": 0.0
+      },
+      "mean_candidate_count": 30.0,
+      "mean_max_session_share": 0.19666666666666668,
+      "mean_topk_unique_sessions": 9.4,
+      "mean_unique_sessions": 20.15,
+      "mrr": 0.21847756037653734,
+      "per_session_cap": 25,
+      "r_at_k": 0.4,
+      "topk_hits": 8,
+      "vs_current": {
+        "rank_improved": 5,
+        "rank_same": 15,
+        "rank_worse": 0,
+        "topk_gained": 1,
+        "topk_lost": 0
+      }
+    },
+    {
+      "candidate_reachable": 13,
+      "candidate_recall": 0.65,
+      "count": 20,
+      "marginal": {
+        "delta_candidate_recall": 0.0,
+        "delta_mean_max_session_share": 0.0,
+        "delta_mrr": 0.0,
+        "delta_r_at_k": 0.0
+      },
+      "mean_candidate_count": 30.0,
+      "mean_max_session_share": 0.19666666666666668,
+      "mean_topk_unique_sessions": 9.4,
+      "mean_unique_sessions": 20.15,
+      "mrr": 0.21847756037653734,
+      "per_session_cap": 26,
+      "r_at_k": 0.4,
+      "topk_hits": 8,
+      "vs_current": {
+        "rank_improved": 5,
+        "rank_same": 15,
+        "rank_worse": 0,
+        "topk_gained": 1,
+        "topk_lost": 0
+      }
+    },
+    {
+      "candidate_reachable": 13,
+      "candidate_recall": 0.65,
+      "count": 20,
+      "marginal": {
+        "delta_candidate_recall": 0.0,
+        "delta_mean_max_session_share": 0.0,
+        "delta_mrr": 0.0,
+        "delta_r_at_k": 0.0
+      },
+      "mean_candidate_count": 30.0,
+      "mean_max_session_share": 0.19666666666666668,
+      "mean_topk_unique_sessions": 9.4,
+      "mean_unique_sessions": 20.15,
+      "mrr": 0.21847756037653734,
+      "per_session_cap": 27,
+      "r_at_k": 0.4,
+      "topk_hits": 8,
+      "vs_current": {
+        "rank_improved": 5,
+        "rank_same": 15,
+        "rank_worse": 0,
+        "topk_gained": 1,
+        "topk_lost": 0
+      }
+    },
+    {
+      "candidate_reachable": 13,
+      "candidate_recall": 0.65,
+      "count": 20,
+      "marginal": {
+        "delta_candidate_recall": 0.0,
+        "delta_mean_max_session_share": 0.0,
+        "delta_mrr": 0.0,
+        "delta_r_at_k": 0.0
+      },
+      "mean_candidate_count": 30.0,
+      "mean_max_session_share": 0.19666666666666668,
+      "mean_topk_unique_sessions": 9.4,
+      "mean_unique_sessions": 20.15,
+      "mrr": 0.21847756037653734,
+      "per_session_cap": 28,
+      "r_at_k": 0.4,
+      "topk_hits": 8,
+      "vs_current": {
+        "rank_improved": 5,
+        "rank_same": 15,
+        "rank_worse": 0,
+        "topk_gained": 1,
+        "topk_lost": 0
+      }
+    },
+    {
+      "candidate_reachable": 13,
+      "candidate_recall": 0.65,
+      "count": 20,
+      "marginal": {
+        "delta_candidate_recall": 0.0,
+        "delta_mean_max_session_share": 0.0,
+        "delta_mrr": 0.0,
+        "delta_r_at_k": 0.0
+      },
+      "mean_candidate_count": 30.0,
+      "mean_max_session_share": 0.19666666666666668,
+      "mean_topk_unique_sessions": 9.4,
+      "mean_unique_sessions": 20.15,
+      "mrr": 0.21847756037653734,
+      "per_session_cap": 29,
+      "r_at_k": 0.4,
+      "topk_hits": 8,
+      "vs_current": {
+        "rank_improved": 5,
+        "rank_same": 15,
+        "rank_worse": 0,
+        "topk_gained": 1,
+        "topk_lost": 0
+      }
+    },
+    {
+      "candidate_reachable": 13,
+      "candidate_recall": 0.65,
+      "count": 20,
+      "marginal": {
+        "delta_candidate_recall": 0.0,
+        "delta_mean_max_session_share": 0.0,
+        "delta_mrr": 0.0,
+        "delta_r_at_k": 0.0
+      },
+      "mean_candidate_count": 30.0,
+      "mean_max_session_share": 0.19666666666666668,
+      "mean_topk_unique_sessions": 9.4,
+      "mean_unique_sessions": 20.15,
+      "mrr": 0.21847756037653734,
+      "per_session_cap": 30,
+      "r_at_k": 0.4,
+      "topk_hits": 8,
+      "vs_current": {
+        "rank_improved": 5,
+        "rank_same": 15,
+        "rank_worse": 0,
+        "topk_gained": 1,
+        "topk_lost": 0
+      }
+    }
+  ],
+  "production_parity": {
+    "matching_cases": 20,
+    "total_cases": 20
+  },
+  "schema": "theseus.session-search-per-session-cap-curve.v1",
+  "selection": {
+    "current_candidate_recall": 0.55,
+    "current_cap": 3,
+    "current_r_at_k": 0.35,
+    "latency_smoke": {
+      "current": {
+        "mean_ms": 785.315637599706,
+        "p50_ms": 629.7290859984059,
+        "p95_ms": 1423.5028330003843,
+        "queries": 20
+      },
+      "selected": {
+        "mean_ms": 786.3165206512349,
+        "p50_ms": 651.1961939977482,
+        "p95_ms": 1428.9285550039494,
+        "queries": 20
+      }
+    },
+    "selected_candidate_recall": 0.65,
+    "selected_cap": 7,
+    "selected_r_at_k": 0.4,
+    "selection_rule": "no_topk_loss_then_max_r_at_k_then_max_candidate_recall_then_min_cap"
+  }
+}
