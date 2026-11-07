@@ -331,3 +331,68 @@ Current disposition:
 `NEMOTRON_FREE_R10_PASS / NEMOTRON_MRR_0_690 / COST_ZERO /
 AZURE_OUTPERFORMED / PRIOR_MODEL_BASELINE_APPROACHED /
 XING4_PROVIDER_429 / GEMMA4_PROVIDER_429 / NO_CUTOVER`.
+
+### Issue #176 — BotHub paid-model benchmark (2026-11-07)
+
+BotHub was exercised through the verified exe.dev `bothub-api` HTTP proxy using
+the same frozen authority and unchanged evaluator as #120/#127/#174.
+
+Frozen gold:
+- rows: 20;
+- cases: 10;
+- `gold_digest_v2 = 5c1e817960a3e8222ec9cdba6f9ec135b5c00d6e7be0f42a2dbf50775956a6d7`.
+
+Execution:
+- first live run: exact SHA
+  `cd646dcc3f889a24631004faa4b84d641b50bb2a`,
+  UTC `2026-11-07T13:10:44Z..13:11:54Z`;
+- BotHub canonicalized two response model IDs with provider prefixes, which the
+  first strict guard classified as model drift even though the HTTP calls
+  succeeded;
+- the canonical-ID/resume fix was verified and committed;
+- resumed run: exact SHA
+  `2de28f8006683f3e28c19daef7fa16a86b320be4`,
+  UTC `2026-11-07T13:13:40Z..13:14:40Z`.
+
+| Arm | R@1 | R@3 | R@5 | R@10 | MRR | mean ms | p95 ms |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Gemini 2.5 Flash Lite | 0.300 | 0.500 | 0.700 | 0.900 | 0.449 | 5599 | 8866 |
+| GPT-4.1 Nano | 0.400 | 0.800 | 0.900 | 0.900 | 0.593 | 2341 | 5241 |
+| DeepSeek V4.1 Flash | 0.300 | 0.800 | 1.000 | 1.000 | 0.557 | 2489 | 3382 |
+
+Independent Neon aggregate readback matched all three rows above.
+
+Token observations from the successful ten-query arms:
+
+| Arm | prompt | completion | reasoning | total |
+|---|---:|---:|---:|---:|
+| Gemini 2.5 Flash Lite | 800 | 3639 | 3446 | 4439 |
+| GPT-4.1 Nano | 909 | 209 | 0 | 1118 |
+| DeepSeek V4.1 Flash | 1123 | 1836 | 1599 | 2959 |
+
+Gemini and DeepSeek spent most of their completion budget on reasoning for this
+simple translation task. GPT Nano was much more token-efficient.
+
+The public BotHub tariff snapshot used by the runner was:
+- Gemini 2.5 Flash Lite: 4.38 RUB/M input, 17.53 RUB/M output;
+- GPT-4.1 Nano: 4.38 RUB/M input, 17.53 RUB/M output;
+- DeepSeek V4.1 Flash: 4.25 RUB/M input, 47.21 RUB/M output.
+
+Those values are **catalog estimates, not billing truth**. BotHub's provider mode
+(ECO/PRO), actual provider route and internal CAPS accounting are separate
+variables. Billing interpretation belongs to
+`TeaShaman-cyber/theseus-model-usage-lab#17`.
+
+Quality references:
+- Azure Translator: R@10 0.900 / MRR 0.465;
+- OpenRouter Nemotron snapshot: R@10 1.000 / MRR 0.690;
+- prior active-reasoning-model translation: R@10 1.000 / MRR 0.753;
+- paired-RU oracle: R@10 1.000 / MRR 0.803.
+
+Decision:
+
+`BOTHUB_PAID_MODELS_MEASURED / NO_CANDIDATE_PASSES_QUALITY_GATE /
+DEEPSEEK_R10_PASS_MRR_FAIL / GPT_NANO_MRR_BEST_BUT_R10_FAIL /
+GEMINI_FLASH_LITE_REJECTED / NO_SERVING_CUTOVER`.
+
+The experiment does not justify a production translation-provider change.
