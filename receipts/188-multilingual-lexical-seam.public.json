@@ -1,0 +1,93 @@
+{
+  "corpus": {
+    "indexed_messages": 177633,
+    "indexed_search_classes": [
+      "dialogue",
+      "evidence"
+    ]
+  },
+  "date": "2026-11-08",
+  "disposition": "LANGUAGE_SIGNAL_OBSERVED / NATURAL_QUERY_DILUTION_OBSERVED / ORACLE_LEMMA_8_OF_10 / CAP_NOT_LIMITING_ORACLE / BACKEND_NEUTRAL_LEXICAL_SEAM_JUSTIFIED / NO_SELECTION / NO_CUTOVER",
+  "holdout": {
+    "cases": 10,
+    "frozen_sha256": "0461cb33d44913a8a5bbdf93fcaa0b0c7e17b1dc50ea81f7acae5f930b5867fd",
+    "promotion_independent": false,
+    "role": "development_diagnostic_after_203"
+  },
+  "interpretation": {
+    "backend_selected": false,
+    "morphology_contributes": true,
+    "morphology_sufficient": false,
+    "next_gate": "freeze target-independent analyzer/query-planner semantics, then validate on a new independent holdout before backend promotion",
+    "query_planning_headroom_observed": true,
+    "serving_changed": false,
+    "simple_rarest_term_pruning_sufficient": false
+  },
+  "issue": 188,
+  "natural_query_candidate_recall": {
+    "lemma_ru_en": {
+      "of": 10,
+      "reachable": 2
+    },
+    "snowball_ru_en": {
+      "of": 10,
+      "reachable": 2
+    },
+    "surface": {
+      "of": 10,
+      "reachable": 1
+    }
+  },
+  "oracle_upper_bound": {
+    "lemma": {
+      "reachable": 8,
+      "top10": 7
+    },
+    "lemma_cap_sensitivity": {
+      "cap3": {
+        "reachable": 8,
+        "top10": 7
+      },
+      "cap30": {
+        "reachable": 8,
+        "top10": 7
+      },
+      "cap7": {
+        "reachable": 8,
+        "top10": 7
+      }
+    },
+    "production_eligible": false,
+    "surface": {
+      "reachable": 4,
+      "top10": 1
+    },
+    "target_dependent": true
+  },
+  "privacy": {
+    "query_text_exported": false,
+    "target_fingerprints_exported": false,
+    "target_text_exported": false
+  },
+  "private_receipt_sha256": {
+    "lemma_ru_en": "9024b385c8f297959e8223e8dc79966c5bbf379ae102667fc99d2deca4673477",
+    "snowball_ru_en": "3fa8b7da496585a5722611f79a6e5ebe7b3f5f172f0833ce6aeeff3a6d934835",
+    "surface": "a95983eab45e65dfe477032fcd15ddee44e2cd3267e32b8a572001c4df8d30a0"
+  },
+  "rarest_term_diagnostic": {
+    "lemma_max_reachable": 3,
+    "selection_for_production": false,
+    "surface_max_reachable": 1
+  },
+  "runtime": {
+    "pymorphy3": "2.0.6",
+    "pymorphy3_dicts_ru": "2.4.417150.4580142",
+    "snowballstemmer": "3.1.1"
+  },
+  "schema": "theseus.session-search-multilingual-lexical-seam.v1",
+  "surface_loss_point": {
+    "target_lexically_matches_query": 10,
+    "target_within_post_cap_top30": 1,
+    "target_within_session_cap3": 3
+  }
+}
