@@ -1,0 +1,86 @@
+{
+  "schema": "theseus.session-search-independent-holdout.v1",
+  "date": "2026-11-08",
+  "issue": 203,
+  "protocol": {
+    "holdout_cases": 10,
+    "discovery_candidates": 1210,
+    "chronological_decisions_recorded": 288,
+    "selection": "first 10 unambiguous prior-history targets under the predeclared chronological rule",
+    "no_challenger_during_selection": true,
+    "no_retuning": true,
+    "k": 10,
+    "candidate_budget": 30
+  },
+  "private_artifact_identities": {
+    "frozen_holdout_sha256": "0461cb33d44913a8a5bbdf93fcaa0b0c7e17b1dc50ea81f7acae5f930b5867fd",
+    "evaluator_input_sha256": "f194ea5c8ca0aab8ed86dec7544032e721343b37c9a40fdab6b8bb70c0e1dd3a",
+    "baseline_receipt_sha256": "2835ebbfad9fad258f24e6f2267dbd8ca0189a9cd650fc139e0b7817b7a22783",
+    "challenger_receipt_sha256": "8f05f67aaf8919be08e30ac2077f84aa569559e915351f150876bba39ba76a5f"
+  },
+  "current": {
+    "per_session_cap": 3,
+    "candidate_reachable": 1,
+    "top10_hits": 1,
+    "r_at_10": 0.1,
+    "mrr": 0.05,
+    "production_equivalent_parity": "10/10",
+    "rank_vector": [
+      "MISS",
+      2,
+      "MISS",
+      "MISS",
+      "MISS",
+      "MISS",
+      "MISS",
+      "MISS",
+      "MISS",
+      "MISS"
+    ],
+    "latency_ms": {
+      "mean": 1158.0640831991332,
+      "p50": 1276.9026979985938,
+      "p95": 1761.7994339962024
+    }
+  },
+  "challenger": {
+    "per_session_cap": 7,
+    "candidate_reachable": 1,
+    "top10_hits": 1,
+    "r_at_10": 0.1,
+    "mrr": 0.05,
+    "rank_vector": [
+      "MISS",
+      2,
+      "MISS",
+      "MISS",
+      "MISS",
+      "MISS",
+      "MISS",
+      "MISS",
+      "MISS",
+      "MISS"
+    ],
+    "latency_ms": {
+      "mean": 1155.8853934999206,
+      "p50": 1252.7239965020271,
+      "p95": 1783.5491169971647
+    }
+  },
+  "comparison": {
+    "reach_gained": 0,
+    "reach_lost": 0,
+    "top10_gained": 0,
+    "top10_lost": 0,
+    "rank_improved": 0,
+    "rank_same": 10,
+    "rank_worse": 0
+  },
+  "boundary": {
+    "private_query_text_exported": false,
+    "private_target_fingerprints_exported": false,
+    "production_state_changed": false,
+    "interpretation": "The independent holdout rejects cap=7 for lack of observed benefit. The nine misses are not explained by the per-session cap and must not be used to retune that cap on this holdout."
+  },
+  "disposition": "INDEPENDENT_HOLDOUT_FROZEN / CAP7_REJECTED_NO_HOLDOUT_GAIN / KEEP_CAP3 / NO_RETUNING / NO_CUTOVER"
+}
