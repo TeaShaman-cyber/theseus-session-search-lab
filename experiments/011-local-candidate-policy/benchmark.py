@@ -10,6 +10,7 @@ import sqlite3
 import statistics
 import time
 
+from session_search.corpus_lock import resolve_corpus_lock
 from session_search.search import _recall_candidate_rows, fts_query, rerank_recall_rows
 
 SCOPES = ['dialogue', 'evidence']
@@ -224,11 +225,11 @@ def run(
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument('--corpus', type=pathlib.Path, required=True)
+    parser.add_argument('--corpus-lock', type=pathlib.Path, required=True)
     parser.add_argument('--gold', type=pathlib.Path, required=True)
     parser.add_argument('--out', type=pathlib.Path)
     args = parser.parse_args()
-    corpus = args.corpus / 'corpus.sqlite3' if args.corpus.is_dir() else args.corpus
+    corpus = resolve_corpus_lock(args.corpus_lock)
     result = run(corpus, args.gold)
     payload = json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + '\n'
     if args.out:

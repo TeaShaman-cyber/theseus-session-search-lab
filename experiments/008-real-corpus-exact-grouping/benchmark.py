@@ -9,6 +9,7 @@ import re
 import sqlite3
 import statistics
 
+from session_search.corpus_lock import resolve_corpus_lock
 from session_search.search import fts_query, rerank_recall_rows, search_corpus
 
 SCOPES = ["dialogue", "evidence"]
@@ -245,14 +246,15 @@ def run(corpus: pathlib.Path, gold_file: pathlib.Path, *, k: int, candidate_budg
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--corpus", type=pathlib.Path, required=True)
+    parser.add_argument("--corpus-lock", type=pathlib.Path, required=True)
     parser.add_argument("--gold", type=pathlib.Path, required=True)
     parser.add_argument("--k", type=int, default=10)
     parser.add_argument("--candidate-budget", type=int, default=30)
     parser.add_argument("--out", type=pathlib.Path)
     args = parser.parse_args()
+    corpus = resolve_corpus_lock(args.corpus_lock)
     result = run(
-        args.corpus / "corpus.sqlite3" if args.corpus.is_dir() else args.corpus,
+        corpus,
         args.gold,
         k=args.k,
         candidate_budget=args.candidate_budget,

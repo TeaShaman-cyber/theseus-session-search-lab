@@ -8,6 +8,8 @@ import pathlib
 import re
 import sqlite3
 
+from session_search.corpus_lock import resolve_corpus_lock
+
 
 def content_fp(text: str) -> str:
     normalized = re.sub(r"\s+", " ", text.strip().lower())
@@ -122,7 +124,7 @@ def main() -> int:
     reject = sub.add_parser("reject", parents=[common])
 
     accept = sub.add_parser("accept", parents=[common])
-    accept.add_argument("--corpus", type=pathlib.Path, required=True)
+    accept.add_argument("--corpus-lock", type=pathlib.Path, required=True)
     accept.add_argument("--target-session-id", required=True)
     accept.add_argument("--target-message-id", required=True)
 
@@ -143,7 +145,7 @@ def main() -> int:
         return 0
 
     if args.command == "accept":
-        db = args.corpus / "corpus.sqlite3" if args.corpus.is_dir() else args.corpus
+        db = resolve_corpus_lock(args.corpus_lock)
         decision = make_accept_decision(
             db,
             discovery,
