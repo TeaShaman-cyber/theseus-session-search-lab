@@ -1,0 +1,282 @@
+{
+  "candidate_budget": 30,
+  "cases": [
+    {
+      "baseline_rank": null,
+      "baseline_unique_top_k": 4,
+      "candidate_occurrences_preserved": true,
+      "candidate_rows": 30,
+      "case_id": "basic_memory_local",
+      "grouped_rank": 7,
+      "grouped_unique_top_k": 10,
+      "query_lang": "en"
+    },
+    {
+      "baseline_rank": 3,
+      "baseline_unique_top_k": 8,
+      "candidate_occurrences_preserved": true,
+      "candidate_rows": 30,
+      "case_id": "basic_memory_local",
+      "grouped_rank": 3,
+      "grouped_unique_top_k": 10,
+      "query_lang": "ru"
+    },
+    {
+      "baseline_rank": null,
+      "baseline_unique_top_k": 7,
+      "candidate_occurrences_preserved": true,
+      "candidate_rows": 30,
+      "case_id": "deepseek_moe_lens",
+      "grouped_rank": null,
+      "grouped_unique_top_k": 10,
+      "query_lang": "en"
+    },
+    {
+      "baseline_rank": null,
+      "baseline_unique_top_k": 10,
+      "candidate_occurrences_preserved": true,
+      "candidate_rows": 30,
+      "case_id": "deepseek_moe_lens",
+      "grouped_rank": null,
+      "grouped_unique_top_k": 10,
+      "query_lang": "ru"
+    },
+    {
+      "baseline_rank": null,
+      "baseline_unique_top_k": 7,
+      "candidate_occurrences_preserved": true,
+      "candidate_rows": 30,
+      "case_id": "family_gramps_upload",
+      "grouped_rank": null,
+      "grouped_unique_top_k": 10,
+      "query_lang": "en"
+    },
+    {
+      "baseline_rank": null,
+      "baseline_unique_top_k": 9,
+      "candidate_occurrences_preserved": true,
+      "candidate_rows": 30,
+      "case_id": "family_gramps_upload",
+      "grouped_rank": null,
+      "grouped_unique_top_k": 10,
+      "query_lang": "ru"
+    },
+    {
+      "baseline_rank": null,
+      "baseline_unique_top_k": 5,
+      "candidate_occurrences_preserved": true,
+      "candidate_rows": 30,
+      "case_id": "github_mcp_optional",
+      "grouped_rank": null,
+      "grouped_unique_top_k": 10,
+      "query_lang": "en"
+    },
+    {
+      "baseline_rank": 1,
+      "baseline_unique_top_k": 5,
+      "candidate_occurrences_preserved": true,
+      "candidate_rows": 30,
+      "case_id": "github_mcp_optional",
+      "grouped_rank": 1,
+      "grouped_unique_top_k": 10,
+      "query_lang": "ru"
+    },
+    {
+      "baseline_rank": null,
+      "baseline_unique_top_k": 7,
+      "candidate_occurrences_preserved": true,
+      "candidate_rows": 30,
+      "case_id": "gramps_sqlite_postgres",
+      "grouped_rank": null,
+      "grouped_unique_top_k": 10,
+      "query_lang": "en"
+    },
+    {
+      "baseline_rank": null,
+      "baseline_unique_top_k": 5,
+      "candidate_occurrences_preserved": true,
+      "candidate_rows": 30,
+      "case_id": "gramps_sqlite_postgres",
+      "grouped_rank": null,
+      "grouped_unique_top_k": 10,
+      "query_lang": "ru"
+    },
+    {
+      "baseline_rank": null,
+      "baseline_unique_top_k": 6,
+      "candidate_occurrences_preserved": true,
+      "candidate_rows": 30,
+      "case_id": "hindsight_name",
+      "grouped_rank": null,
+      "grouped_unique_top_k": 10,
+      "query_lang": "en"
+    },
+    {
+      "baseline_rank": 1,
+      "baseline_unique_top_k": 4,
+      "candidate_occurrences_preserved": true,
+      "candidate_rows": 30,
+      "case_id": "hindsight_name",
+      "grouped_rank": 1,
+      "grouped_unique_top_k": 10,
+      "query_lang": "ru"
+    },
+    {
+      "baseline_rank": null,
+      "baseline_unique_top_k": 9,
+      "candidate_occurrences_preserved": true,
+      "candidate_rows": 30,
+      "case_id": "infisical_failure_point",
+      "grouped_rank": null,
+      "grouped_unique_top_k": 10,
+      "query_lang": "en"
+    },
+    {
+      "baseline_rank": 5,
+      "baseline_unique_top_k": 6,
+      "candidate_occurrences_preserved": true,
+      "candidate_rows": 30,
+      "case_id": "infisical_failure_point",
+      "grouped_rank": 4,
+      "grouped_unique_top_k": 10,
+      "query_lang": "ru"
+    },
+    {
+      "baseline_rank": null,
+      "baseline_unique_top_k": 4,
+      "candidate_occurrences_preserved": true,
+      "candidate_rows": 30,
+      "case_id": "notion_drive_connectors",
+      "grouped_rank": null,
+      "grouped_unique_top_k": 10,
+      "query_lang": "en"
+    },
+    {
+      "baseline_rank": 3,
+      "baseline_unique_top_k": 6,
+      "candidate_occurrences_preserved": true,
+      "candidate_rows": 30,
+      "case_id": "notion_drive_connectors",
+      "grouped_rank": 2,
+      "grouped_unique_top_k": 10,
+      "query_lang": "ru"
+    },
+    {
+      "baseline_rank": null,
+      "baseline_unique_top_k": 6,
+      "candidate_occurrences_preserved": true,
+      "candidate_rows": 30,
+      "case_id": "remote_linux_vs_marcopolo",
+      "grouped_rank": null,
+      "grouped_unique_top_k": 10,
+      "query_lang": "en"
+    },
+    {
+      "baseline_rank": 1,
+      "baseline_unique_top_k": 5,
+      "candidate_occurrences_preserved": true,
+      "candidate_rows": 30,
+      "case_id": "remote_linux_vs_marcopolo",
+      "grouped_rank": 1,
+      "grouped_unique_top_k": 10,
+      "query_lang": "ru"
+    },
+    {
+      "baseline_rank": null,
+      "baseline_unique_top_k": 4,
+      "candidate_occurrences_preserved": true,
+      "candidate_rows": 30,
+      "case_id": "residual_oauth_access",
+      "grouped_rank": null,
+      "grouped_unique_top_k": 10,
+      "query_lang": "en"
+    },
+    {
+      "baseline_rank": 10,
+      "baseline_unique_top_k": 3,
+      "candidate_occurrences_preserved": true,
+      "candidate_rows": 30,
+      "case_id": "residual_oauth_access",
+      "grouped_rank": 3,
+      "grouped_unique_top_k": 10,
+      "query_lang": "ru"
+    }
+  ],
+  "current_recall_prefix_parity": {
+    "matching_cases": 20,
+    "total_cases": 20
+  },
+  "k": 10,
+  "schema": "theseus.session-search-exact-grouping-benchmark.v1",
+  "summary": {
+    "all": {
+      "baseline": {
+        "count": 20,
+        "mrr": 0.19833333333333333,
+        "r_at_1": 0.15,
+        "r_at_10": 0.35,
+        "r_at_3": 0.25,
+        "r_at_5": 0.3
+      },
+      "exact_grouped": {
+        "count": 20,
+        "mrr": 0.22797619047619047,
+        "r_at_1": 0.15,
+        "r_at_10": 0.4,
+        "r_at_3": 0.3,
+        "r_at_5": 0.35
+      },
+      "improved": 4,
+      "mean_unique_top_k_baseline": 6.0,
+      "mean_unique_top_k_grouped": 10.0,
+      "same": 16,
+      "worse": 0
+    },
+    "en": {
+      "baseline": {
+        "count": 10,
+        "mrr": 0.0,
+        "r_at_1": 0.0,
+        "r_at_10": 0.0,
+        "r_at_3": 0.0,
+        "r_at_5": 0.0
+      },
+      "exact_grouped": {
+        "count": 10,
+        "mrr": 0.014285714285714285,
+        "r_at_1": 0.0,
+        "r_at_10": 0.1,
+        "r_at_3": 0.0,
+        "r_at_5": 0.0
+      },
+      "improved": 1,
+      "mean_unique_top_k_baseline": 5.9,
+      "mean_unique_top_k_grouped": 10.0,
+      "same": 9,
+      "worse": 0
+    },
+    "ru": {
+      "baseline": {
+        "count": 10,
+        "mrr": 0.39666666666666667,
+        "r_at_1": 0.3,
+        "r_at_10": 0.7,
+        "r_at_3": 0.5,
+        "r_at_5": 0.6
+      },
+      "exact_grouped": {
+        "count": 10,
+        "mrr": 0.4416666666666667,
+        "r_at_1": 0.3,
+        "r_at_10": 0.7,
+        "r_at_3": 0.6,
+        "r_at_5": 0.7
+      },
+      "improved": 3,
+      "mean_unique_top_k_baseline": 6.1,
+      "mean_unique_top_k_grouped": 10.0,
+      "same": 7,
+      "worse": 0
+    }
+  }
+}
