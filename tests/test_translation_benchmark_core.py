@@ -52,6 +52,38 @@ class TranslationBenchmarkCoreTests(unittest.TestCase):
             hashlib.sha256(expected.encode("utf-8")).hexdigest(),
         )
 
+
+    def test_gold_digest_is_order_independent_and_covers_frozen_fields(self):
+        mod = load_module()
+        rows = [
+            {
+                "case_id": "b",
+                "query_lang": "ru",
+                "query_text": "два",
+                "target_content_fp": "2" * 32,
+            },
+            {
+                "case_id": "a",
+                "query_lang": "en",
+                "query_text": "one",
+                "target_content_fp": "1" * 32,
+            },
+        ]
+
+        payload = mod.canonical_gold_payload(rows)
+
+        expected = json.dumps(
+            sorted(rows, key=lambda row: (row["case_id"], row["query_lang"])),
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        self.assertEqual(payload, expected)
+        self.assertEqual(
+            mod.gold_digest(rows),
+            hashlib.sha256(expected.encode("utf-8")).hexdigest(),
+        )
+
     def test_retrieval_metrics_treat_missing_rank_as_miss(self):
         mod = load_module()
         ranks = [1, 2, 5, 10, None]
