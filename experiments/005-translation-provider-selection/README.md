@@ -213,3 +213,58 @@ ISSUE127_NEON_API_BASE=https://neon.int.exe.xyz/api/v2 ISSUE127_NEON_ROLE=neondb
 
 The benchmark branch is isolated; this runner does not modify serving, activation,
 candidate catalogs, or production shard state.
+
+### Issue #127 final Azure benchmark result — 2026-11-07
+
+The versioned runner was executed from exact Git SHA
+`bbb020ec43a33372bb01fb1d9d172a3098b3f80d` against the isolated frozen branch.
+
+Provider execution:
+- 10/10 Azure Translator calls: HTTP 200;
+- source characters: 765;
+- latency mean: 231.3 ms;
+- latency p50: 220.8 ms;
+- latency p95: 291.0 ms;
+- historical TSV translation digest:
+  `38dff1e437d31469874179e96799599a7af11d4ade2f18f0e630837de756de95`;
+- canonical translation digest v2:
+  `6c92cce535016adb8f642083d483348a89ebb04dc9e4720f98d9006901e1de58`.
+
+The historical TSV digest exactly matches the earlier pre-retrieval Azure run on the same
+frozen set, so the observed Azure output was reproducible across the two executions.
+
+Retrieval result under the unchanged recovered #120 evaluator:
+- R@1 = 0.300;
+- R@3 = 0.500;
+- R@5 = 0.800;
+- R@10 = 0.900;
+- MRR = 0.465.
+
+Comparison with the prior reasoning-model translation arm
+(`R@1=0.600, R@3=0.900, R@5=1.000, R@10=1.000, MRR=0.753`):
+
+| Case | Prior rank | Azure rank |
+|---|---:|---:|
+| basic_memory_local | 2 | miss |
+| deepseek_moe_lens | 5 | 5 |
+| family_gramps_upload | 2 | 2 |
+| github_mcp_optional | 1 | 5 |
+| gramps_sqlite_postgres | 3 | 3 |
+| hindsight_name | 1 | 6 |
+| infisical_failure_point | 1 | 1 |
+| notion_drive_connectors | 1 | 1 |
+| remote_linux_vs_marcopolo | 1 | 1 |
+| residual_oauth_access | 1 | 4 |
+
+Six cases were unchanged; four degraded; none improved.
+
+Decision:
+
+`AZURE_TRANSLATOR_OPERATIONALLY_VERIFIED / TRANSLATION_OUTPUT_REPRODUCIBLE /
+RETRIEVAL_QUALITY_GATE_FAILED / DO_NOT_ADVANCE_AZURE_STANDARD_NMT /
+NO_SERVING_CUTOVER`.
+
+Azure remains a technically viable authenticated provider, but standard Translator NMT does not
+meet the frozen retrieval-quality acceptance threshold for Session Search query normalization.
+The next provider experiment, if pursued, should use the same frozen authority and evaluator
+rather than changing ranking or candidate generation.
