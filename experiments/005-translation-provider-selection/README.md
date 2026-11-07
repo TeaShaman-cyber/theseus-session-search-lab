@@ -499,3 +499,68 @@ The older-model anecdote remains unverified. STOP: no replacement, serving
 cutover or model zoo expansion. Any Microsoft Windows ML / optimized ONNX runtime
 comparison is a separately authorized hypothesis, not conflated with this
 model comparison.
+
+### Issue #182 — Azure Translator v3, conservative notranslate markup (2026-11-07)
+
+Objective: first optimize the **existing deterministic Translator API**, before
+considering any LLM, new provider or runtime. Primary test: same frozen #120/#127
+20 gold rows (10 EN queries), same en→ru v3.0 resource, same retrieval evaluator
+and gold digest
+`5c1e817960a3e8222ec9cdba6f9ec135b5c00d6e7be0f42a2dbf50775956a6d7`.
+
+Paired arms, each 10 Azure calls:
+- plain control: `api-version=3.0&from=en&to=ru`, no markup;
+- protected: the same v3 API plus `textType=html`, with HTML-escaped content
+  and `span class="notranslate"` around only reviewed, exactly matched
+  names/products/acronyms; explicitly **not** a general glossary, automatic
+  terminology resolver or dynamic dictionary. Reject unexpected output HTML,
+  missing literal protected tokens and digest drift.
+- No LLM calls, Custom Translator training, API migration, RRF, production
+  serving change, or replacement of historical evaluation tables.
+- 18 protected term occurrences across ten source queries. Output changed
+  in 8/10 cases. Plain input chars 765; protected markup chars 1469
+  (roughly 1.92x input volume, with possible billing consequences).
+
+| Arm | R@1 | R@3 | R@5 | R@10 | MRR | mean ms | p50 ms | p95 ms |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Azure v3 plain | 0.300 | 0.500 | 0.800 | 0.900 | 0.465 | 244.9 | 247.9 | 280.9 |
+| Azure v3 protected | 0.300 | 0.800 | 0.900 | 0.900 | 0.542222 | 239.8 | 240.1 | 263.2 |
+
+- Control digest v2:
+  `6c92cce535016adb8f642083d483348a89ebb04dc9e4720f98d9006901e1de58`
+  exactly matches the original historical #127 Azure output. The current
+  endpoint returned stable baseline text.
+- Protected digest v2:
+  `51cd1176b2c861222cefc0752d7c12eb1d552e62be8332ee0af2b64a14e0d467`.
+- Per-case ranks (plain -> protected):
+  - `basic_memory_local`: miss -> 2;
+  - `deepseek_moe_lens`: 5 -> 5;
+  - `family_gramps_upload`: 2 -> 2;
+  - `github_mcp_optional`: 5 -> 18 (**top-10 regression**);
+  - `gramps_sqlite_postgres`: 3 -> 3;
+  - `hindsight_name`: 6 -> 2;
+  - `infisical_failure_point`: 1 -> 1;
+  - `notion_drive_connectors`: 1 -> 1;
+  - `remote_linux_vs_marcopolo`: 1 -> 1;
+  - `residual_oauth_access`: 4 -> 3.
+
+Independent Neon SQL readback: 10 translations and 10 result rows per
+isolated schema (`issue182_v3_plain`, `issue182_v3_protected`); both 9
+top-10 hits, 5 vs 8 top-3 hits, SQL MRR=0.465 vs 0.54222222. Private
+translation texts stayed in access-restricted evaluation tables and a
+mode-0600 temporary runtime bundle; never committed or pasted into issues.
+
+**Interpretation:** v3.0 API-native terminology protection can materially
+alter retrieval and increase frozen-set MRR **without an LLM**. But blanket
+notranslate around all glossary names swaps one top-10 failure for another,
+so it is **NOT safe for automatic production promotion**. Ten examples do
+not establish generalization, small latency differences are not material,
+and ~1.92x request characters may affect Azure billing.
+
+Disposition:
+`MEASURED / FROZEN_R10_UNCHANGED / MRR_IMPROVED /
+ONE_TOP10_REGRESSION / NO_LLM / NO_CUTOVER / STOP`.
+Next independent hypotheses: term-level selective protection under a
+predefined guard, Dynamic Dictionary where canonical equivalents exist,
+or test current Translator API 2026-06-06 NMT with a separately compatible
+client. Do not tune this frozen set case by case or add an LLM by default.
