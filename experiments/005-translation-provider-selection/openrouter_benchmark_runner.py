@@ -40,6 +40,12 @@ TRANSLATION_SYSTEM_PROMPT = (
     "translation, with no explanation, labels, markdown, or quotes."
 )
 
+
+
+class ProviderCallError(RuntimeError):
+    """Provider/model call failed before a complete translation arm was frozen."""
+
+
 CANDIDATE_ARMS = [
     {
         "name": "xing4",
@@ -167,11 +173,14 @@ def translate_rows(
                 code = error.get("code", exc.code)
             except Exception:
                 code = exc.code
-            raise RuntimeError(
+            raise ProviderCallError(
                 f"OPENROUTER_HTTP_{exc.code}_CODE_{code}"
             ) from None
 
-        parsed = parse_response(arm=arm, payload=payload)
+        try:
+            parsed = parse_response(arm=arm, payload=payload)
+        except RuntimeError as exc:
+            raise ProviderCallError(str(exc)) from None
         translated.append(
             {
                 "case_id": row["case_id"],
@@ -185,6 +194,26 @@ def translate_rows(
             }
         )
     return translated
+
+
+def run_translation_attempts(
+    *,
+    en_rows,
+    endpoint: str,
+    translator=translate_rows,
+):
+    successes = {}
+    failures = {}
+    for arm in CANDIDATE_ARMS:
+        try:
+            successes[arm["name"]] = translator(
+                arm=arm,
+                en_rows=en_rows,
+                endpoint=endpoint,
+            )
+        except ProviderCallError as exc:
+            failures[arm["name"]] = str(exc)
+    return successes, failures
 
 
 def runtime_from_environment():
@@ -288,12 +317,18 @@ def main() -> int:
         "ISSUE174_OPENROUTER_ENDPOINT", DEFAULT_OPENROUTER_ENDPOINT
     )
 
+    # Phase 1: attempt every provider arm before reading any retrieval result.
+    translated, translation_failures = run_translation_attempts(
+        en_rows=en_rows,
+        endpoint=endpoint,
+    )
+
+    # Phase 2: freeze every successful translation set, still before retrieval.
     frozen = {}
-    # Phase 1: finish and freeze every translation arm before reading retrieval.
     for arm in CANDIDATE_ARMS:
-        provider_rows = translate_rows(
-            arm=arm, en_rows=en_rows, endpoint=endpoint
-        )
+        provider_rows = translated.get(arm["name"])
+        if provider_rows is None:
+            continue
         _AZURE.EVAL_SCHEMA = arm["schema"]
         _AZURE._freeze_translations(runtime, provider_rows)
         readback_rows = _AZURE._readback_translation_rows(runtime)
@@ -304,15 +339,18 @@ def main() -> int:
             )
         frozen[arm["name"]] = provider_rows
 
-    # Phase 2: only after all three translation sets are frozen, inspect ranks.
+    # Phase 3: only after all attempts/freezes are done, inspect ranks.
     receipts = []
     for arm in CANDIDATE_ARMS:
+        provider_rows = frozen.get(arm["name"])
+        if provider_rows is None:
+            continue
         _AZURE.EVAL_SCHEMA = arm["schema"]
         results = _AZURE._evaluate(runtime)
         receipts.append(
             public_arm_receipt(
                 arm=arm,
-                provider_rows=frozen[arm["name"]],
+                provider_rows=provider_rows,
                 results=results,
                 gold_digest_v2=gold_summary["gold_digest_v2"],
             )
@@ -323,6 +361,7 @@ def main() -> int:
             {
                 "gold": gold_summary,
                 "arms": receipts,
+                "translation_failures": translation_failures,
             },
             ensure_ascii=False,
             separators=(",", ":"),

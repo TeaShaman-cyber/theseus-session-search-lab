@@ -87,6 +87,40 @@ class OpenRouterBenchmarkRunnerTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "PROVIDER_DRIFT"):
             mod.parse_response(arm=arm, payload=wrong_provider)
 
+    def test_translation_attempts_continue_after_one_provider_failure(self):
+        mod = load_module()
+        calls = []
+
+        def fake_translate(*, arm, en_rows, endpoint):
+            calls.append(arm["name"])
+            if arm["name"] == "xing4":
+                raise mod.ProviderCallError("OPENROUTER_HTTP_429_CODE_429")
+            return [
+                {
+                    "case_id": "case-a",
+                    "query_text": "q",
+                    "translated_ru": "п",
+                    "target_content_fp": "f" * 32,
+                    "latency_ms": 1.0,
+                    "cost": 0,
+                    "response_model": arm["model"],
+                    "response_provider": arm["response_provider"],
+                }
+            ]
+
+        successes, failures = mod.run_translation_attempts(
+            en_rows=[{"case_id": "case-a"}],
+            endpoint="https://example.test",
+            translator=fake_translate,
+        )
+
+        self.assertEqual(calls, ["xing4", "gemma4", "nemotron3"])
+        self.assertEqual(set(successes), {"gemma4", "nemotron3"})
+        self.assertEqual(
+            failures,
+            {"xing4": "OPENROUTER_HTTP_429_CODE_429"},
+        )
+
     def test_free_model_start_interval_is_explicit(self):
         mod = load_module()
         self.assertEqual(
