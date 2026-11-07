@@ -87,6 +87,20 @@ class OpenRouterBenchmarkRunnerTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "PROVIDER_DRIFT"):
             mod.parse_response(arm=arm, payload=wrong_provider)
 
+    def test_select_arms_defaults_to_all_and_supports_resume_subset(self):
+        mod = load_module()
+
+        self.assertEqual(
+            [arm["name"] for arm in mod.select_arms(None)],
+            ["xing4", "gemma4", "nemotron3"],
+        )
+        self.assertEqual(
+            [arm["name"] for arm in mod.select_arms("xing4,nemotron3")],
+            ["xing4", "nemotron3"],
+        )
+        with self.assertRaisesRegex(ValueError, "UNKNOWN_ARM"):
+            mod.select_arms("does-not-exist")
+
     def test_translation_attempts_continue_after_one_provider_failure(self):
         mod = load_module()
         calls = []
@@ -109,6 +123,7 @@ class OpenRouterBenchmarkRunnerTests(unittest.TestCase):
             ]
 
         successes, failures = mod.run_translation_attempts(
+            arms=mod.CANDIDATE_ARMS,
             en_rows=[{"case_id": "case-a"}],
             endpoint="https://example.test",
             translator=fake_translate,

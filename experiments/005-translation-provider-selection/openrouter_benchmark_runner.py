@@ -71,6 +71,21 @@ CANDIDATE_ARMS = [
 ]
 
 
+def select_arms(spec: str | None):
+    if not spec:
+        return list(CANDIDATE_ARMS)
+
+    wanted = [part.strip() for part in spec.split(",") if part.strip()]
+    by_name = {arm["name"]: arm for arm in CANDIDATE_ARMS}
+    unknown = [name for name in wanted if name not in by_name]
+    if unknown:
+        raise ValueError("UNKNOWN_ARM=" + ",".join(unknown))
+
+    # Preserve canonical arm ordering for deterministic receipts.
+    wanted_set = set(wanted)
+    return [arm for arm in CANDIDATE_ARMS if arm["name"] in wanted_set]
+
+
 def build_request_payload(*, arm, query_text: str) -> dict:
     if arm["model"] == "openrouter/free":
         raise ValueError("ROUTER_ALIAS_FORBIDDEN")
@@ -198,13 +213,14 @@ def translate_rows(
 
 def run_translation_attempts(
     *,
+    arms,
     en_rows,
     endpoint: str,
     translator=translate_rows,
 ):
     successes = {}
     failures = {}
-    for arm in CANDIDATE_ARMS:
+    for arm in arms:
         try:
             successes[arm["name"]] = translator(
                 arm=arm,
@@ -300,8 +316,9 @@ def public_arm_receipt(*, arm, provider_rows, results, gold_digest_v2):
 
 def main() -> int:
     runtime = runtime_from_environment()
+    selected_arms = select_arms(os.environ.get("ISSUE174_ARMS"))
 
-    for arm in CANDIDATE_ARMS:
+    for arm in selected_arms:
         if not schema_absent(runtime, arm["schema"]):
             raise SystemExit(
                 f"ISSUE174_SCHEMA_ALREADY_EXISTS={arm['schema']}"
@@ -319,13 +336,14 @@ def main() -> int:
 
     # Phase 1: attempt every provider arm before reading any retrieval result.
     translated, translation_failures = run_translation_attempts(
+        arms=selected_arms,
         en_rows=en_rows,
         endpoint=endpoint,
     )
 
     # Phase 2: freeze every successful translation set, still before retrieval.
     frozen = {}
-    for arm in CANDIDATE_ARMS:
+    for arm in selected_arms:
         provider_rows = translated.get(arm["name"])
         if provider_rows is None:
             continue
@@ -341,7 +359,7 @@ def main() -> int:
 
     # Phase 3: only after all attempts/freezes are done, inspect ranks.
     receipts = []
-    for arm in CANDIDATE_ARMS:
+    for arm in selected_arms:
         provider_rows = frozen.get(arm["name"])
         if provider_rows is None:
             continue
