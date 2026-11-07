@@ -312,6 +312,20 @@ def _translate_rows(en_rows, *, endpoint: str, token: str):
     return translated
 
 
+def translation_freeze_script(path: Path) -> str:
+    return f"""begin;
+create schema {EVAL_SCHEMA};
+create table {EVAL_SCHEMA}.translations (
+  case_id text primary key,
+  translated_ru text not null,
+  target_content_fp text not null,
+  latency_ms double precision not null,
+  source_chars integer not null
+);
+\\copy {EVAL_SCHEMA}.translations (case_id,translated_ru,target_content_fp,latency_ms,source_chars) from '{path}' with (format csv, header true);
+commit;"""
+
+
 def _freeze_translations(runtime, rows):
     runtime_dir = Path(f"/run/user/{os.getuid()}")
     temp_dir = runtime_dir if runtime_dir.is_dir() else Path(tempfile.gettempdir())
@@ -343,22 +357,7 @@ def _freeze_translations(runtime, rows):
                 )
         os.chmod(path, 0o600)
 
-        script = f"""
-begin;
-create schema {EVAL_SCHEMA};
-create table {EVAL_SCHEMA}.translations (
-  case_id text primary key,
-  translated_ru text not null,
-  target_content_fp text not null,
-  latency_ms double precision not null,
-  source_chars integer not null
-);
-\\copy {EVAL_SCHEMA}.translations (
-  case_id,translated_ru,target_content_fp,latency_ms,source_chars
-) from '{path}' with (format csv, header true);
-commit;
-""".strip()
-        _run_psql(runtime, script=script)
+        _run_psql(runtime, script=translation_freeze_script(path))
     finally:
         path.unlink(missing_ok=True)
 

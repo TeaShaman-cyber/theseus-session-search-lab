@@ -131,6 +131,22 @@ class AzureTranslationBenchmarkRunnerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "GOLD_DIGEST_MISMATCH"):
             mod.validate_frozen_gold(rows, expected_digest="0" * 64)
 
+    def test_translation_freeze_copy_meta_command_is_single_line(self):
+        mod = load_module()
+
+        script = mod.translation_freeze_script(Path("/tmp/issue127.csv"))
+        copy_lines = [
+            line for line in script.splitlines() if line.startswith("\\copy ")
+        ]
+
+        self.assertEqual(len(copy_lines), 1)
+        self.assertIn(
+            "\\copy issue127_eval.translations "
+            "(case_id,translated_ru,target_content_fp,latency_ms,source_chars) "
+            "from '/tmp/issue127.csv' with (format csv, header true);",
+            copy_lines[0],
+        )
+
     def test_public_receipt_excludes_private_translation_fields(self):
         mod = load_module()
         provider_rows = [
