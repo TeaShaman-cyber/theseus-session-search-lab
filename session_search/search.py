@@ -116,6 +116,10 @@ _OCCURRENCE_FIELDS = (
     "role",
     "search_class",
     "create_time",
+    "provider",
+    "shard_id",
+    "generation_id",
+    "shard_rank",
 )
 
 
