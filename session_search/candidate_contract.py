@@ -72,3 +72,7 @@ def project_candidate_v1(row: dict, *, score_order: str) -> dict:
     result['backend_score'] = score
     result['backend_score_order'] = score_order
     return result
+
+
+def project_local_candidate_v1(row: dict) -> dict:
+    return project_candidate_v1(row, score_order='lower_better')

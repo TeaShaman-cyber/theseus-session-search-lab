@@ -2,7 +2,7 @@ import json
 import pathlib
 import unittest
 
-from session_search.candidate_contract import project_candidate_v1
+from session_search.candidate_contract import project_candidate_v1, project_local_candidate_v1
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
@@ -15,6 +15,10 @@ class CandidateContractTest(unittest.TestCase):
                 project_candidate_v1(case['input'], score_order=case['score_order']),
                 case['expected'],
             )
+
+    def test_local_adapter_binds_sqlite_score_orientation(self):
+        fixture = json.loads((ROOT / 'tests' / 'fixtures' / 'candidate_v1.json').read_text())
+        self.assertEqual(project_local_candidate_v1(fixture['local']['input']), fixture['local']['expected'])
 
     def test_rejects_ambiguous_score_orientation(self):
         row = {'session_id':'s','ordinal':0,'text':'x','search_class':'dialogue','score':1.0}

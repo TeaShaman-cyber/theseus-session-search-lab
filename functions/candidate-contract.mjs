@@ -41,3 +41,7 @@ export function projectCandidateV1(row, { scoreOrder } = {}) {
   result.backend_score_order = scoreOrder;
   return result;
 }
+
+export function projectServerlessCandidateV1(row) {
+  return projectCandidateV1(row, { scoreOrder: 'higher_better' });
+}

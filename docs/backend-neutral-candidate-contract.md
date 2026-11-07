@@ -67,3 +67,12 @@ and serverless-shaped inputs. Ambiguous score orientation fails closed.
 - no embeddings/vector layer;
 - no backend migration;
 - no production API change.
+
+## Known-path adapters
+
+To avoid repeating score-orientation choices at call sites:
+- Python/local: `project_local_candidate_v1(row)` binds `lower_better`;
+- JavaScript/serverless: `projectServerlessCandidateV1(row)` binds `higher_better`.
+
+The generic projectors remain available for controlled experiments with other backends,
+but callers must supply the orientation explicitly and invalid values fail closed.
