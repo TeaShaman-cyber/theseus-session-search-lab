@@ -48,3 +48,10 @@ test('group order follows first ranked occurrence and occurrence payload does no
 test('invalid hit text fails closed instead of inventing an identity', () => {
   assert.throws(() => groupExactTextHits([{ session_id: 'a', text: null }]), /GROUP_TEXT_INVALID/);
 });
+
+test('JavaScript matches shared exact-text grouping v1 conformance fixture', async () => {
+  const fs = await import('node:fs/promises');
+  const url = new URL('../../tests/fixtures/exact_text_grouping_v1.json', import.meta.url);
+  const fixture = JSON.parse(await fs.readFile(url, 'utf8'));
+  assert.deepEqual(groupExactTextHits(fixture.hits), fixture.expected);
+});
