@@ -104,3 +104,77 @@ A provider advances only if:
 Disposition:
 
 GOOGLE_NMT_FIRST_SPIKE / AZURE_TRANSLATOR_FALLBACK / DEEPL_QUALITY_CHALLENGER / NLLB_NO_PRODUCTION / NO_CUTOVER
+
+
+## Issue #127 — Azure benchmark reproducibility checkpoint (2026-11-07)
+
+This is a continuation of the provider-selection line, not a rewrite of the historical #121 decision.
+
+### Frozen authority
+
+The benchmark still uses the isolated xAI child branch created for #116:
+
+- project: `wild-surf-61625738`;
+- branch: `br-sweet-dream-b5qzaztb`;
+- source table: `issue116_eval.gold_queries`;
+- 20 rows = 10 paired cases, 10 EN queries + 10 RU queries;
+- private query strings and target message identifiers stay in the isolated benchmark branch.
+
+The historical public frozen-set SHA-256 `0039d1d6d4996ef0d456590d0de9b97ae4c7dff880df378802386f68d3b07fb9`
+remains valid historical evidence, but the exact serialization procedure used to compute it was not recoverable from Git or Session Search. Do not silently invent that method.
+
+For #127, `benchmark_core.py` therefore defines a new explicit canonical digest over
+`case_id + query_lang + query_text + target_content_fp`, sorted by
+`(case_id, query_lang)`, serialized as compact UTF-8 JSON with sorted keys.
+
+Current live readback:
+
+- `gold_digest_v2 = 5c1e817960a3e8222ec9cdba6f9ec135b5c00d6e7be0f42a2dbf50775956a6d7`;
+- rows = 20;
+- cases = 10;
+- EN = 10;
+- RU = 10.
+
+### Recovered #120 evaluator
+
+The old reasoning-model translation arm was reproduced from the surviving database state before running Azure:
+
+1. `to_tsvector('simple', translated_ru)` defines the unique query lexemes;
+2. per-lexeme document frequency is the count of `session_search.messages` whose
+   `search_vector` matches that lexeme;
+3. candidate terms are positive-df terms with `df <= 128`;
+4. `fallback_q` is the OR query ordered by `(doc_freq, lexeme)`;
+5. BM25 ranking context is `array_to_tsvector(...)` over all positive-df lexemes;
+6. candidates satisfy `m.search_vector @@ fallback_q`;
+7. ranking is ascending
+   `m.search_vector <@> to_bm25query(full_qvec, 'messages_search_vector_bm25_issue116')`
+   with deterministic `session_id, ordinal, message_id` tie-breakers;
+8. target content fingerprint is
+   `md5(lower(trim(regexp_replace(text, '\\s+', ' ', 'g'))))`.
+
+Independent live checks against the surviving #120 tables:
+
+- generated lexemes: 121/121 exact;
+- document frequencies: 121/121 exact;
+- stored `fallback_q`: 10/10 exact;
+- stored `full_qvec`: 10/10 exact;
+- target fingerprints: 10/10 exact;
+- recomputed target ranks: 10/10 exact;
+- historical aggregate reproduced exactly:
+  `R@1=0.600, R@3=0.900, R@5=1.000, R@10=1.000, MRR=0.753`.
+
+This control is the acceptance oracle for the Azure arm. Only the translation output may change.
+
+### Azure execution status
+
+The exe.dev Azure operator identity is separate infrastructure owned by
+`TeaShaman-cyber/theseus-cloud-shell`. #127 does not own or persist cloud-shell credentials.
+
+The current operator service principal has `Cognitive Services User` on
+`theseus-translator`, but immediate Translator data-plane probes returned
+`401 PermissionDenied` while the role assignment was still inside Microsoft's documented
+RBAC propagation window (up to 30 minutes for Translator role changes).
+
+Do not duplicate the assignment or fall back to static Translator keys. Retry only after
+the propagation window or new evidence.
+
