@@ -7,7 +7,7 @@ import unittest
 
 from session_search.corpus_store import ingest_artifact
 from session_search.importer import import_export
-from session_search.search import query_tokens, search, search_corpus
+from session_search.search import query_tokens, search, search_corpus, search_corpus_grouped_recall
 from tests.test_bootstrap_contract import synthetic_export
 from tests.test_corpus_store import _message, _write_capture
 
@@ -37,6 +37,54 @@ def build_two_session_corpus(root: pathlib.Path, phrase: str) -> pathlib.Path:
 
 
 class CorpusSearchTest(unittest.TestCase):
+    def test_grouped_recall_collapses_exact_body_but_preserves_occurrences(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus"
+            for name, session_id, message_id, text in [
+                ("a.zip", "session-a", "same-a", "lightweight IDE"),
+                ("b.zip", "session-b", "same-b", "lightweight IDE"),
+                ("c.zip", "session-c", "unique-c", "lightweight IDE unique"),
+            ]:
+                capture = _write_capture(
+                    root / name,
+                    session_id,
+                    [_message(message_id, text, 1.0, role="assistant")],
+                    complete=True,
+                    title=session_id,
+                )
+                ingest_artifact(capture, corpus)
+
+            flat = search_corpus(
+                corpus, "lightweight IDE", ["dialogue", "evidence"], 2, recall=True
+            )
+            groups = search_corpus_grouped_recall(
+                corpus, "lightweight IDE", ["dialogue", "evidence"], 2
+            )
+
+            self.assertEqual(len(flat), 2)
+            self.assertEqual([group["text"] for group in groups], [
+                "lightweight IDE", "lightweight IDE unique"
+            ])
+            self.assertEqual(groups[0]["occurrence_count"], 2)
+            self.assertEqual(
+                {(o["session_id"], o["message_id"]) for o in groups[0]["occurrences"]},
+                {("session-a", "same-a"), ("session-b", "same-b")},
+            )
+            self.assertNotIn("text", groups[0]["representative"])
+            self.assertEqual(
+                sum(group["occurrence_count"] for group in groups), 3
+            )
+
+    def test_grouped_recall_same_message_id_different_text_stays_distinct(self):
+        rows = [
+            {"session_id": "a", "message_id": "shared", "ordinal": 0, "text": "alpha"},
+            {"session_id": "b", "message_id": "shared", "ordinal": 0, "text": "beta"},
+        ]
+        from session_search.search import group_exact_search_rows
+        groups = group_exact_search_rows(rows)
+        self.assertEqual([g["text"] for g in groups], ["alpha", "beta"])
+
     def test_rerank_token_normalization_matches_unicode61_casefold_examples(self):
         self.assertEqual(query_tokens("Σ ſ"), query_tokens("ς s"))
 
