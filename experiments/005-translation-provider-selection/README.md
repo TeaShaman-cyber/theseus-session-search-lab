@@ -177,4 +177,3 @@ RBAC propagation window (up to 30 minutes for Translator role changes).
 
 Do not duplicate the assignment or fall back to static Translator keys. Retry only after
 the propagation window or new evidence.
-
