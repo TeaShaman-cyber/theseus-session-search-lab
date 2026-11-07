@@ -102,3 +102,29 @@ Acceptance on the private frozen 20-row gold set:
 
 This function is a reference seam for algorithm/conformance work, not a production
 backend decision.
+
+## Serverless/Postgres opt-in adapter
+
+`sql/neon/009_exact_text_grouped_retrieval.sql` defines the experimental
+`session_search.search_generation_grouped_v1()` seam. It is deliberately:
+
+- pinned-generation only;
+- recall-only;
+- bounded to `min(300, result_limit * 3)` ranked event candidates;
+- exact-text grouped before final group Top-K;
+- provenance-preserving within the bounded candidate pool;
+- separate from `search_generation_v2` / `search_v2`.
+
+`functions/shard/core.mjs` exposes `buildGroupedSearchCall()` for conformance and
+future guarded integration, but the current router/shard serving path still calls
+the existing v2 functions.
+
+A real PostgreSQL smoke was executed transactionally on an isolated benchmark
+branch under the existing `session_search_owner` capability. For K=10 it observed
+30 candidates -> 10 groups containing 12 selected event occurrences. The function
+was dropped in the same transaction and an independent readback confirmed it was
+absent afterward. Public receipt:
+`receipts/188-serverless-grouped-v1-smoke.public.json`.
+
+This proves SQL/runtime viability of the opt-in seam, not production relevance
+parity on the federated serverless shards. Cutover remains a separate gated change.
