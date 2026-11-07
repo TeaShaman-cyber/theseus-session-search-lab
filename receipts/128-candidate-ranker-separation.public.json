@@ -1,0 +1,54 @@
+{
+  "schema": "theseus.session-search-candidate-ranker-separation.v1",
+  "date": "2026-11-07",
+  "issue": 128,
+  "gold": {
+    "rows": 20,
+    "paired_cases": 10,
+    "languages": ["en", "ru"]
+  },
+  "local_current_recall": {
+    "candidate_policy": "bounded 30-row current recall pool for K=10",
+    "candidate_reachable": 11,
+    "candidate_recall": 0.55,
+    "top10_hits": 7,
+    "r_at_10": 0.35,
+    "reachable_to_top10": 0.636364,
+    "mrr_bounded_pool": 0.207589
+  },
+  "serverless_issue118": {
+    "candidate_policy": "bounded rare-term fallback gate",
+    "candidate_reachable": 20,
+    "candidate_recall": 1.0,
+    "candidate_count": {
+      "min": 55,
+      "p50": 335.0,
+      "p95": 544.4,
+      "max": 609
+    },
+    "ts_rank_cd": {
+      "top10_hits": 5,
+      "r_at_10": 0.25,
+      "mrr": 0.068370
+    },
+    "bm25_full": {
+      "top10_hits": 15,
+      "r_at_10": 0.75,
+      "mrr": 0.544835
+    }
+  },
+  "exact_grouping_on_bm25": {
+    "improved": 0,
+    "same": 20,
+    "worse": 0,
+    "r_at_10_before": 0.75,
+    "r_at_10_after": 0.75
+  },
+  "boundary": {
+    "private_query_text_exported": false,
+    "private_message_text_exported": false,
+    "production_state_changed": false,
+    "raw_cross_backend_scores_compared": false
+  },
+  "disposition": "LOCAL_CANDIDATE_LOSS_VISIBLE / SERVERLESS_RANKER_LOSS_VISIBLE / BM25_GAIN_REPRODUCED / GROUPING_NOT_A_SUBSTITUTE / NO_CUTOVER"
+}
