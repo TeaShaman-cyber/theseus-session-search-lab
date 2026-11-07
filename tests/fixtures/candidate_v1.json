@@ -1,0 +1,12 @@
+{
+  "local": {
+    "score_order": "lower_better",
+    "input": {"session_id":"local-a","session_title":"Local","session_coverage":"COMPLETE_EXPOSED_CONVERSATION","ordinal":1,"message_id":null,"role":"assistant","content_type":"text","search_class":"dialogue","create_time":1.5,"text":"needle","score":-1.25,"backend_private":"ignored"},
+    "expected": {"schema":"theseus.session-search-candidate.v1","session_id":"local-a","session_title":"Local","session_coverage":"COMPLETE_EXPOSED_CONVERSATION","ordinal":1,"message_id":null,"role":"assistant","content_type":"text","search_class":"dialogue","create_time":1.5,"text":"needle","backend_score":-1.25,"backend_score_order":"lower_better"}
+  },
+  "serverless": {
+    "score_order": "higher_better",
+    "input": {"session_id":"server-b","session_title":"Serverless","session_coverage":"PARTIAL_SESSION_SLICE","ordinal":2,"message_id":"m2","role":"assistant","search_class":"dialogue","create_time":null,"text":"needle","score":0.42,"provider":"chatgpt","shard_id":"chatgpt-0001","generation_id":"gg","shard_rank":1},
+    "expected": {"schema":"theseus.session-search-candidate.v1","session_id":"server-b","session_title":"Serverless","session_coverage":"PARTIAL_SESSION_SLICE","ordinal":2,"message_id":"m2","role":"assistant","search_class":"dialogue","create_time":null,"text":"needle","provider":"chatgpt","shard_id":"chatgpt-0001","generation_id":"gg","shard_rank":1,"backend_score":0.42,"backend_score_order":"higher_better"}
+  }
+}
