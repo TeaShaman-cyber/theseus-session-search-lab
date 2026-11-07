@@ -13,6 +13,7 @@
     "@opentelemetry/sdk-trace": "3.0.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.6.6",
     "esbuild": "0.28.2"
   },
   "scripts": {
