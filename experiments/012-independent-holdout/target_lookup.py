@@ -6,6 +6,7 @@ import json
 import pathlib
 import sqlite3
 
+from session_search.corpus_lock import resolve_corpus_lock
 from session_search.search import fts_query
 
 
@@ -44,13 +45,13 @@ def lookup(
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--corpus", type=pathlib.Path, required=True)
+    parser.add_argument("--corpus-lock", type=pathlib.Path, required=True)
     parser.add_argument("--query", required=True)
     parser.add_argument("--before-time", type=float, required=True)
     parser.add_argument("--limit", type=int, default=12)
     args = parser.parse_args()
 
-    db = args.corpus / "corpus.sqlite3" if args.corpus.is_dir() else args.corpus
+    db = resolve_corpus_lock(args.corpus_lock)
     conn = sqlite3.connect(f"file:{db.resolve()}?mode=ro&immutable=1", uri=True)
     conn.row_factory = sqlite3.Row
     try:

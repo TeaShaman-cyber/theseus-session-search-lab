@@ -8,6 +8,7 @@ import pathlib
 import re
 import sqlite3
 
+from session_search.corpus_lock import resolve_corpus_lock
 from session_search.corpus_store import CorpusPaths
 from session_search.search import _recall_candidate_rows, group_exact_search_rows, query_tokens
 
@@ -145,12 +146,13 @@ def run(corpus_root: pathlib.Path, gold_file: pathlib.Path, *, k: int = 10) -> d
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument('--corpus', type=pathlib.Path, required=True)
+    parser.add_argument('--corpus-lock', type=pathlib.Path, required=True)
     parser.add_argument('--gold', type=pathlib.Path, required=True)
     parser.add_argument('--k', type=int, default=10)
     parser.add_argument('--out', type=pathlib.Path)
     args = parser.parse_args()
-    result = run(args.corpus, args.gold, k=args.k)
+    corpus = resolve_corpus_lock(args.corpus_lock)
+    result = run(corpus.parent, args.gold, k=args.k)
     payload = json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + '\n'
     if args.out:
         args.out.write_text(payload, encoding='utf-8')
