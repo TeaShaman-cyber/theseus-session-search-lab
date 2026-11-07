@@ -170,10 +170,46 @@ This control is the acceptance oracle for the Azure arm. Only the translation ou
 The exe.dev Azure operator identity is separate infrastructure owned by
 `TeaShaman-cyber/theseus-cloud-shell`. #127 does not own or persist cloud-shell credentials.
 
-The current operator service principal has `Cognitive Services User` on
-`theseus-translator`, but immediate Translator data-plane probes returned
-`401 PermissionDenied` while the role assignment was still inside Microsoft's documented
-RBAC propagation window (up to 30 minutes for Translator role changes).
+On 2026-11-07 the operator service principal was independently verified against the
+Translator data plane:
 
-Do not duplicate the assignment or fall back to static Translator keys. Retry only after
-the propagation window or new evidence.
+- exact-resource `Cognitive Services User` assignment;
+- correct Cognitive Services token audience;
+- custom-domain Bearer-only translation returned HTTP 200;
+- three fresh-process/fresh-token canaries returned HTTP 200;
+- the global endpoint also returned HTTP 200 when both exact Resource ID and
+  `Ocp-Apim-Subscription-Region: northeurope` were supplied.
+
+The earlier custom-domain `401 PermissionDenied` cleared without any further role,
+credential, networking, or resource mutation. Treat the exact internal propagation/cache
+mechanism as UNKNOWN; do not duplicate the role assignment or add static Translator keys.
+
+### Versioned #127 runner
+
+`azure_benchmark_runner.py` is the production-shaped benchmark executor. Its purpose is
+to keep orchestration out of chat/tool payloads:
+
+1. resolve PostgreSQL credentials only at runtime;
+2. verify the exact frozen 20-row / 10-case authority and `gold_digest_v2`;
+3. translate the 10 EN queries through the verified Azure custom endpoint;
+4. compute the translation digest before inspecting retrieval results;
+5. freeze translations into the isolated benchmark branch;
+6. run the recovered #120 fallback + BM25 evaluator unchanged;
+7. print only aggregate/per-case rank evidence — never query text, translation text,
+   target fingerprints, database URLs, passwords, or bearer tokens.
+
+Credential inputs:
+
+- preferred generic path: `ISSUE127_DATABASE_URL`;
+- exe.dev path: `ISSUE127_NEON_API_BASE` points at the provider-side Neon API proxy,
+  which resolves the branch endpoint and role password inside the process;
+- Azure authentication remains behind the existing `az-owner` wrapper.
+
+Accepted exe.dev invocation shape:
+
+```sh
+ISSUE127_NEON_API_BASE=https://neon.int.exe.xyz/api/v2 ISSUE127_NEON_ROLE=neondb_owner python3 experiments/005-translation-provider-selection/azure_benchmark_runner.py
+```
+
+The benchmark branch is isolated; this runner does not modify serving, activation,
+candidate catalogs, or production shard state.
