@@ -104,3 +104,167 @@ A provider advances only if:
 Disposition:
 
 GOOGLE_NMT_FIRST_SPIKE / AZURE_TRANSLATOR_FALLBACK / DEEPL_QUALITY_CHALLENGER / NLLB_NO_PRODUCTION / NO_CUTOVER
+
+
+## Issue #127 — Azure benchmark reproducibility checkpoint (2026-11-07)
+
+This is a continuation of the provider-selection line, not a rewrite of the historical #121 decision.
+
+### Frozen authority
+
+The benchmark still uses the isolated xAI child branch created for #116:
+
+- project: `wild-surf-61625738`;
+- branch: `br-sweet-dream-b5qzaztb`;
+- source table: `issue116_eval.gold_queries`;
+- 20 rows = 10 paired cases, 10 EN queries + 10 RU queries;
+- private query strings and target message identifiers stay in the isolated benchmark branch.
+
+The historical public frozen-set SHA-256 `0039d1d6d4996ef0d456590d0de9b97ae4c7dff880df378802386f68d3b07fb9`
+remains valid historical evidence, but the exact serialization procedure used to compute it was not recoverable from Git or Session Search. Do not silently invent that method.
+
+For #127, `benchmark_core.py` therefore defines a new explicit canonical digest over
+`case_id + query_lang + query_text + target_content_fp`, sorted by
+`(case_id, query_lang)`, serialized as compact UTF-8 JSON with sorted keys.
+
+Current live readback:
+
+- `gold_digest_v2 = 5c1e817960a3e8222ec9cdba6f9ec135b5c00d6e7be0f42a2dbf50775956a6d7`;
+- rows = 20;
+- cases = 10;
+- EN = 10;
+- RU = 10.
+
+### Recovered #120 evaluator
+
+The old reasoning-model translation arm was reproduced from the surviving database state before running Azure:
+
+1. `to_tsvector('simple', translated_ru)` defines the unique query lexemes;
+2. per-lexeme document frequency is the count of `session_search.messages` whose
+   `search_vector` matches that lexeme;
+3. candidate terms are positive-df terms with `df <= 128`;
+4. `fallback_q` is the OR query ordered by `(doc_freq, lexeme)`;
+5. BM25 ranking context is `array_to_tsvector(...)` over all positive-df lexemes;
+6. candidates satisfy `m.search_vector @@ fallback_q`;
+7. ranking is ascending
+   `m.search_vector <@> to_bm25query(full_qvec, 'messages_search_vector_bm25_issue116')`
+   with deterministic `session_id, ordinal, message_id` tie-breakers;
+8. target content fingerprint is
+   `md5(lower(trim(regexp_replace(text, '\\s+', ' ', 'g'))))`.
+
+Independent live checks against the surviving #120 tables:
+
+- generated lexemes: 121/121 exact;
+- document frequencies: 121/121 exact;
+- stored `fallback_q`: 10/10 exact;
+- stored `full_qvec`: 10/10 exact;
+- target fingerprints: 10/10 exact;
+- recomputed target ranks: 10/10 exact;
+- historical aggregate reproduced exactly:
+  `R@1=0.600, R@3=0.900, R@5=1.000, R@10=1.000, MRR=0.753`.
+
+This control is the acceptance oracle for the Azure arm. Only the translation output may change.
+
+### Azure execution status
+
+The exe.dev Azure operator identity is separate infrastructure owned by
+`TeaShaman-cyber/theseus-cloud-shell`. #127 does not own or persist cloud-shell credentials.
+
+On 2026-11-07 the operator service principal was independently verified against the
+Translator data plane:
+
+- exact-resource `Cognitive Services User` assignment;
+- correct Cognitive Services token audience;
+- custom-domain Bearer-only translation returned HTTP 200;
+- three fresh-process/fresh-token canaries returned HTTP 200;
+- the global endpoint also returned HTTP 200 when both exact Resource ID and
+  `Ocp-Apim-Subscription-Region: northeurope` were supplied.
+
+The earlier custom-domain `401 PermissionDenied` cleared without any further role,
+credential, networking, or resource mutation. Treat the exact internal propagation/cache
+mechanism as UNKNOWN; do not duplicate the role assignment or add static Translator keys.
+
+### Versioned #127 runner
+
+`azure_benchmark_runner.py` is the production-shaped benchmark executor. Its purpose is
+to keep orchestration out of chat/tool payloads:
+
+1. resolve PostgreSQL credentials only at runtime;
+2. verify the exact frozen 20-row / 10-case authority and `gold_digest_v2`;
+3. translate the 10 EN queries through the verified Azure custom endpoint;
+4. compute the translation digest before inspecting retrieval results;
+5. freeze translations into the isolated benchmark branch;
+6. run the recovered #120 fallback + BM25 evaluator unchanged;
+7. print only aggregate/per-case rank evidence — never query text, translation text,
+   target fingerprints, database URLs, passwords, or bearer tokens.
+
+Credential inputs:
+
+- preferred generic path: `ISSUE127_DATABASE_URL`;
+- exe.dev path: `ISSUE127_NEON_API_BASE` points at the provider-side Neon API proxy,
+  which resolves the branch endpoint and role password inside the process;
+- Azure authentication remains behind the existing `az-owner` wrapper.
+
+Accepted exe.dev invocation shape:
+
+```sh
+ISSUE127_NEON_API_BASE=https://neon.int.exe.xyz/api/v2 ISSUE127_NEON_ROLE=neondb_owner python3 experiments/005-translation-provider-selection/azure_benchmark_runner.py
+```
+
+The benchmark branch is isolated; this runner does not modify serving, activation,
+candidate catalogs, or production shard state.
+
+### Issue #127 final Azure benchmark result — 2026-11-07
+
+The versioned runner was executed from exact Git SHA
+`bbb020ec43a33372bb01fb1d9d172a3098b3f80d` against the isolated frozen branch.
+
+Provider execution:
+- 10/10 Azure Translator calls: HTTP 200;
+- source characters: 765;
+- latency mean: 231.3 ms;
+- latency p50: 220.8 ms;
+- latency p95: 291.0 ms;
+- historical TSV translation digest:
+  `38dff1e437d31469874179e96799599a7af11d4ade2f18f0e630837de756de95`;
+- canonical translation digest v2:
+  `6c92cce535016adb8f642083d483348a89ebb04dc9e4720f98d9006901e1de58`.
+
+The historical TSV digest exactly matches the earlier pre-retrieval Azure run on the same
+frozen set, so the observed Azure output was reproducible across the two executions.
+
+Retrieval result under the unchanged recovered #120 evaluator:
+- R@1 = 0.300;
+- R@3 = 0.500;
+- R@5 = 0.800;
+- R@10 = 0.900;
+- MRR = 0.465.
+
+Comparison with the prior reasoning-model translation arm
+(`R@1=0.600, R@3=0.900, R@5=1.000, R@10=1.000, MRR=0.753`):
+
+| Case | Prior rank | Azure rank |
+|---|---:|---:|
+| basic_memory_local | 2 | miss |
+| deepseek_moe_lens | 5 | 5 |
+| family_gramps_upload | 2 | 2 |
+| github_mcp_optional | 1 | 5 |
+| gramps_sqlite_postgres | 3 | 3 |
+| hindsight_name | 1 | 6 |
+| infisical_failure_point | 1 | 1 |
+| notion_drive_connectors | 1 | 1 |
+| remote_linux_vs_marcopolo | 1 | 1 |
+| residual_oauth_access | 1 | 4 |
+
+Six cases were unchanged; four degraded; none improved.
+
+Decision:
+
+`AZURE_TRANSLATOR_OPERATIONALLY_VERIFIED / TRANSLATION_OUTPUT_REPRODUCIBLE /
+RETRIEVAL_QUALITY_GATE_FAILED / DO_NOT_ADVANCE_AZURE_STANDARD_NMT /
+NO_SERVING_CUTOVER`.
+
+Azure remains a technically viable authenticated provider, but standard Translator NMT does not
+meet the frozen retrieval-quality acceptance threshold for Session Search query normalization.
+The next provider experiment, if pursued, should use the same frozen authority and evaluator
+rather than changing ranking or candidate generation.
