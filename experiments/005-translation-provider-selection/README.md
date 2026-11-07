@@ -564,3 +564,76 @@ Next independent hypotheses: term-level selective protection under a
 predefined guard, Dynamic Dictionary where canonical equivalents exist,
 or test current Translator API 2026-06-06 NMT with a separately compatible
 client. Do not tune this frozen set case by case or add an LLM by default.
+
+### Issue #184 — Azure v3 Dynamic Dictionary controlled comparison (2026-11-07)
+
+Question: Does Azure v3 native per-request Dynamic Dictionary preserve technical
+product names better for retrieval than the previously measured HTML
+notranslate mode, without introducing an LLM?  To avoid post-hoc tuning,
+used the **same reviewed, case-independent 14-item proper/product-name and
+acronym list** as #182 (including generic acronyms; Microsoft advises using
+dynamic dictionary cautiously, mostly for compound proper/product names).
+For each exact-matched source term X, the v3 request used an
+mstrans:dictionary tag requesting X -> X, with explicit from=en&to=ru.
+The rest of the source text remained plain, not HTML.  Fail closed on
+missing protected terms, unexpected response cardinality, empty output or
+leaked raw/escaped markup. No lexical/semantic substitutions invented.
+
+Frozen authority and controls:
+- Exact #120/#127 gold digest v2:
+  5c1e817960a3e8222ec9cdba6f9ec135b5c00d6e7be0f42a2dbf50775956a6d7.
+- Ten Azure calls, no LLM, no additional provider, no API version migration,
+  no serving changes. Existing archived plain (#127 and #182) and protected
+  (#182) results are controls; **not re-called**.
+- 18 protected occurrences; 765 raw English chars vs 1900 marked request
+  chars (~2.48x character volume; not a measured invoice).
+- Dynamic translated-output digest v2:
+  cf1d0405a32e084d7aadb3c9cc9bb87aeab92671170d96e7f62247b342ca68d1.
+  Exactly 8/10 output texts differ from plain and 9/10 from notranslate.
+- Mean HTTP latency 227.0ms, p50 228.7ms, p95 254.4ms (small sample;
+  no evidence of meaningful speed benefit).
+
+| Arm (same gold/evaluator) | R@1 | R@3 | R@5 | R@10 | MRR |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Azure v3 plain | 0.30 | 0.50 | 0.80 | 0.90 | 0.465 |
+| Azure v3 notranslate | 0.30 | 0.80 | 0.90 | 0.90 | 0.542222 |
+| Azure v3 Dynamic Dictionary | 0.30 | 0.70 | 0.80 | 0.90 | 0.492222 |
+
+Per-case plain -> notranslate -> Dynamic Dictionary ranks:
+- basic_memory_local: miss -> 2 -> 3;
+- deepseek_moe_lens: 5 -> 5 -> 5;
+- family_gramps_upload: 2 -> 2 -> 2;
+- github_mcp_optional: 5 -> 18 -> 18;
+- gramps_sqlite_postgres: 3 -> 3 -> 3;
+- hindsight_name: 6 -> 2 -> 6;
+- infisical_failure_point: 1 -> 1 -> 1;
+- notion_drive_connectors: 1 -> 1 -> 1;
+- remote_linux_vs_marcopolo: 1 -> 1 -> 1;
+- residual_oauth_access: 4 -> 3 -> 3.
+
+Mechanistic investigation: 'Basic Memory' was literally translated by plain
+Azure as a generic common noun, losing the product-name identity; both
+constraint variants keep that product token. In github_mcp_optional, the
+literal GitHub and MCP tokens remain present in all three translations.
+Constraint variants change inflected Russian words from singular forms
+(dolzhen/obyazatelnym) to plural forms (dolzhny/obyazatelnymi).
+PostgreSQL to_tsvector('simple', ...) does not stem these forms, so query
+lexemes change even though protected names do not. The underlying result
+candidate set expands from 68 to 97; target rank falls 5 -> 18. This is
+direct evidence of translation/retrieval coupling, **not proof** that the
+dictionary changed semantics, nor evidence that dynamic dictionary
+outperforms markup-based protection.
+
+Independent Neon readback: schema issue184_v3_dynamic contains 10 translated
+rows and 10 ranked results, 9 top-10 hits, SQL MRR 0.4922222222222, matching
+the public receipt. All private queries and translated text remain in the
+access-controlled database and ephemeral runtime bundle, never Git.
+
+Disposition:
+MEASURED / R10_UNCHANGED / MRR_BETWEEN_PLAIN_AND_NOTRANSLATE /
+GITHUB_TOP10_REGRESSION_PERSISTS / NO_LLM / NO_SERVING_CUTOVER / STOP.
+
+Follow-up if authorized: address deterministic lexical normalization /
+morphological variation at retrieval boundary, or externally validated
+selective term protection, rather than trying more small LLM models or
+optimizing this frozen 10-case set.
