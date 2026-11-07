@@ -31,6 +31,21 @@ class HybridAzureLocalPhiTests(unittest.TestCase):
         self.assertNotIn("oracle", text.lower())
         self.assertNotIn("reference translation", text.lower())
 
+    def test_runtime_metadata_is_explicit_not_hardcoded(self):
+        mod = load_module()
+        self.assertEqual(
+            mod.runtime_metadata(
+                model="microsoft/Phi-4-mini-instruct",
+                quant="Q4_K_M",
+                runtime="LM Studio native Windows",
+            ),
+            {
+                "model": "microsoft/Phi-4-mini-instruct",
+                "quant": "Q4_K_M",
+                "runtime": "LM Studio native Windows",
+            },
+        )
+
     def test_parse_response_requires_one_stopped_nonempty_choice(self):
         mod = load_module()
         payload = {

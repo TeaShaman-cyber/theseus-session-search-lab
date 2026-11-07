@@ -32,6 +32,14 @@ SYSTEM_PROMPT = (
 )
 
 
+def runtime_metadata(*, model: str, quant: str, runtime: str) -> dict:
+    return {
+        "model": model,
+        "quant": quant,
+        "runtime": runtime,
+    }
+
+
 def build_messages(*, query_en: str, azure_ru: str):
     return [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -205,7 +213,13 @@ def repair(
     )
 
 
-def evaluate(input_path: str):
+def evaluate(
+    input_path: str,
+    *,
+    model: str,
+    quant: str,
+    runtime_label: str,
+):
     payload = json.loads(Path(input_path).read_text(encoding="utf-8"))
     if payload["gold"]["gold_digest_v2"] != EXPECTED_GOLD_DIGEST_V2:
         raise ValueError("GOLD_DIGEST_MISMATCH")
@@ -257,9 +271,11 @@ def evaluate(input_path: str):
     )
     receipt.update(
         {
-            "model": "microsoft/Phi-4-mini-instruct",
-            "quant": "Q4_K_M",
-            "runtime": "llama.cpp Docker CPU",
+            **runtime_metadata(
+                model=model,
+                quant=quant,
+                runtime=runtime_label,
+            ),
             "prompt_tokens": sum(r.get("prompt_tokens", 0) for r in repaired),
             "completion_tokens": sum(
                 r.get("completion_tokens", 0) for r in repaired
@@ -292,6 +308,15 @@ def main():
 
     p = sub.add_parser("evaluate")
     p.add_argument("--input", required=True)
+    p.add_argument(
+        "--model",
+        default="microsoft/Phi-4-mini-instruct",
+    )
+    p.add_argument("--quant", default="Q4_K_M")
+    p.add_argument(
+        "--runtime-label",
+        default="LM Studio native Windows",
+    )
 
     args = parser.parse_args()
     if args.mode == "prepare":
@@ -304,7 +329,12 @@ def main():
             model=args.model,
         )
     else:
-        evaluate(args.input)
+        evaluate(
+            args.input,
+            model=args.model,
+            quant=args.quant,
+            runtime_label=args.runtime_label,
+        )
 
 
 if __name__ == "__main__":
