@@ -1,0 +1,1136 @@
+{
+  "current_policy_parity": {
+    "matching_cases": 20,
+    "total_cases": 20
+  },
+  "gold_rows": 20,
+  "k": 10,
+  "policies": [
+    {
+      "candidate_budget": 30,
+      "candidate_reachable": 11,
+      "candidate_recall": 0.55,
+      "cases": [
+        {
+          "case_id": "basic_memory_local",
+          "query_lang": "en",
+          "target_rank": 23
+        },
+        {
+          "case_id": "basic_memory_local",
+          "query_lang": "ru",
+          "target_rank": 3
+        },
+        {
+          "case_id": "deepseek_moe_lens",
+          "query_lang": "en",
+          "target_rank": 28
+        },
+        {
+          "case_id": "deepseek_moe_lens",
+          "query_lang": "ru",
+          "target_rank": 29
+        },
+        {
+          "case_id": "family_gramps_upload",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "family_gramps_upload",
+          "query_lang": "ru",
+          "target_rank": 14
+        },
+        {
+          "case_id": "github_mcp_optional",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "github_mcp_optional",
+          "query_lang": "ru",
+          "target_rank": 1
+        },
+        {
+          "case_id": "gramps_sqlite_postgres",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "gramps_sqlite_postgres",
+          "query_lang": "ru",
+          "target_rank": null
+        },
+        {
+          "case_id": "hindsight_name",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "hindsight_name",
+          "query_lang": "ru",
+          "target_rank": 1
+        },
+        {
+          "case_id": "infisical_failure_point",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "infisical_failure_point",
+          "query_lang": "ru",
+          "target_rank": 5
+        },
+        {
+          "case_id": "notion_drive_connectors",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "notion_drive_connectors",
+          "query_lang": "ru",
+          "target_rank": 3
+        },
+        {
+          "case_id": "remote_linux_vs_marcopolo",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "remote_linux_vs_marcopolo",
+          "query_lang": "ru",
+          "target_rank": 1
+        },
+        {
+          "case_id": "residual_oauth_access",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "residual_oauth_access",
+          "query_lang": "ru",
+          "target_rank": 10
+        }
+      ],
+      "count": 20,
+      "latency_ms_mean": 757.354014500379,
+      "latency_ms_p50": 618.9684015007515,
+      "latency_ms_p95": 1376.8129620002583,
+      "mrr": 0.20758852716498893,
+      "per_session_cap": 3,
+      "r_at_k": 0.35,
+      "reachable_to_topk": 0.6363636363636364,
+      "topk_hits": 7,
+      "vs_current": {
+        "rank_improved": 0,
+        "rank_same": 20,
+        "rank_worse": 0,
+        "reach_gained": 0,
+        "reach_lost": 0,
+        "topk_gained": 0,
+        "topk_lost": 0
+      }
+    },
+    {
+      "candidate_budget": 60,
+      "candidate_reachable": 11,
+      "candidate_recall": 0.55,
+      "cases": [
+        {
+          "case_id": "basic_memory_local",
+          "query_lang": "en",
+          "target_rank": 30
+        },
+        {
+          "case_id": "basic_memory_local",
+          "query_lang": "ru",
+          "target_rank": 10
+        },
+        {
+          "case_id": "deepseek_moe_lens",
+          "query_lang": "en",
+          "target_rank": 56
+        },
+        {
+          "case_id": "deepseek_moe_lens",
+          "query_lang": "ru",
+          "target_rank": 49
+        },
+        {
+          "case_id": "family_gramps_upload",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "family_gramps_upload",
+          "query_lang": "ru",
+          "target_rank": 34
+        },
+        {
+          "case_id": "github_mcp_optional",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "github_mcp_optional",
+          "query_lang": "ru",
+          "target_rank": 1
+        },
+        {
+          "case_id": "gramps_sqlite_postgres",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "gramps_sqlite_postgres",
+          "query_lang": "ru",
+          "target_rank": null
+        },
+        {
+          "case_id": "hindsight_name",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "hindsight_name",
+          "query_lang": "ru",
+          "target_rank": 1
+        },
+        {
+          "case_id": "infisical_failure_point",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "infisical_failure_point",
+          "query_lang": "ru",
+          "target_rank": 6
+        },
+        {
+          "case_id": "notion_drive_connectors",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "notion_drive_connectors",
+          "query_lang": "ru",
+          "target_rank": 3
+        },
+        {
+          "case_id": "remote_linux_vs_marcopolo",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "remote_linux_vs_marcopolo",
+          "query_lang": "ru",
+          "target_rank": 1
+        },
+        {
+          "case_id": "residual_oauth_access",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "residual_oauth_access",
+          "query_lang": "ru",
+          "target_rank": 15
+        }
+      ],
+      "count": 20,
+      "latency_ms_mean": 762.0858489495731,
+      "latency_ms_p50": 637.878350000392,
+      "latency_ms_p95": 1348.9563380062464,
+      "mrr": 0.18838385354141657,
+      "per_session_cap": 3,
+      "r_at_k": 0.3,
+      "reachable_to_topk": 0.5454545454545454,
+      "topk_hits": 6,
+      "vs_current": {
+        "rank_improved": 0,
+        "rank_same": 13,
+        "rank_worse": 7,
+        "reach_gained": 0,
+        "reach_lost": 0,
+        "topk_gained": 0,
+        "topk_lost": 1
+      }
+    },
+    {
+      "candidate_budget": 120,
+      "candidate_reachable": 11,
+      "candidate_recall": 0.55,
+      "cases": [
+        {
+          "case_id": "basic_memory_local",
+          "query_lang": "en",
+          "target_rank": 61
+        },
+        {
+          "case_id": "basic_memory_local",
+          "query_lang": "ru",
+          "target_rank": 11
+        },
+        {
+          "case_id": "deepseek_moe_lens",
+          "query_lang": "en",
+          "target_rank": 108
+        },
+        {
+          "case_id": "deepseek_moe_lens",
+          "query_lang": "ru",
+          "target_rank": 106
+        },
+        {
+          "case_id": "family_gramps_upload",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "family_gramps_upload",
+          "query_lang": "ru",
+          "target_rank": 72
+        },
+        {
+          "case_id": "github_mcp_optional",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "github_mcp_optional",
+          "query_lang": "ru",
+          "target_rank": 1
+        },
+        {
+          "case_id": "gramps_sqlite_postgres",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "gramps_sqlite_postgres",
+          "query_lang": "ru",
+          "target_rank": null
+        },
+        {
+          "case_id": "hindsight_name",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "hindsight_name",
+          "query_lang": "ru",
+          "target_rank": 1
+        },
+        {
+          "case_id": "infisical_failure_point",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "infisical_failure_point",
+          "query_lang": "ru",
+          "target_rank": 7
+        },
+        {
+          "case_id": "notion_drive_connectors",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "notion_drive_connectors",
+          "query_lang": "ru",
+          "target_rank": 6
+        },
+        {
+          "case_id": "remote_linux_vs_marcopolo",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "remote_linux_vs_marcopolo",
+          "query_lang": "ru",
+          "target_rank": 1
+        },
+        {
+          "case_id": "residual_oauth_access",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "residual_oauth_access",
+          "query_lang": "ru",
+          "target_rank": 2
+        }
+      ],
+      "count": 20,
+      "latency_ms_mean": 789.7070196006098,
+      "latency_ms_p50": 672.7963625016855,
+      "latency_ms_p95": 1370.7346090013743,
+      "mrr": 0.1974704226734075,
+      "per_session_cap": 3,
+      "r_at_k": 0.3,
+      "reachable_to_topk": 0.5454545454545454,
+      "topk_hits": 6,
+      "vs_current": {
+        "rank_improved": 1,
+        "rank_same": 12,
+        "rank_worse": 7,
+        "reach_gained": 0,
+        "reach_lost": 0,
+        "topk_gained": 0,
+        "topk_lost": 1
+      }
+    },
+    {
+      "candidate_budget": 300,
+      "candidate_reachable": 12,
+      "candidate_recall": 0.6,
+      "cases": [
+        {
+          "case_id": "basic_memory_local",
+          "query_lang": "en",
+          "target_rank": 169
+        },
+        {
+          "case_id": "basic_memory_local",
+          "query_lang": "ru",
+          "target_rank": 16
+        },
+        {
+          "case_id": "deepseek_moe_lens",
+          "query_lang": "en",
+          "target_rank": 248
+        },
+        {
+          "case_id": "deepseek_moe_lens",
+          "query_lang": "ru",
+          "target_rank": 256
+        },
+        {
+          "case_id": "family_gramps_upload",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "family_gramps_upload",
+          "query_lang": "ru",
+          "target_rank": 170
+        },
+        {
+          "case_id": "github_mcp_optional",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "github_mcp_optional",
+          "query_lang": "ru",
+          "target_rank": 1
+        },
+        {
+          "case_id": "gramps_sqlite_postgres",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "gramps_sqlite_postgres",
+          "query_lang": "ru",
+          "target_rank": null
+        },
+        {
+          "case_id": "hindsight_name",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "hindsight_name",
+          "query_lang": "ru",
+          "target_rank": 1
+        },
+        {
+          "case_id": "infisical_failure_point",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "infisical_failure_point",
+          "query_lang": "ru",
+          "target_rank": 38
+        },
+        {
+          "case_id": "notion_drive_connectors",
+          "query_lang": "en",
+          "target_rank": 103
+        },
+        {
+          "case_id": "notion_drive_connectors",
+          "query_lang": "ru",
+          "target_rank": 13
+        },
+        {
+          "case_id": "remote_linux_vs_marcopolo",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "remote_linux_vs_marcopolo",
+          "query_lang": "ru",
+          "target_rank": 1
+        },
+        {
+          "case_id": "residual_oauth_access",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "residual_oauth_access",
+          "query_lang": "ru",
+          "target_rank": 18
+        }
+      ],
+      "count": 20,
+      "latency_ms_mean": 851.8160453004384,
+      "latency_ms_p50": 758.0099495025934,
+      "latency_ms_p95": 1400.9062140030437,
+      "mrr": 0.16253705902927001,
+      "per_session_cap": 3,
+      "r_at_k": 0.15,
+      "reachable_to_topk": 0.25,
+      "topk_hits": 3,
+      "vs_current": {
+        "rank_improved": 1,
+        "rank_same": 11,
+        "rank_worse": 8,
+        "reach_gained": 1,
+        "reach_lost": 0,
+        "topk_gained": 0,
+        "topk_lost": 4
+      }
+    },
+    {
+      "candidate_budget": 30,
+      "candidate_reachable": 12,
+      "candidate_recall": 0.6,
+      "cases": [
+        {
+          "case_id": "basic_memory_local",
+          "query_lang": "en",
+          "target_rank": 23
+        },
+        {
+          "case_id": "basic_memory_local",
+          "query_lang": "ru",
+          "target_rank": 3
+        },
+        {
+          "case_id": "deepseek_moe_lens",
+          "query_lang": "en",
+          "target_rank": 26
+        },
+        {
+          "case_id": "deepseek_moe_lens",
+          "query_lang": "ru",
+          "target_rank": 28
+        },
+        {
+          "case_id": "family_gramps_upload",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "family_gramps_upload",
+          "query_lang": "ru",
+          "target_rank": 9
+        },
+        {
+          "case_id": "github_mcp_optional",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "github_mcp_optional",
+          "query_lang": "ru",
+          "target_rank": 1
+        },
+        {
+          "case_id": "gramps_sqlite_postgres",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "gramps_sqlite_postgres",
+          "query_lang": "ru",
+          "target_rank": 29
+        },
+        {
+          "case_id": "hindsight_name",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "hindsight_name",
+          "query_lang": "ru",
+          "target_rank": 1
+        },
+        {
+          "case_id": "infisical_failure_point",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "infisical_failure_point",
+          "query_lang": "ru",
+          "target_rank": 5
+        },
+        {
+          "case_id": "notion_drive_connectors",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "notion_drive_connectors",
+          "query_lang": "ru",
+          "target_rank": 3
+        },
+        {
+          "case_id": "remote_linux_vs_marcopolo",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "remote_linux_vs_marcopolo",
+          "query_lang": "ru",
+          "target_rank": 1
+        },
+        {
+          "case_id": "residual_oauth_access",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "residual_oauth_access",
+          "query_lang": "ru",
+          "target_rank": 10
+        }
+      ],
+      "count": 20,
+      "latency_ms_mean": 751.887944700502,
+      "latency_ms_p50": 619.6554460002517,
+      "latency_ms_p95": 1327.4424920018646,
+      "mrr": 0.21149573107219286,
+      "per_session_cap": 5,
+      "r_at_k": 0.4,
+      "reachable_to_topk": 0.6666666666666666,
+      "topk_hits": 8,
+      "vs_current": {
+        "rank_improved": 4,
+        "rank_same": 16,
+        "rank_worse": 0,
+        "reach_gained": 1,
+        "reach_lost": 0,
+        "topk_gained": 1,
+        "topk_lost": 0
+      }
+    },
+    {
+      "candidate_budget": 30,
+      "candidate_reachable": 13,
+      "candidate_recall": 0.65,
+      "cases": [
+        {
+          "case_id": "basic_memory_local",
+          "query_lang": "en",
+          "target_rank": 23
+        },
+        {
+          "case_id": "basic_memory_local",
+          "query_lang": "ru",
+          "target_rank": 3
+        },
+        {
+          "case_id": "deepseek_moe_lens",
+          "query_lang": "en",
+          "target_rank": 26
+        },
+        {
+          "case_id": "deepseek_moe_lens",
+          "query_lang": "ru",
+          "target_rank": 25
+        },
+        {
+          "case_id": "family_gramps_upload",
+          "query_lang": "en",
+          "target_rank": 27
+        },
+        {
+          "case_id": "family_gramps_upload",
+          "query_lang": "ru",
+          "target_rank": 6
+        },
+        {
+          "case_id": "github_mcp_optional",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "github_mcp_optional",
+          "query_lang": "ru",
+          "target_rank": 1
+        },
+        {
+          "case_id": "gramps_sqlite_postgres",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "gramps_sqlite_postgres",
+          "query_lang": "ru",
+          "target_rank": 24
+        },
+        {
+          "case_id": "hindsight_name",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "hindsight_name",
+          "query_lang": "ru",
+          "target_rank": 1
+        },
+        {
+          "case_id": "infisical_failure_point",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "infisical_failure_point",
+          "query_lang": "ru",
+          "target_rank": 5
+        },
+        {
+          "case_id": "notion_drive_connectors",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "notion_drive_connectors",
+          "query_lang": "ru",
+          "target_rank": 3
+        },
+        {
+          "case_id": "remote_linux_vs_marcopolo",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "remote_linux_vs_marcopolo",
+          "query_lang": "ru",
+          "target_rank": 1
+        },
+        {
+          "case_id": "residual_oauth_access",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "residual_oauth_access",
+          "query_lang": "ru",
+          "target_rank": 10
+        }
+      ],
+      "count": 20,
+      "latency_ms_mean": 754.2696162992797,
+      "latency_ms_p50": 634.3016204991727,
+      "latency_ms_p95": 1352.384928999527,
+      "mrr": 0.21669884181840704,
+      "per_session_cap": 10,
+      "r_at_k": 0.4,
+      "reachable_to_topk": 0.6153846153846154,
+      "topk_hits": 8,
+      "vs_current": {
+        "rank_improved": 5,
+        "rank_same": 15,
+        "rank_worse": 0,
+        "reach_gained": 2,
+        "reach_lost": 0,
+        "topk_gained": 1,
+        "topk_lost": 0
+      }
+    },
+    {
+      "candidate_budget": 30,
+      "candidate_reachable": 13,
+      "candidate_recall": 0.65,
+      "cases": [
+        {
+          "case_id": "basic_memory_local",
+          "query_lang": "en",
+          "target_rank": 23
+        },
+        {
+          "case_id": "basic_memory_local",
+          "query_lang": "ru",
+          "target_rank": 3
+        },
+        {
+          "case_id": "deepseek_moe_lens",
+          "query_lang": "en",
+          "target_rank": 26
+        },
+        {
+          "case_id": "deepseek_moe_lens",
+          "query_lang": "ru",
+          "target_rank": 22
+        },
+        {
+          "case_id": "family_gramps_upload",
+          "query_lang": "en",
+          "target_rank": 20
+        },
+        {
+          "case_id": "family_gramps_upload",
+          "query_lang": "ru",
+          "target_rank": 6
+        },
+        {
+          "case_id": "github_mcp_optional",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "github_mcp_optional",
+          "query_lang": "ru",
+          "target_rank": 1
+        },
+        {
+          "case_id": "gramps_sqlite_postgres",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "gramps_sqlite_postgres",
+          "query_lang": "ru",
+          "target_rank": 17
+        },
+        {
+          "case_id": "hindsight_name",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "hindsight_name",
+          "query_lang": "ru",
+          "target_rank": 1
+        },
+        {
+          "case_id": "infisical_failure_point",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "infisical_failure_point",
+          "query_lang": "ru",
+          "target_rank": 5
+        },
+        {
+          "case_id": "notion_drive_connectors",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "notion_drive_connectors",
+          "query_lang": "ru",
+          "target_rank": 3
+        },
+        {
+          "case_id": "remote_linux_vs_marcopolo",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "remote_linux_vs_marcopolo",
+          "query_lang": "ru",
+          "target_rank": 1
+        },
+        {
+          "case_id": "residual_oauth_access",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "residual_oauth_access",
+          "query_lang": "ru",
+          "target_rank": 10
+        }
+      ],
+      "count": 20,
+      "latency_ms_mean": 754.3993180490361,
+      "latency_ms_p50": 625.6241580013011,
+      "latency_ms_p95": 1348.0706049958826,
+      "mrr": 0.21847756037653734,
+      "per_session_cap": 30,
+      "r_at_k": 0.4,
+      "reachable_to_topk": 0.6153846153846154,
+      "topk_hits": 8,
+      "vs_current": {
+        "rank_improved": 5,
+        "rank_same": 15,
+        "rank_worse": 0,
+        "reach_gained": 2,
+        "reach_lost": 0,
+        "topk_gained": 1,
+        "topk_lost": 0
+      }
+    },
+    {
+      "candidate_budget": 120,
+      "candidate_reachable": 14,
+      "candidate_recall": 0.7,
+      "cases": [
+        {
+          "case_id": "basic_memory_local",
+          "query_lang": "en",
+          "target_rank": 57
+        },
+        {
+          "case_id": "basic_memory_local",
+          "query_lang": "ru",
+          "target_rank": 75
+        },
+        {
+          "case_id": "deepseek_moe_lens",
+          "query_lang": "en",
+          "target_rank": 102
+        },
+        {
+          "case_id": "deepseek_moe_lens",
+          "query_lang": "ru",
+          "target_rank": 110
+        },
+        {
+          "case_id": "family_gramps_upload",
+          "query_lang": "en",
+          "target_rank": 113
+        },
+        {
+          "case_id": "family_gramps_upload",
+          "query_lang": "ru",
+          "target_rank": 45
+        },
+        {
+          "case_id": "github_mcp_optional",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "github_mcp_optional",
+          "query_lang": "ru",
+          "target_rank": 1
+        },
+        {
+          "case_id": "gramps_sqlite_postgres",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "gramps_sqlite_postgres",
+          "query_lang": "ru",
+          "target_rank": 99
+        },
+        {
+          "case_id": "hindsight_name",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "hindsight_name",
+          "query_lang": "ru",
+          "target_rank": 1
+        },
+        {
+          "case_id": "infisical_failure_point",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "infisical_failure_point",
+          "query_lang": "ru",
+          "target_rank": 8
+        },
+        {
+          "case_id": "notion_drive_connectors",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "notion_drive_connectors",
+          "query_lang": "ru",
+          "target_rank": 8
+        },
+        {
+          "case_id": "remote_linux_vs_marcopolo",
+          "query_lang": "en",
+          "target_rank": 113
+        },
+        {
+          "case_id": "remote_linux_vs_marcopolo",
+          "query_lang": "ru",
+          "target_rank": 1
+        },
+        {
+          "case_id": "residual_oauth_access",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "residual_oauth_access",
+          "query_lang": "ru",
+          "target_rank": 2
+        }
+      ],
+      "count": 20,
+      "latency_ms_mean": 797.0621284501249,
+      "latency_ms_p50": 685.602318502788,
+      "latency_ms_p95": 1387.9574349994073,
+      "mrr": 0.19248971855047364,
+      "per_session_cap": 10,
+      "r_at_k": 0.3,
+      "reachable_to_topk": 0.42857142857142855,
+      "topk_hits": 6,
+      "vs_current": {
+        "rank_improved": 4,
+        "rank_same": 9,
+        "rank_worse": 7,
+        "reach_gained": 3,
+        "reach_lost": 0,
+        "topk_gained": 0,
+        "topk_lost": 1
+      }
+    },
+    {
+      "candidate_budget": 300,
+      "candidate_reachable": 14,
+      "candidate_recall": 0.7,
+      "cases": [
+        {
+          "case_id": "basic_memory_local",
+          "query_lang": "en",
+          "target_rank": 124
+        },
+        {
+          "case_id": "basic_memory_local",
+          "query_lang": "ru",
+          "target_rank": 191
+        },
+        {
+          "case_id": "deepseek_moe_lens",
+          "query_lang": "en",
+          "target_rank": 196
+        },
+        {
+          "case_id": "deepseek_moe_lens",
+          "query_lang": "ru",
+          "target_rank": 194
+        },
+        {
+          "case_id": "family_gramps_upload",
+          "query_lang": "en",
+          "target_rank": 238
+        },
+        {
+          "case_id": "family_gramps_upload",
+          "query_lang": "ru",
+          "target_rank": 145
+        },
+        {
+          "case_id": "github_mcp_optional",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "github_mcp_optional",
+          "query_lang": "ru",
+          "target_rank": 2
+        },
+        {
+          "case_id": "gramps_sqlite_postgres",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "gramps_sqlite_postgres",
+          "query_lang": "ru",
+          "target_rank": 182
+        },
+        {
+          "case_id": "hindsight_name",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "hindsight_name",
+          "query_lang": "ru",
+          "target_rank": 1
+        },
+        {
+          "case_id": "infisical_failure_point",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "infisical_failure_point",
+          "query_lang": "ru",
+          "target_rank": 13
+        },
+        {
+          "case_id": "notion_drive_connectors",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "notion_drive_connectors",
+          "query_lang": "ru",
+          "target_rank": 14
+        },
+        {
+          "case_id": "remote_linux_vs_marcopolo",
+          "query_lang": "en",
+          "target_rank": 243
+        },
+        {
+          "case_id": "remote_linux_vs_marcopolo",
+          "query_lang": "ru",
+          "target_rank": 1
+        },
+        {
+          "case_id": "residual_oauth_access",
+          "query_lang": "en",
+          "target_rank": null
+        },
+        {
+          "case_id": "residual_oauth_access",
+          "query_lang": "ru",
+          "target_rank": 20
+        }
+      ],
+      "count": 20,
+      "latency_ms_mean": 867.2107265017985,
+      "latency_ms_p50": 763.0332720000297,
+      "latency_ms_p95": 1438.2245740052895,
+      "mrr": 0.13713082053974332,
+      "per_session_cap": 30,
+      "r_at_k": 0.15,
+      "reachable_to_topk": 0.21428571428571427,
+      "topk_hits": 3,
+      "vs_current": {
+        "rank_improved": 3,
+        "rank_same": 8,
+        "rank_worse": 9,
+        "reach_gained": 3,
+        "reach_lost": 0,
+        "topk_gained": 0,
+        "topk_lost": 4
+      }
+    }
+  ],
+  "schema": "theseus.session-search-local-candidate-policy.v1"
+}
