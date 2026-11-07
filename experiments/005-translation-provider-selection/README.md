@@ -268,3 +268,66 @@ Azure remains a technically viable authenticated provider, but standard Translat
 meet the frozen retrieval-quality acceptance threshold for Session Search query normalization.
 The next provider experiment, if pursued, should use the same frozen authority and evaluator
 rather than changing ranking or candidate generation.
+
+### Issue #174 — OpenRouter free-model benchmark snapshot (2026-11-07)
+
+The first live OpenRouter run used exact Git SHA
+`ff9a414405b1b227e6f88efe9d8402fb11b439b9`.
+
+The runner pins exact model + provider, disables provider fallback and model reasoning,
+uses `temperature=0` with fixed seed `127`, attempts all provider arms before reading
+any retrieval result, and keeps the frozen #120/#127 evaluator unchanged.
+
+#### Nemotron 3 Ultra — complete result
+
+Arm:
+- model: `nvidia/nemotron-3-ultra-550b-a55b:free`;
+- provider tag: `nvidia`;
+- response provider: `Nvidia`;
+- 10/10 provider calls completed;
+- provider-reported total cost: `0`;
+- source characters: 765;
+- latency mean: 326.6 ms;
+- p50: 330.9 ms;
+- p95: 341.3 ms;
+- historical TSV translation digest:
+  `f67593ec68662ab54a699e73adbbd7354742f5eea38a2cc5c92a6e772424400a`;
+- canonical translation digest v2:
+  `74fa1e501dcebcd3e4fe2346a912e980c14698df92ceb79fb6dac5a6356fed8b`.
+
+Retrieval:
+- R@1 = 0.500;
+- R@3 = 0.800;
+- R@5 = 1.000;
+- R@10 = 1.000;
+- MRR = 0.690.
+
+Reference:
+- Azure Translator: R@10 0.900 / MRR 0.465;
+- prior active-reasoning-model translation: R@10 1.000 / MRR 0.753;
+- paired-RU oracle: R@10 1.000 / MRR 0.803.
+
+Compared with the prior model-translation arm, Nemotron produced the same target rank
+on 8/10 cases, improved one case from 3 -> 2, and regressed one case from 1 -> 5.
+
+Independent Neon aggregate readback confirmed:
+10 translation rows, 10 result rows, 5 rank-1 hits, 8 rank<=3 hits,
+10 rank<=5 hits, 10 rank<=10 hits, MRR 0.690.
+
+#### Xing4 / Gemma 4 — no quality verdict yet
+
+The exact pinned provider calls returned HTTP 429 before a complete 10-query translation
+set could be frozen:
+
+- `xingchen-agi/xing4.0-29b-a4b:free` / `phala` -> 429;
+- `google/gemma-4-31b-it:free` / `google-ai-studio` -> 429.
+
+No `issue174_xing4` or `issue174_gemma4` schema exists and no retrieval result was
+computed for either arm. Treat both as `PROVIDER_UNAVAILABLE_NOW`, not model-quality
+failures.
+
+Current disposition:
+
+`NEMOTRON_FREE_R10_PASS / NEMOTRON_MRR_0_690 / COST_ZERO /
+AZURE_OUTPERFORMED / PRIOR_MODEL_BASELINE_APPROACHED /
+XING4_PROVIDER_429 / GEMMA4_PROVIDER_429 / NO_CUTOVER`.
