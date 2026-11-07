@@ -46,6 +46,12 @@ class HybridAzureLocalPhiTests(unittest.TestCase):
             },
         )
 
+    def test_evaluation_schema_can_be_selected_for_new_frozen_arm(self):
+        mod = load_module()
+        self.assertEqual(mod.select_eval_schema("issue180_azure_phi35"), "issue180_azure_phi35")
+        with self.assertRaisesRegex(ValueError, "INVALID_EVAL_SCHEMA"):
+            mod.select_eval_schema("issue180; DROP SCHEMA public")
+
     def test_parse_response_requires_one_stopped_nonempty_choice(self):
         mod = load_module()
         payload = {

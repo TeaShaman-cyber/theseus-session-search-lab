@@ -7,6 +7,7 @@ import argparse
 import importlib.util
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.request
@@ -30,6 +31,12 @@ SYSTEM_PROMPT = (
     "important distinctions. Do not answer, summarize, explain, or add facts. "
     "Output only the repaired Russian query."
 )
+
+
+def select_eval_schema(value: str) -> str:
+    if not re.fullmatch(r"issue[0-9]+_[a-z0-9_]+", value):
+        raise ValueError("INVALID_EVAL_SCHEMA")
+    return value
 
 
 def runtime_metadata(*, model: str, quant: str, runtime: str) -> dict:
@@ -219,6 +226,7 @@ def evaluate(
     model: str,
     quant: str,
     runtime_label: str,
+    eval_schema: str = EVAL_SCHEMA,
 ):
     payload = json.loads(Path(input_path).read_text(encoding="utf-8"))
     if payload["gold"]["gold_digest_v2"] != EXPECTED_GOLD_DIGEST_V2:
@@ -237,7 +245,7 @@ def evaluate(
     validate_repaired_rows(source_rows, repaired)
 
     runtime = _runtime()
-    _AZURE.EVAL_SCHEMA = EVAL_SCHEMA
+    _AZURE.EVAL_SCHEMA = select_eval_schema(eval_schema)
     if not _AZURE._schema_absent(runtime):
         raise SystemExit(f"ISSUE178_SCHEMA_ALREADY_EXISTS={EVAL_SCHEMA}")
 
@@ -317,6 +325,7 @@ def main():
         "--runtime-label",
         default="LM Studio native Windows",
     )
+    p.add_argument("--eval-schema", default=EVAL_SCHEMA)
 
     args = parser.parse_args()
     if args.mode == "prepare":
@@ -334,6 +343,7 @@ def main():
             model=args.model,
             quant=args.quant,
             runtime_label=args.runtime_label,
+            eval_schema=args.eval_schema,
         )
 
 
