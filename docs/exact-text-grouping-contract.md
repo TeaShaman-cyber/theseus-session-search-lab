@@ -128,3 +128,25 @@ absent afterward. Public receipt:
 
 This proves SQL/runtime viability of the opt-in seam, not production relevance
 parity on the federated serverless shards. Cutover remains a separate gated change.
+
+## Strong-ranker cross-check
+
+A second real-data cross-check reused the surviving #118 two-stage lexical stack:
+bounded fallback candidate generation plus `bm25_full` ranking. The historical
+baseline ranks reproduced 20/20 exactly. With K=10 and the same bounded 30-row
+post-rank pool used by the exact-grouping experiment:
+
+- mean unique Top-10 bodies moved only from 9.7 to 10.0;
+- R@1/R@3/R@5/R@10 were unchanged;
+- MRR@30 was unchanged at 0.5425;
+- 0/20 target ranks improved, 20/20 stayed equal, 0 worsened.
+
+This materially changes the promotion interpretation. Exact grouping remains a
+valid deterministic presentation/selection primitive, but the stronger BM25
+ranker already suppresses most duplicate-slot pressure. Do not cut over grouping
+as an isolated relevance optimization merely because it helped the weaker
+current local recall stack. Re-evaluate it only as part of a measured serving
+candidate/ranker pipeline or for a separately justified diversity/payload goal.
+
+Public receipt:
+`receipts/188-bm25-exact-grouping-crosscheck.public.json`.

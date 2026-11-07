@@ -1,0 +1,61 @@
+{
+  "schema": "theseus.session-search-bm25-exact-grouping-crosscheck.v1",
+  "date": "2026-11-07",
+  "issue": 188,
+  "authority": {
+    "source": "surviving issue118_eval state on isolated benchmark branch",
+    "baseline_arm": "bm25_full",
+    "gold_rows": 20,
+    "paired_cases": 10,
+    "baseline_rank_parity": "20/20"
+  },
+  "protocol": {
+    "candidate_gate": "issue118_eval.full_queries.fallback_q",
+    "ranker": "BM25 using full_qvec",
+    "k": 10,
+    "bounded_candidate_pool": 30,
+    "grouping": "exact text equality after ranking before Top-K"
+  },
+  "result": {
+    "all": {
+      "mean_unique_top10_before": 9.7,
+      "mean_unique_top10_after": 10.0,
+      "r_at_1_before": 0.45,
+      "r_at_1_after": 0.45,
+      "r_at_3_before": 0.60,
+      "r_at_3_after": 0.60,
+      "r_at_5_before": 0.75,
+      "r_at_5_after": 0.75,
+      "r_at_10_before": 0.75,
+      "r_at_10_after": 0.75,
+      "mrr_at_30_before": 0.5425,
+      "mrr_at_30_after": 0.5425,
+      "improved": 0,
+      "same": 20,
+      "worse": 0
+    },
+    "ru": {
+      "mean_unique_top10_before": 9.5,
+      "mean_unique_top10_after": 10.0,
+      "r_at_10_before": 1.0,
+      "r_at_10_after": 1.0,
+      "mrr_at_30_before": 0.803333,
+      "mrr_at_30_after": 0.803333
+    },
+    "en": {
+      "mean_unique_top10_before": 9.9,
+      "mean_unique_top10_after": 10.0,
+      "r_at_10_before": 0.5,
+      "r_at_10_after": 0.5,
+      "mrr_at_30_before": 0.281667,
+      "mrr_at_30_after": 0.281667
+    }
+  },
+  "boundary": {
+    "private_query_text_exported": false,
+    "private_message_text_exported": false,
+    "production_state_changed": false,
+    "interpretation": "Exact grouping improves diversity slightly but adds no frozen-gold relevance gain on the stronger BM25 stack."
+  },
+  "disposition": "BM25_BASELINE_PARITY_20_OF_20 / DIVERSITY_GAIN_SMALL / RELEVANCE_NEUTRAL / NO_GROUPING_ONLY_CUTOVER"
+}
