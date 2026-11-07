@@ -451,3 +451,51 @@ NO_PAID_MODEL_PROVIDER_DEPENDENCY / NO_SERVING_CUTOVER / STOP`.
 
 Do not expand this issue into a model zoo or tune the frozen evaluator. A future gated or
 selective-repair design would be a separate hypothesis with its own acceptance criteria.
+
+### Issue #180 — Azure + local Phi-3.5 repair, frozen-10 comparison (2026-11-07)
+
+One candidate only: microsoft/Phi-3.5-mini-instruct GGUF Q4_K_M,
+bartowski/Phi-3.5-mini-instruct-GGUF, 2,393,232,672 bytes,
+SHA-256 e4165e3a71af97f1b4820da61079826d8752a2088e313af0c7d346796c38eff5.
+Runtime: native Windows LM Studio localhost, CPU-only, parallel 1. Model imported
+through a symbolic link; no second GGUF copy required. CLI requested
+context 1024, but actual lms ps reported 66304. This is an observed configuration
+mismatch. The llama-server process consumed ~18–21 GB working set at observation;
+latency and memory are NOT controlled apples-to-apples versus #178.
+
+Cold load: ~190 seconds (CLI reported 3m 5.51s). First API canary took 22.8s,
+returned finish_reason=length at max_tokens=8; warm canary took 12.9s and
+returned finish_reason=stop at max_tokens=48. Neither counted among frozen ten.
+
+Frozen authority: same #120/#127 gold digest v2
+5c1e817960a3e8222ec9cdba6f9ec135b5c00d6e7be0f42a2dbf50775956a6d7,
+unchanged Azure draft, prompts, temperature=0, seed=178, max_tokens=192 and
+unchanged retrieval evaluator, isolated schema issue180_azure_phi35.
+
+- Calls: 10/10 success; 1457 prompt tokens, 321 completion tokens, total 1778.
+- Warm repair mean 14,756.3 ms; p50 13,820.4 ms; p95 19,162.7 ms.
+- Repaired translation digest v2:
+  312eccc72d3751ed0d27a28acd89db29b49fb7a15353a1d85367c1853b9f400f.
+- Retrieval: R@1 0.400, R@3 0.600, R@5 0.600, R@10 0.800,
+  MRR 0.497619.
+- Compared with Azure (R@10 0.900, MRR 0.465), Phi-4-mini (#178:
+  0.800, 0.557), Nemotron (1.000, 0.690).
+
+Per-case target ranks (Phi-4-mini -> Phi-3.5-mini):
+- basic_memory_local: miss -> miss;
+- deepseek_moe_lens: 5 -> 3;
+- family_gramps_upload: 1 -> miss;
+- github_mcp_optional: 5 -> 1;
+- gramps_sqlite_postgres: 1 -> 6;
+- hindsight_name: 6 -> 1;
+- infisical_failure_point: 1 -> 1;
+- notion_drive_connectors: 1 -> 3;
+- remote_linux_vs_marcopolo: 1 -> 1;
+- residual_oauth_access: miss -> 7.
+
+Interpretation: Phi-3.5 and Phi-4 have materially different per-case behavior,
+but Phi-3.5 neither restores R@10 relative to Azure nor improves MRR over Phi-4.
+The older-model anecdote remains unverified. STOP: no replacement, serving
+cutover or model zoo expansion. Any Microsoft Windows ML / optimized ONNX runtime
+comparison is a separately authorized hypothesis, not conflated with this
+model comparison.
