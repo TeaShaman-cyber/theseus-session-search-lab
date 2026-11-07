@@ -396,3 +396,58 @@ DEEPSEEK_R10_PASS_MRR_FAIL / GPT_NANO_MRR_BEST_BUT_R10_FAIL /
 GEMINI_FLASH_LITE_REJECTED / NO_SERVING_CUTOVER`.
 
 The experiment does not justify a production translation-provider change.
+
+### Issue #178 — Azure + local Phi repair benchmark (2026-11-07)
+
+The hybrid arm was executed from exact Git SHA
+`cf4af3c` with the frozen #120/#127 authority and unchanged retrieval evaluator.
+
+Runtime:
+- Azure Translator output reused as the draft stage;
+- repair model: `microsoft/Phi-4-mini-instruct`;
+- quant: `Q4_K_M` (~2.49 GB GGUF);
+- runtime: LM Studio native Windows, CPU-only, context 1024, parallel 1;
+- model API bound to localhost only;
+- 10/10 repair calls completed;
+- prompt tokens: 1107;
+- completion tokens: 208;
+- total tokens: 1315;
+- mean repair latency: 10343.7 ms;
+- p50: 9340.5 ms;
+- p95: 14695.0 ms;
+- canonical repaired-translation digest v2:
+  `5cbc185c702db5b84bda05d667f40dbbdf3c2ef712402d987be20ac9ea64ffcb`.
+
+Retrieval under the unchanged evaluator:
+- R@1 = 0.500;
+- R@3 = 0.500;
+- R@5 = 0.700;
+- R@10 = 0.800;
+- MRR = 0.557.
+
+Reference:
+- Azure Translator: R@10 0.900 / MRR 0.465;
+- OpenRouter Nemotron snapshot: R@10 1.000 / MRR 0.690;
+- prior active-reasoning-model translation: R@10 1.000 / MRR 0.753;
+- paired-RU oracle: R@10 1.000 / MRR 0.803.
+
+Per-case change relative to Azure:
+- `family_gramps_upload`: rank 2 -> 1;
+- `gramps_sqlite_postgres`: rank 3 -> 1;
+- `residual_oauth_access`: rank 4 -> miss;
+- the other seven cases were unchanged.
+
+Interpretation: local Phi repair is not a no-op — it materially improves two Azure
+queries — but unconditional repair is not reliable enough for this frozen set because
+it also destroys one previously recoverable top-10 result. The aggregate MRR improvement
+does not compensate for the R@10 regression, and the hybrid remains below the Nemotron
+reference.
+
+Decision:
+
+`HYBRID_AZURE_LOCAL_PHI_MEASURED / MRR_IMPROVED_OVER_AZURE /
+R10_REGRESSED / NEMOTRON_NOT_REACHED / BLANKET_REPAIR_REJECTED /
+NO_PAID_MODEL_PROVIDER_DEPENDENCY / NO_SERVING_CUTOVER / STOP`.
+
+Do not expand this issue into a model zoo or tune the frozen evaluator. A future gated or
+selective-repair design would be a separate hypothesis with its own acceptance criteria.
