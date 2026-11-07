@@ -33,16 +33,39 @@ class BotHubBenchmarkRunnerTests(unittest.TestCase):
             ],
         )
         expected = {
-            "gemini-2.5-flash-lite": (4.38, 17.53),
-            "gpt-4.1-nano": (4.38, 17.53),
-            "deepseek-v4.1-flash": (4.25, 47.21),
+            "gemini-2.5-flash-lite": (
+                "gemini-2.5-flash-lite", 4.38, 17.53
+            ),
+            "gpt-4.1-nano": (
+                "openai/gpt-4.1-nano", 4.38, 17.53
+            ),
+            "deepseek-v4.1-flash": (
+                "deepseek/deepseek-v4.1-flash", 4.25, 47.21
+            ),
         }
         for arm in mod.CANDIDATE_ARMS:
             self.assertEqual(
-                (arm["input_rub_per_m"], arm["output_rub_per_m"]),
+                (
+                    arm["response_model"],
+                    arm["input_rub_per_m"],
+                    arm["output_rub_per_m"],
+                ),
                 expected[arm["model"]],
             )
             self.assertRegex(arm["schema"], r"^issue176_[a-z0-9_]+$")
+
+    def test_select_arms_supports_resume_subset(self):
+        mod = load_module()
+        self.assertEqual(
+            [a["name"] for a in mod.select_arms(None)],
+            ["gemini_flash_lite", "gpt41_nano", "deepseek_v41_flash"],
+        )
+        self.assertEqual(
+            [a["name"] for a in mod.select_arms("gpt41_nano,deepseek_v41_flash")],
+            ["gpt41_nano", "deepseek_v41_flash"],
+        )
+        with self.assertRaisesRegex(ValueError, "UNKNOWN_ARM"):
+            mod.select_arms("bogus")
 
     def test_request_is_translation_only_and_exact_model(self):
         mod = load_module()
@@ -65,7 +88,7 @@ class BotHubBenchmarkRunnerTests(unittest.TestCase):
         mod = load_module()
         arm = mod.CANDIDATE_ARMS[0]
         payload = {
-            "model": arm["model"],
+            "model": arm["response_model"],
             "choices": [
                 {
                     "finish_reason": "stop",

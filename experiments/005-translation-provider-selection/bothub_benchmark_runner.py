@@ -36,6 +36,7 @@ CANDIDATE_ARMS = [
     {
         "name": "gemini_flash_lite",
         "model": "gemini-2.5-flash-lite",
+        "response_model": "gemini-2.5-flash-lite",
         "schema": "issue176_gemini_flash_lite",
         "input_rub_per_m": 4.38,
         "output_rub_per_m": 17.53,
@@ -43,6 +44,7 @@ CANDIDATE_ARMS = [
     {
         "name": "gpt41_nano",
         "model": "gpt-4.1-nano",
+        "response_model": "openai/gpt-4.1-nano",
         "schema": "issue176_gpt41_nano",
         "input_rub_per_m": 4.38,
         "output_rub_per_m": 17.53,
@@ -50,6 +52,7 @@ CANDIDATE_ARMS = [
     {
         "name": "deepseek_v41_flash",
         "model": "deepseek-v4.1-flash",
+        "response_model": "deepseek/deepseek-v4.1-flash",
         "schema": "issue176_deepseek_v41_flash",
         "input_rub_per_m": 4.25,
         "output_rub_per_m": 47.21,
@@ -59,6 +62,18 @@ CANDIDATE_ARMS = [
 
 class ProviderCallError(RuntimeError):
     pass
+
+
+def select_arms(spec: str | None):
+    if not spec:
+        return list(CANDIDATE_ARMS)
+    wanted = [part.strip() for part in spec.split(",") if part.strip()]
+    by_name = {arm["name"]: arm for arm in CANDIDATE_ARMS}
+    unknown = [name for name in wanted if name not in by_name]
+    if unknown:
+        raise ValueError("UNKNOWN_ARM=" + ",".join(unknown))
+    wanted_set = set(wanted)
+    return [arm for arm in CANDIDATE_ARMS if arm["name"] in wanted_set]
 
 
 def build_request_payload(*, arm, query_text: str) -> dict:
@@ -76,8 +91,11 @@ def build_request_payload(*, arm, query_text: str) -> dict:
 
 def parse_response(*, arm, payload: dict) -> dict:
     model = payload.get("model")
-    if model != arm["model"]:
-        raise RuntimeError(f"MODEL_DRIFT expected={arm['model']} actual={model}")
+    expected_model = arm["response_model"]
+    if model != expected_model:
+        raise RuntimeError(
+            f"MODEL_DRIFT expected={expected_model} actual={model}"
+        )
 
     choices = payload.get("choices") or []
     if len(choices) != 1:
@@ -230,8 +248,9 @@ def public_receipt(*, arm, provider_rows, results, gold_digest_v2):
 
 def main() -> int:
     runtime = runtime_from_environment()
+    selected_arms = select_arms(os.environ.get("ISSUE176_ARMS"))
 
-    for arm in CANDIDATE_ARMS:
+    for arm in selected_arms:
         if not schema_absent(runtime, arm["schema"]):
             raise SystemExit(f"ISSUE176_SCHEMA_ALREADY_EXISTS={arm['schema']}")
 
@@ -245,7 +264,7 @@ def main() -> int:
     # Phase 1: complete every translation arm before inspecting retrieval.
     translated = {}
     failures = {}
-    for arm in CANDIDATE_ARMS:
+    for arm in selected_arms:
         try:
             translated[arm["name"]] = translate_rows(
                 arm=arm, en_rows=en_rows, endpoint=endpoint
@@ -255,7 +274,7 @@ def main() -> int:
 
     # Phase 2: freeze successful arms before retrieval inspection.
     frozen = {}
-    for arm in CANDIDATE_ARMS:
+    for arm in selected_arms:
         rows = translated.get(arm["name"])
         if rows is None:
             continue
@@ -270,7 +289,7 @@ def main() -> int:
 
     # Phase 3: only now inspect retrieval.
     receipts = []
-    for arm in CANDIDATE_ARMS:
+    for arm in selected_arms:
         rows = frozen.get(arm["name"])
         if rows is None:
             continue
