@@ -7,13 +7,16 @@ Canonical App-backed transport:
 - Gateway ID / slug: `gw_3L9SqeBQ5L5Cs2V1GB6yvnKhR8P`
 - MCP URL: `https://api.arcade.dev/mcp/gw_3L9SqeBQ5L5Cs2V1GB6yvnKhR8P`
 - Authentication for the ChatGPT App binding: OAuth
-- Session Search domain tool: `TheseusSessionSearch.session_search`
+- Stable search domain tool: `TheseusSessionSearch.session_search`
 
 Canonical remote MCP behind Arcade is the independently deployed Session Search router. The consumer App should connect through the existing Arcade App binding, not directly to an individual Neon shard and not through a standalone packaged `mcp.json`.
 
 ## Stable server and tool identity
 
-The production gateway intentionally exposes **one consumer tool**: `TheseusSessionSearch.session_search`. The gateway is an allowlist of Arcade-discovered tools; it is not a transparent proxy that automatically substitutes a newly registered sibling server/tool. Preserve both the canonical remote-server ID `theseus-session-search` and the stable qualified tool identity across router deployments.
+The production gateway now exposes **two intentional consumer tools** (issue #232):
+TheseusSessionSearch.session_search and TheseusSessionSearch.session_feedback.
+The search identity stays stable. Before issue #232 the gateway allowed one
+read-only consumer tool, so older one-tool acceptance receipts remain historical. `TheseusSessionSearch.session_search`. The gateway is an allowlist of Arcade-discovered tools; it is not a transparent proxy that automatically substitutes a newly registered sibling server/tool. Preserve both the canonical remote-server ID `theseus-session-search` and the stable qualified tool identity across router deployments.
 
 A verified router candidate may be registered separately for diagnostics, but do not add a second Session Search tool identity to the production gateway. Production cutover changes the URI/configuration of the existing Arcade worker, then refreshes its discovered tools, so `Arcade_SelectTools` and `Arcade_UseTool` continue to address the same qualified tool.
 
@@ -32,6 +35,18 @@ The Arcade gateway itself exposes the Session Search domain capability. The Chat
 The invariant is that the existing App-backed host can discover and execute `TheseusSessionSearch.session_search` through the Arcade surface while preserving web/mobile compatibility.
 
 For retrieval-policy capable deployments, fresh discovery must expose `search_mode` with `strict`, `recall`, and `auto` (default `strict`). `auto` must return a `retrieval` receipt that distinguishes requested from effective mode; a strict miss may escalate to recall, while `PARTIAL` must remain visible and must not be hidden by retry.
+
+## Current issue232 gateway checkpoint, November 8 2026
+
+The original Neon router URL remains unchanged; deployment #9 is completed.
+All seven preexisting deployment environment keys were preserved, and one
+feedback-specific database URL setting was added. Existing Arcade gateway
+gw_3L9SqeBQ5L5Cs2V1GB6yvnKhR8P now lists exactly two tools,
+session_search and session_feedback. A production App-backed search probe
+returned FOUND across all four shards with none unavailable. The current
+ChatGPT host session still selected ONLY session_search; feedback write
+acceptance requires a fresh host tool discovery and genuine write/readback.
+The one-tool statement above describes the pre-issue232 period.
 
 ## Current acceptance
 

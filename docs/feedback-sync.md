@@ -64,7 +64,31 @@ router auth/catalog settings. A green CI test does NOT mean the App write tool
 is live. Require a real App tool listing and successful feedback write/readback
 before claiming it.
 
-Current checkpoint: APP_WRITER_CODE_READY / APP_WRITER_NOT_LIVE.
+## Router and Arcade activation checkpoint — 2026-11-08
+
+Native Neon deployed the source from exact main commit e9c5b23 to the
+existing personal-org ssrouter2 Function with unchanged URI: active
+deployment #9 COMPLETED. The original seven env key names were
+preserved, and SESSION_SEARCH_FEEDBACK_DATABASE_URL was added,
+pointing to the separate issue232 database through its restricted role.
+The Arcade control plane added one discovered tool to the existing
+Session Search gateway, which now reports two exact tools:
+TheseusSessionSearch.session_search and TheseusSessionSearch.session_feedback.
+The App-backed search path after rollout returned FOUND, four
+queried shards, no unavailable shards and unchanged ChatGPT generation
+prefixes.
+
+**Host-level write acceptance remains UNVERIFIED.** The existing
+ChatGPT session still selects only session_search in Arcade_SelectTools,
+even when explicitly asked for session_feedback. This may require
+a fresh App session or tool-discovery refresh; no cause has yet been
+proven. Do not create a replacement plugin/App, gateway or authorization
+system. First perform a fresh App host tool-selection probe and, if
+the tool appears, a single synthetic write / Neon readback /
+exact cleanup.
+
+Current checkpoint: ROUTER_DEPLOYED / GATEWAY_TWO_TOOLS_VERIFIED /
+SEARCH_PASS / APP_FEEDBACK_HOST_REPROBE_REQUIRED.
 Server-local storage remains unchanged. No synchronization is scheduled.
 
 New Neon resource naming and cleanup rules are in docs/neon-housekeeping.md.

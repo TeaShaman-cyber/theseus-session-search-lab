@@ -18,7 +18,7 @@ ChatGPT web/mobile
   -> current live shard catalog
 ```
 
-Session Search is a read-only retrieval surface in this plugin. Ingest, rebuild, generation activation, corpus mutation, and recovery stay outside the consumer plugin.
+Session Search exposes read-only retrieval and, when available in live host discovery, one append-only feedback tool scoped to a separate database. Ingest, rebuild, generation activation, corpus mutation, and recovery remain outside the consumer plugin.
 
 ## Web/mobile compatibility invariant
 
@@ -66,6 +66,29 @@ Interpret terminal states as:
 When `PARTIAL`, report the healthy evidence and the unavailable shard(s). Do not claim that missing shards contained no relevant history.
 
 Preserve returned shard and generation provenance when it matters to the answer or diagnosis.
+
+## App-only feedback (issue #232)
+
+The canonical remote MCP server also supports the bounded append-only
+TheseusSessionSearch.session_feedback. The existing Arcade Session Search
+gateway lists both this and TheseusSessionSearch.session_search after
+the November 8 update. The existing ChatGPT host in this conversation,
+however, still selects only session_search when asked for feedback.
+Do not invoke a tool absent from current App discovery, and do not
+claim an accepted App feedback write until an actual operation and
+independent Neon record readback succeed.
+
+When feedback is discoverable, use only baseline_request_ref,
+optional result_request_ref, failure_class, operator name/version,
+outcome, and optional notes. Never include raw query or target text.
+App feedback writes exclusively to feedback_issue232, and a
+separate server agent stores local feedback independently.
+There is no automatic synchronization, scheduled transfer or
+automatic ranking-policy promotion. See docs/feedback-sync.md.
+
+When only the search tool is selected after a gateway change,
+classify APP_TOOL_REPROBE_REQUIRED and use a fresh existing
+ChatGPT App session; do not invent a replacement App or gateway.
 
 ## Live shard catalog
 
