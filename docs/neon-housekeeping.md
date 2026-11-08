@@ -8,6 +8,24 @@ before any destructive action. Coordination: issue #235. Feedback-specific
 adapter: issue #232. Source authority is the versioned accepted corpus, not
 Neon and not this inventory.
 
+## Resource naming and test cleanup (effective 2026-11-08)
+
+For every NEW Neon project, database and Function, include the canonical
+owning GitHub issue number in the resource name. Example: project
+theseus-ss-feedback-issue232; database feedback_issue232; new Function
+slug feedbackissue232, within Neon slug length and character limits.
+Do not rename existing production resources, or public MCP tool identities
+just to retrofit this convention.
+
+At creation record the exact ID and purpose in the issue. At the end of
+testing, clean up disposable branches, Functions, databases and synthetic
+records, independently re-list/read back the target and record the
+result. Prefer rolled-back SQL transactions for synthetic database canaries.
+If a chat/runtime stops before cleanup, keep a PENDING_CLEANUP issue entry
+with exact IDs, observed safe-to-remove state and next recovery action.
+Never delete production, source or rollback state just because a branch
+name includes test or canary.
+
 ## What we actually have
 
 Two **distinct access scopes**, not a requirement for two future stores:
