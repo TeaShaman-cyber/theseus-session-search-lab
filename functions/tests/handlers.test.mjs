@@ -100,6 +100,7 @@ test('router HTTP adapter fans out and merges the same search path', async () =>
   }));
   const result = await response.json();
   assert.equal(result.status, 'FOUND');
+  assert.match(result.request_ref, /^[0-9a-f]{32}$/);
   assert.deepEqual(seen.sort(), ['https://a.test/search', 'https://b.test/search']);
   assert.deepEqual(result.hits.map((x) => x.shard_id), ['chatgpt-0001', 'hermes-0001']);
 });
@@ -126,6 +127,7 @@ test('router MCP tool call reuses federated search', async () => {
   }));
   const message = await response.json();
   assert.equal(message.result.structuredContent.status, 'FOUND');
+  assert.match(message.result.structuredContent.request_ref, /^[0-9a-f]{32}$/);
   assert.equal(message.result.structuredContent.hits[0].shard_id, 'chatgpt-0001');
 });
 

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
   ROOT_CONTEXT,
   SpanKind,
@@ -18,6 +19,10 @@ const RESULT_STATUSES = new Set(['OK', 'FOUND', 'NO_SIGNAL', 'PARTIAL', 'READY',
 const SAFE_ID = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const GENERATION_ID = /^[0-9a-f]{64}$/;
 const DEFAULT_FLUSH_TIMEOUT_MS = 250;
+
+function newRequestRef() {
+  return randomUUID().replaceAll('-', '');
+}
 
 const headerGetter = {
   keys(carrier) {
@@ -130,7 +135,12 @@ export function createNoopTelemetry() {
   return {
     enabled: false,
     async withRequest(_request, _route, fn) {
-      return fn({ context: ROOT_CONTEXT, setResult() {}, setErrorClass() {} });
+      return fn({
+        context: ROOT_CONTEXT,
+        requestRef: newRequestRef(),
+        setResult() {},
+        setErrorClass() {},
+      });
     },
     async withDispatch(_parentContext, _shard, baseHeaders, fn) {
       return fn(new Headers(baseHeaders));
@@ -203,15 +213,20 @@ export function createTelemetryRuntime({
   async function withRequest(request, route, fn) {
     const routeName = safeRoute(route);
     const parentContext = extractSanitizedParentContext(request);
+    const requestRef = newRequestRef();
     const span = tracer.startSpan(`session_search.${routeName}`, {
       kind: SpanKind.SERVER,
-      attributes: { 'session_search.route': routeName },
+      attributes: {
+        'session_search.route': routeName,
+        'session_search.request_ref': requestRef,
+      },
     }, parentContext);
     const requestContext = trace.setSpan(parentContext, span);
     const started = performance.now();
     const state = { errorClass: 'none' };
     const scope = {
       context: requestContext,
+      requestRef,
       setErrorClass(value) {
         state.errorClass = safeErrorClass(value);
       },

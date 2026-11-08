@@ -34,7 +34,7 @@ export function makeRouterHandler({
     throw new Error('SHARD_TIMEOUT_OUT_OF_BOUNDS');
   }
 
-  async function searchFederated(rawInput, requestContext) {
+  async function searchFederated(rawInput, requestContext, requestRef) {
     const input = validateSearchInput(rawInput);
     const selected = selectShards(catalog, input);
 
@@ -110,6 +110,7 @@ export function makeRouterHandler({
       const { candidate_count: _candidateCount, ...publicResult } = result;
       return {
         ...publicResult,
+        request_ref: requestRef,
         retrieval: {
           requested_mode: input.search_mode,
           effective_mode: effectiveMode,
@@ -156,7 +157,11 @@ export function makeRouterHandler({
 
         if (request.method === 'POST' && url.pathname === '/search') {
           try {
-            const result = await searchFederated(await request.json(), observation.context);
+            const result = await searchFederated(
+              await request.json(),
+              observation.context,
+              observation.requestRef,
+            );
             observation.setResult({
               resultStatus: result.status,
               queriedShards: result.queried_shards?.length ?? 0,
@@ -177,7 +182,10 @@ export function makeRouterHandler({
             observation.setErrorClass('validation');
             return json({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'parse error' } }, 400);
           }
-          const result = await handleMcpRequest(message, (input) => searchFederated(input, observation.context));
+          const result = await handleMcpRequest(
+            message,
+            (input) => searchFederated(input, observation.context, observation.requestRef),
+          );
           if (result === null) return new Response(null, { status: 202 });
           const searchResult = result?.result?.structuredContent;
           if (searchResult?.status) {

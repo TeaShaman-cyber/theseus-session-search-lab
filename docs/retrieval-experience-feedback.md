@@ -45,13 +45,21 @@ storage or learning implementation.
 
 ### Search-side prerequisite
 
-A search response should expose an opaque request_ref suitable for correlation.
+A search response exposes an opaque request_ref suitable for correlation.
 The ref links privately to operational provenance such as trace, service version,
 shards and generation without requiring raw query text to be copied into feedback,
 Grafana labels, or public Git receipts.
 
-The first implementation slice does not add this live write surface yet. It
-versions and tests the data contract before creating a stateful serving endpoint.
+The router generates one server-side 32-hex request_ref per external request. The
+same value is:
+- returned in HTTP /search and MCP session_search structured results;
+- attached to the request span as session_search.request_ref;
+- intentionally excluded from metrics to avoid high-cardinality metric labels.
+
+The ref is independent of untrusted inbound traceparent/tracestate and therefore
+cannot be chosen by the caller.
+
+The live feedback write surface remains a later slice.
 
 ## Feedback request v0
 
