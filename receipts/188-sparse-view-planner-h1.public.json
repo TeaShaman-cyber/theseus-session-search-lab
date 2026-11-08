@@ -1,0 +1,58 @@
+{
+  "baseline": {
+    "candidate_reachable": 2,
+    "top10": 2
+  },
+  "comparison": {
+    "improved": 3,
+    "same": 7,
+    "worse": 0
+  },
+  "context": {
+    "oracle_lemma_reachable": 8,
+    "oracle_lemma_top10": 7,
+    "rarest_term_lemma_max_reachable": 3
+  },
+  "date": "2026-11-08",
+  "disposition": "H1_DEVELOPMENT_SIGNAL / REACHABLE_2_TO_4 / TOP10_UNCHANGED_2 / 3_IMPROVED_0_WORSE / NEW_INDEPENDENT_HOLDOUT_NEXT / BACKEND_UNSELECTED / NO_CUTOVER",
+  "fixed_retrieval": {
+    "analyzer": "lemma_ru_pymorphy3_en_snowball",
+    "candidate_budget": 30,
+    "per_session_cap": 3
+  },
+  "h1": {
+    "candidate_reachable": 4,
+    "fallback_cases": 0,
+    "mean_selected_tokens": 4.3,
+    "top10": 2
+  },
+  "holdout": {
+    "cases": 10,
+    "promotion_independent": false,
+    "role": "development_diagnostic_after_203",
+    "sha256": "0461cb33d44913a8a5bbdf93fcaa0b0c7e17b1dc50ea81f7acae5f930b5867fd"
+  },
+  "interpretation": {
+    "backend_selected": false,
+    "development_signal": true,
+    "next_gate": "freeze H1 unchanged and evaluate on a new independent historical-query holdout",
+    "rule_tuned_after_rank_evaluation": false,
+    "serving_changed": false,
+    "top10_gain_observed": false
+  },
+  "issue": 188,
+  "planner": {
+    "budget": 5,
+    "name": "sparse_view_key_concept_h1",
+    "planner_sha256": "0f9296556311cf4889eb2cd365a046b8ea1912ff23250444b95c48c3bb0ef29d",
+    "target_independent": true
+  },
+  "privacy": {
+    "query_text_exported": false,
+    "selected_query_tokens_exported": false,
+    "target_fingerprints_exported": false,
+    "target_text_exported": false
+  },
+  "private_receipt_sha256": "40d1b3fe569c1e71f64a3ac2c7a9afbdad5f24cf49d5b73dad7dfe5a3bb0bed3",
+  "schema": "theseus.session-search-sparse-view-planner-h1.public.v1"
+}
