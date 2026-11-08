@@ -34,10 +34,15 @@ and are not deletable in-place with Neon branch-tree constraints.
 27 active branches**. Four accepted issue137 serving test branches have
 been removed; DeepSeek/xAI live Function branches remain.
 **After the fifth isolated ss147 Function-leaf cleanup (2026-11-08):
-14 projects and 26 active branches.** The two deleted single-branch projects
-remain listed below as historical evidence and are recoverable in Neon's
-deletion window at the observed postcondition. These counts are **not**
-a current price or billed-size estimate. Cloned branches share storage; logical_size values cannot be summed
+14 projects and 26 active branches.**
+**After the sixth personal-org superseded-project cleanup (2026-11-08):
+11 active projects and 23 active branches.** Verified by the current
+live project inventory in both organizations and active branch lists
+for all remaining projects (personal 5 projects/15 branches, dedicated
+6 projects/8 branches). Deleted project IDs remain in this document
+as historical records; native Neon recoverable-list readback found all
+three after deletion. These counts are **not** a price or billed-size
+estimate. Cloned branches share storage; logical_size cannot be summed
 as cleanup savings. The direct App-backed Session Search read-only probe
 on 2026-11-08 returned FOUND, four queried shards
 (chatgpt-0001, chatgpt-0002, deepseek-0001, xai-0001),
@@ -83,9 +88,9 @@ Additional non-default branches (do **not** confuse with separate projects):
 | --- | --- | --- |
 | royal-cake-29698192 | Current registered production router in br-patient-union-b5xe6jip; original main also has ssrouter2. Preserve production endpoint, credentials, catalog and rollback. | KEEP (project) |
 | misty-darkness-46441019 | Legacy/transition shard Function host: multiple ssshard Functions across 10 branches. May still service DeepSeek/xAI; names are misleading. Need exact live catalog target map. | KEEP/UNKNOWN (project) |
-| ancient-bonus-25507065 | Archived duplicate DeepSeek arcade-building project; single default br-floral-cherry-b4x357cc, no returned Functions. | REVIEW_DELETE after role/dependency audit |
-| royal-wind-39888328 | Archived xAI-0001-v2 project; br-hidden-bonus-b4jntyc6, no returned Functions. | REVIEW_DELETE after role/dependency audit |
-| dry-poetry-12579932 | Archived xAI-0001 project; br-dawn-queen-b4yy6apb, no returned Functions. | REVIEW_DELETE after role/dependency audit |
+| ancient-bonus-25507065 | First unmaterialized DeepSeek target; #107 selected a fresh data-organization project instead. Pre-delete SQL: 0 generations, 0 sessions, 0 messages, no Functions. | REMOVED 2026-11-08 (recoverable at readback) |
+| royal-wind-39888328 | Original accepted xAI v2 candidate from #83; exact generation, manifest, schema, READY and 60/17,790 matched current data-org xAI. No Functions. | REMOVED 2026-11-08 (recoverable at readback) |
+| dry-poetry-12579932 | Superseded xAI v1 from #83 (pre-snapshot-lock materializer fix), one READY generation, ACTIVE NULL, no Functions; replaced by accepted v2. | REMOVED 2026-11-08 (recoverable at readback) |
 | ancient-morning-06623139 | Archived ss64 Hermes-B historical project; br-spring-sound-b44hg0v8 retains ssshard Function deployment #5 (completed), even though the branch is archived. | UNKNOWN: require exact #64/Hermes consumer and endpoint audit |
 | flat-resonance-49725344 | Separate Theseus research development sandbox; default br-rough-math-aeencra7; not Session Search cleanup by inference. | KEEP (other owner) |
 | billowing-butterfly-30206276 | Vercel CI watcher canary; main br-tiny-wave-ar8u4ovq and vercel-dev br-delicate-hill-arkjnpns; outside Session Search ownership. | KEEP (other owner) |
@@ -116,6 +121,60 @@ Shard Function host misty-darkness-46441019 (10 original branches, 5 active afte
 | chatgpt-0002-serving-20261031 / br-wandering-mountain-b41qo8k1 | Previous ChatGPT-serving Function #2; retain as rollback candidate under open #166 (exact rollback path not retested). |
 | chatgpt-0001-serving-20261031 / br-withered-lab-b4j729ow | Previous ChatGPT-serving Function #2; retain as rollback candidate under open #166 (exact rollback path not retested). |
 | canary-deepseek-0001-20261025 / br-morning-surf-b4au9u4j | Live DeepSeek Function endpoint established in #126/#166; KEEP despite misleading name. |
+
+## Sixth batch — superseded personal-org Neon projects, 2026-11-08
+
+Three old derived Session Search projects were independently reviewed and
+removed from personal org org-plain-river-00452194. This is not an
+architectural requirement for a second organization: #107 already selected
+the dedicated Theseus Session Search organization for production shards.
+
+- **ancient-bonus-25507065**, old DeepSeek arcade-building target,
+  default branch br-floral-cherry-b4x357cc. GitHub #107 records the
+  explicit recreate decision in the dedicated data organization. Fresh
+  read-only SQL confirmed 0 generations, 0 sessions, 0 messages, no
+  ACTIVE pointer; Neon listed one archived main and no Functions/domains.
+- **royal-wind-39888328**, original #83 xAI v2 accepted READY
+  candidate, default branch br-hidden-bonus-b4jntyc6. Fresh SQL
+  independently matched its generation identity, source manifest,
+  schema version, provider, shard, READY state and exact 60 sessions /
+  17,790 messages against the current live xAI project
+  wild-surf-61625738 in the dedicated organization. No branch Functions
+  or domains. #107 documents the current xAI project transfer and
+  successful App/Arcade materializer replay.
+- **dry-poetry-12579932**, the *superseded xAI v1* pre-materializer
+  snapshot fix, branch br-dawn-queen-b4yy6apb. #83 explicitly states
+  this v1 was replaced by accepted v2 after PRs #84/#85/#87.
+  Its sole generation remained READY but not ACTIVE, with 60/17,790
+  and no Functions/domains. Unlike v2, its deterministic generation
+  identity intentionally differs; **it was not treated as a byte-identical
+  copy**. The accepted immutable source and versioned materializer
+  are authoritative, not this old derived Neon candidate.
+
+All three had exactly one archived default branch, no Function
+deployment and no custom Function domain. A bounded GitHub owner-wide
+code search found no exact project/branch-ID references. These were
+deliberately superseded serving derivatives, not additional source
+authority. The user had instructed continuation of the approved #235
+legacy cleanup.
+
+Targeted Neon delete_project succeeded for each. Independent active
+organization listings after the first and second removals, and after
+all three, found the deleted IDs absent from active projects and
+present in the provider's recoverable list; current working
+DeepSeek/xAI projects remained. A fresh *real App-backed* Session
+Search query after the first, second and third removals returned
+FOUND, four queried shards, zero unavailable and unchanged pinned
+ChatGPT generation prefixes. Current active branch inventory across
+all eleven remaining projects independently totals **23**, not a
+logical-size-derived estimate.
+
+**Scope:** no current serving data/Function, router, corpus authority,
+catalog, credentials, rollback branches, other-owner research/Vercel
+project or historic Hermes-B Function was modified. The separate
+Hermes project ancient-morning-06623139 remains pending its own
+ownership/function evidence. Neither financial savings nor full
+deletion of recoverable historical Neon records is claimed.
 
 ## Fifth batch — ss147 isolated ChatGPT Function leaf, 2026-11-08
 
