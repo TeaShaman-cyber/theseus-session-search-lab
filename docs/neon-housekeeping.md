@@ -30,15 +30,18 @@ name includes test or canary.
 
 Two **distinct access scopes**, not a requirement for two future stores:
 
-- Personal Neon organization: eight projects. The current production router
+- Personal Neon organization: eight projects before cleanup, four afterward.
+  The current production router
   Function ssrouter2 is on project royal-cake-29698192, branch
   br-patient-union-b5xe6jip, deployment #8. A separate personal project
   misty-darkness-46441019 hosts multiple shard Functions and cannot be treated
   as expendable merely because its project name mentions ChatGPT.
 - Dedicated Theseus Session Search Neon organization: originally eight
-  projects before the authorized November 8 cleanup; now **six active
-  projects**. Four hold the current serving generations and two retain
-  previous ChatGPT generations for rollback.
+  projects before the authorized November 8 cleanup; six remained after
+  cleanup, and the separate issue232 feedback project was then added:
+  **seven active projects**. Four hold current serving generations,
+  two retain previous ChatGPT generations for rollback, and one is
+  the isolated feedback store (not a search shard).
 
 **Baseline inventory:** 16 visible projects, 39 visible branches (including
 default) before deletion. **After the first project batch:** 14 active projects, 37 active branches.
@@ -62,8 +65,12 @@ for all remaining projects (personal 4 projects/14 branches, dedicated
 6 projects/8 branches). Deleted project IDs remain in this document
 as historical records. Native Neon recoverable-list readback
 confirmed the new Hermes-B deletion after the operation. These counts are **not** a price or billed-size
-estimate. Cloned branches share storage; logical_size cannot be summed
-as cleanup savings. The direct App-backed Session Search read-only probe
+estimate. **After the issue232 private feedback project was provisioned
+later on 2026-11-08: 11 active projects and 23 active branches**
+(personal 4/14 + dedicated 7/9). The extra branch belongs only to
+feedback_issue232, not corpus or router serving. Cloned branches share
+storage; logical_size cannot be summed as cleanup savings. The
+direct App-backed Session Search read-only probe
 on 2026-11-08 returned FOUND, four queried shards
 (chatgpt-0001, chatgpt-0002, deepseek-0001, xai-0001),
 unavailable_shards=[].
@@ -81,6 +88,7 @@ Classification:
 
 | Project / current branch identity | Purpose / evidence | State |
 | --- | --- | --- |
+| plain-voice-04214202, main br-dry-feather-bc0z04nc | Isolated App feedback-only database feedback_issue232 created under #232; table session_feedback.records_v0; no corpus or router data. No new Neon Function; writer source ready, live App tool not yet enabled. | KEEP / FEEDBACK |
 | old-smoke-74649402, main br-mute-paper-bdyf171i | Blue ChatGPT-0001 from #147; ACTIVE generation starts 3396ab63553e; ssshard deployment #3; current App returned same generation prefix. | KEEP |
 | purple-cell-65542575, main br-cold-cake-bd2rp458 | Blue ChatGPT-0002 from #147; ACTIVE starts d8604fd227d8; ssshard #3. | KEEP |
 | morning-tooth-71193579, main br-withered-snow-b5amv40x | DeepSeek-0001, ACTIVE starts 5fef1c896745; live #166 release vector. | KEEP |
