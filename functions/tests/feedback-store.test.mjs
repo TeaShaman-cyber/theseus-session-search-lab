@@ -49,6 +49,7 @@ test('Upstash writer records one private feedback record with HSETNX', async () 
 
   const result = await writer(INPUT);
   assert.equal(result.status, 'RECORDED');
+  assert.equal(result.feedback_ref, '7f254e82701b5e586625943bbf468311');
   assert.match(result.feedback_ref, /^[0-9a-f]{32}$/);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, 'https://example.upstash.io/');

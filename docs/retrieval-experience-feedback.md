@@ -132,12 +132,36 @@ rewrite accepted conversation authority.
 
 ## Feedback refresh cycle
 
-The deterministic v0 processor is:
+There are now two deterministic refresh paths.
+
+For already-materialized episode JSONL:
 
     python3 scripts/process_retrieval_feedback.py episodes.jsonl patterns.json
 
-It validates every episode and groups only comparable failure_class + operator +
-operator_version observations. It keeps:
+For live durable feedback stored through the optional Upstash adapter:
+
+    SESSION_SEARCH_FEEDBACK_UPSTASH_REST_URL=... \
+    SESSION_SEARCH_FEEDBACK_UPSTASH_REST_TOKEN=... \
+    python3 scripts/refresh_retrieval_feedback.py \
+      --episodes-output /private/retrieval-experience.jsonl \
+      --patterns-output /private/retrieval-patterns.json
+
+The live refresh:
+- scans the configured private feedback hash with HSCAN;
+- strictly validates every stored feedback-record.v0;
+- recomputes feedback_ref and rejects tampered payloads;
+- rejects duplicate IDs and cursor loops;
+- drops free-text notes when materializing retrieval-experience episodes;
+- combines live episodes with the hand-audited seed ledger;
+- atomically writes deterministic private projections with mode 0600.
+
+An optional SESSION_SEARCH_FEEDBACK_UPSTASH_REST_READ_TOKEN may be supplied for
+the refresh reader; otherwise it falls back to the configured feedback REST token.
+Actual least-privilege HSCAN permissions must be verified when a live store is
+configured.
+
+The existing pattern processor validates every episode and groups only comparable
+failure_class + operator + operator_version observations. It keeps:
 - total observed episodes;
 - aggregation-eligible vs ineligible counts;
 - improved, same, regressed, mixed and unknown separately.
@@ -145,10 +169,11 @@ operator_version observations. It keeps:
 It never emits an automatically promoted policy. policy_candidates is empty and
 policy_promotion is NOT_PERFORMED in v0.
 
-This processor is designed to become a regular maintenance job once the live
-feedback-write path exists. Scheduling and cadence are intentionally not
-hard-coded in v0; the job can later run on a bounded time or episode-count trigger
-without changing the evidence contract.
+The live write/read/refresh code path is now explicit, but scheduling and cadence
+remain intentionally unconfigured. A recurring job is the next operational layer
+after a live private store and deployed writer are verified. The scheduler must
+invoke the same deterministic refresh command rather than introduce a second
+processing implementation.
 
 ## Seed evidence
 
