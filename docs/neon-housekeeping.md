@@ -36,12 +36,14 @@ been removed; DeepSeek/xAI live Function branches remain.
 **After the fifth isolated ss147 Function-leaf cleanup (2026-11-08):
 14 projects and 26 active branches.**
 **After the sixth personal-org superseded-project cleanup (2026-11-08):
-11 active projects and 23 active branches.** Verified by the current
-live project inventory in both organizations and active branch lists
-for all remaining projects (personal 5 projects/15 branches, dedicated
+11 active projects and 23 active branches.**
+**After the seventh synthetic Hermes-B cleanup (2026-11-08):
+10 active projects and 22 active branches.** Verified by current
+read-only organization project inventory and active branch lists
+for all remaining projects (personal 4 projects/14 branches, dedicated
 6 projects/8 branches). Deleted project IDs remain in this document
-as historical records; native Neon recoverable-list readback found all
-three after deletion. These counts are **not** a price or billed-size
+as historical records. Native Neon recoverable-list readback
+confirmed the new Hermes-B deletion after the operation. These counts are **not** a price or billed-size
 estimate. Cloned branches share storage; logical_size cannot be summed
 as cleanup savings. The direct App-backed Session Search read-only probe
 on 2026-11-08 returned FOUND, four queried shards
@@ -91,7 +93,7 @@ Additional non-default branches (do **not** confuse with separate projects):
 | ancient-bonus-25507065 | First unmaterialized DeepSeek target; #107 selected a fresh data-organization project instead. Pre-delete SQL: 0 generations, 0 sessions, 0 messages, no Functions. | REMOVED 2026-11-08 (recoverable at readback) |
 | royal-wind-39888328 | Original accepted xAI v2 candidate from #83; exact generation, manifest, schema, READY and 60/17,790 matched current data-org xAI. No Functions. | REMOVED 2026-11-08 (recoverable at readback) |
 | dry-poetry-12579932 | Superseded xAI v1 from #83 (pre-snapshot-lock materializer fix), one READY generation, ACTIVE NULL, no Functions; replaced by accepted v2. | REMOVED 2026-11-08 (recoverable at readback) |
-| ancient-morning-06623139 | Archived ss64 Hermes-B historical project; br-spring-sound-b44hg0v8 retains ssshard Function deployment #5 (completed), even though the branch is archived. | UNKNOWN: require exact #64/Hermes consumer and endpoint audit |
+| ancient-morning-06623139 | Old #64 synthetic-only Hermes-B proof-of-concept: exactly one synthetic generation, 1 session/2 messages, historical ssshard Function #5, no custom domains; current App #113 replaced historical topology. | REMOVED 2026-11-08 (recoverable at readback) |
 | flat-resonance-49725344 | Separate Theseus research development sandbox; default br-rough-math-aeencra7; not Session Search cleanup by inference. | KEEP (other owner) |
 | billowing-butterfly-30206276 | Vercel CI watcher canary; main br-tiny-wave-ar8u4ovq and vercel-dev br-delicate-hill-arkjnpns; outside Session Search ownership. | KEEP (other owner) |
 
@@ -121,6 +123,55 @@ Shard Function host misty-darkness-46441019 (10 original branches, 5 active afte
 | chatgpt-0002-serving-20261031 / br-wandering-mountain-b41qo8k1 | Previous ChatGPT-serving Function #2; retain as rollback candidate under open #166 (exact rollback path not retested). |
 | chatgpt-0001-serving-20261031 / br-withered-lab-b4j729ow | Previous ChatGPT-serving Function #2; retain as rollback candidate under open #166 (exact rollback path not retested). |
 | canary-deepseek-0001-20261025 / br-morning-surf-b4au9u4j | Live DeepSeek Function endpoint established in #126/#166; KEEP despite misleading name. |
+
+## Seventh batch — #64 synthetic Hermes-B project, 2026-11-08
+
+GitHub issue #64 (closed; receipt PR #68) identifies the two original
+*synthetic-only* shard projects for the federated-serving spike:
+chatgpt-0001 and hermes-0001. The Hermes target was personal
+project ancient-morning-06623139, sole default branch
+br-spring-sound-b44hg0v8. The completed #64 contract explicitly
+excluded real ChatGPT/Hermes/Codex corpus migration. Later #113
+fixed the App-backed consumer overlay to stop assuming the historical
+two-shard synthetic catalog was current.
+
+**Direct pre-delete evidence:**
+- Native Neon project/branch readback confirmed the exact personal-org
+  project name theseus-ss64-hermes-b, one default branch, no custom
+  Function domains, one ssshard Function with completed deployment #5.
+- Read-only SQL counted exactly **one generation, one session and two
+  messages**; the sole READY generation had provider=hermes,
+  shard=hermes-0001, ID of 64 repeated b characters and a manifest of
+  64 repeated 2 characters, matching the synthetic spike fingerprint.
+- Bounded GitHub owner code search found zero current code hits for
+  exact project ID ancient-morning-06623139, branch ID
+  br-spring-sound-b44hg0v8 and name theseus-ss64-hermes-b.
+  The historical issue #64 and receipt remain the durable evidence.
+- Fresh App-backed read-only Session Search control before the deletion
+  returned FOUND, exactly four currently serving shards
+  (chatgpt-0001, chatgpt-0002, deepseek-0001, xai-0001),
+  zero unavailable; the Hermes synthetic shard is not a current
+  queried shard.
+
+The user authorized housekeeping of this specifically identified
+legacy test project. A final exact-project preflight rechecked
+all counts, project identity, branch and Function scope. Native
+Neon delete_project returned the requested ID. Independent active
+project inventory confirmed the target **absent**, the personal
+router and live Function-host project **present**, and the four
+data-org serving shard projects still **present**. The project
+appeared in Neon's recoverable inventory during readback.
+A fresh live App-backed query after deletion returned FOUND,
+four queried, zero unavailable and unchanged observed blue ChatGPT
+generation prefixes. A separate active branch inventory across
+all remaining projects confirmed **10 projects, 22 branches**.
+
+Only the old one-project synthetic Hermes-B derived state
+was removed; no Hermes corpus authority, production serving
+Function, current catalog, rollback generation or unrelated
+research/Vercel project was changed. This was **not** a migration
+or deletion of accepted real Hermes conversations. No dollar
+savings have been independently calculated.
 
 ## Sixth batch — superseded personal-org Neon projects, 2026-11-08
 
