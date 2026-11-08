@@ -1,0 +1,104 @@
+{
+  "aggregate": {
+    "baseline_reachable": 11,
+    "baseline_top10": 11,
+    "cases": 30,
+    "full_routes": 25,
+    "h3_reachable": 12,
+    "h3_top10": 11,
+    "improved": 3,
+    "same": 27,
+    "sparse_routes": 5,
+    "worse": 0
+  },
+  "date": "2026-11-08",
+  "development_sets": {
+    "h1dev": {
+      "baseline": {
+        "candidate_reachable": 2,
+        "top10": 2
+      },
+      "comparison": {
+        "improved": 1,
+        "same": 9,
+        "worse": 0
+      },
+      "h3": {
+        "candidate_reachable": 3,
+        "top10": 2
+      },
+      "holdout_sha256": "0461cb33d44913a8a5bbdf93fcaa0b0c7e17b1dc50ea81f7acae5f930b5867fd",
+      "routing": {
+        "full": 8,
+        "sparse": 2
+      },
+      "sha256": "f9cb6316b879ed76880c02d2ebe14e8c39dad1cb5e0b53272d479fd8e0ccf527"
+    },
+    "h1ind": {
+      "baseline": {
+        "candidate_reachable": 5,
+        "top10": 5
+      },
+      "comparison": {
+        "improved": 1,
+        "same": 9,
+        "worse": 0
+      },
+      "h3": {
+        "candidate_reachable": 5,
+        "top10": 5
+      },
+      "holdout_sha256": "3f0dc1313d47c14bd871eda46f261721285f3d6d9e24bfc2483b6d6565938f3c",
+      "routing": {
+        "full": 8,
+        "sparse": 2
+      },
+      "sha256": "5fd707948322c987f6292b87ee9e041cb1ab5ec7d6ee4cd08506b7a2992122e0"
+    },
+    "h2ind": {
+      "baseline": {
+        "candidate_reachable": 4,
+        "top10": 4
+      },
+      "comparison": {
+        "improved": 1,
+        "same": 9,
+        "worse": 0
+      },
+      "h3": {
+        "candidate_reachable": 4,
+        "top10": 4
+      },
+      "holdout_sha256": "972fb9320a98b605c3e90c433a3ef0f801399f70289779491d7bd753fbb4ab33",
+      "routing": {
+        "full": 9,
+        "sparse": 1
+      },
+      "sha256": "943628bdf066500b9bae850427bcb833244e6f3f1284a0c857010bb3d6da57d3"
+    }
+  },
+  "disposition": "H3_DEVELOPMENT_ONLY / 5_OF_30_SPARSE / 3_IMPROVED_27_SAME_0_WORSE / REACHABILITY_11_TO_12 / TOP10_11_TO_11 / NEW_INDEPENDENT_HOLDOUT_REQUIRED / NO_CUTOVER",
+  "epistemics": {
+    "new_holdout_required": true,
+    "promotion_independent": false,
+    "threshold_selected_post_hoc": true
+  },
+  "h3": {
+    "candidate_budget": 30,
+    "frozen_h1_planner_sha256": "0f9296556311cf4889eb2cd365a046b8ea1912ff23250444b95c48c3bb0ef29d",
+    "fusion": false,
+    "glue_ratio_threshold": 0.5,
+    "name": "selective_sparse_glue_ratio_h3",
+    "per_session_cap": 3,
+    "second_retrieval": false,
+    "selector_sha256": "7467279d5985df1d7425be7d0acc0b1beb7704373125c2f9a9bf9848c3a10b1c"
+  },
+  "issue": 188,
+  "privacy": {
+    "query_text_exported": false,
+    "selected_query_tokens_exported": false,
+    "target_fingerprints_exported": false,
+    "target_text_exported": false
+  },
+  "schema": "theseus.session-search-selective-sparse-h3.public.v1"
+}
