@@ -29,7 +29,10 @@ default) before deletion. **After the first project batch:** 14 active projects,
 the third router-canary batch (2026-11-08):** 14 active projects and
 **31 active branches**. One independent router leaf branch was removed;
 the remaining three old router candidates are ancestors of production
-and are not deletable in-place with Neon branch-tree constraints. The two deleted single-branch projects
+and are not deletable in-place with Neon branch-tree constraints.
+**After the fourth shard-leaf batch (2026-11-08):** **14 active projects,
+27 active branches**. Four accepted issue137 serving test branches have
+been removed; DeepSeek/xAI live Function branches remain. The two deleted single-branch projects
 remain listed below as historical evidence and are recoverable in Neon's
 deletion window at the observed postcondition. These counts are **not**
 a current price or billed-size estimate. Cloned branches share storage; logical_size values cannot be summed
@@ -97,20 +100,55 @@ Router project royal-cake-29698192 branches:
 | canary-xai-deepseek-20261025 / br-restless-hall-b5kaph3r | Initial router fan-out leaf; deleted after exact branch/Function checks, verified gone from active branch list. | REMOVED (historical reference) |
 | xai-candidate / br-dark-night-b5hku3bl | Ancestor of #116, #147, production and #166; cannot be deleted as a leaf. | BLOCKED_BY_CHILD_CHAIN |
 
-Shard Function host misty-darkness-46441019 (10 branches total):
+Shard Function host misty-darkness-46441019 (10 original branches, 6 active after fourth batch):
 
 | Branch / ID | Why retained or candidate |
 | --- | --- |
 | main / br-raspy-pine-b4y8bsyq | Default legacy shard Function; ROLLBACK pending exact serving URL map |
-| xai-candidate / br-young-art-b47cvyjd | Candidate ssshard; REVIEW_DELETE after URL map |
+| xai-candidate / br-young-art-b47cvyjd | Live xAI Function endpoint established in #126/#166; preserve for serving/rollback. KEEP |
 | ss147-chatgpt0001-serving-20261104 / br-lingering-silence-b41yl5e3 | #147 shard Function; UNKNOWN until live URL/cutover map |
-| issue137-chatgpt0002-serving-20261101 / br-hidden-pond-b4wro919 | Transitional ssshard; UNKNOWN |
-| issue137-xai0001-serving-20261101 / br-crimson-star-b4dhtud5 | Potentially live xAI Function; KEEP until verified |
-| issue137-chatgpt0001-serving-20261101 / br-soft-leaf-b4rv9zgu | Transitional ssshard; UNKNOWN |
-| issue137-deepseek0001-serving-20261101 / br-old-mouse-b4962ahn | Potentially live DeepSeek Function; KEEP until verified |
+| issue137-chatgpt0002-serving-20261101 / br-hidden-pond-b4wro919 | Accepted #137 diagnostic leaf; REMOVED 2026-11-08. |
+| issue137-xai0001-serving-20261101 / br-crimson-star-b4dhtud5 | Accepted #137 diagnostic leaf, not #166 live parent; REMOVED 2026-11-08. |
+| issue137-chatgpt0001-serving-20261101 / br-soft-leaf-b4rv9zgu | Accepted #137 diagnostic leaf; REMOVED 2026-11-08. |
+| issue137-deepseek0001-serving-20261101 / br-old-mouse-b4962ahn | Accepted #137 diagnostic leaf, not #166 live parent; REMOVED 2026-11-08. |
 | chatgpt-0002-serving-20261031 / br-wandering-mountain-b41qo8k1 | Historical ssshard; REVIEW_DELETE after URL map |
 | chatgpt-0001-serving-20261031 / br-withered-lab-b4j729ow | Historical ssshard; REVIEW_DELETE after URL map |
-| canary-deepseek-0001-20261025 / br-morning-surf-b4au9u4j | Older ssshard canary; REVIEW_DELETE after URL map |
+| canary-deepseek-0001-20261025 / br-morning-surf-b4au9u4j | Live DeepSeek Function endpoint established in #126/#166; KEEP despite misleading name. |
+
+## Fourth batch — issue137 transitional shard leaves, 2026-11-08
+
+The completed retrieval-policy work in GitHub issue #137 already records
+its strict/recall/auto App-backed acceptance; production now runs the
+separately pinned #166 shard release vector. Fresh #166 and #126 receipts
+identify the actual live DeepSeek/xAI Function **parents** on
+br-morning-surf-b4au9u4j and br-young-art-b47cvyjd, which were retained.
+Current Neon checks verified all four old issue137 *children* below
+were unprotected non-default leaves, each with a completed historical
+ssshard deployment #1 and **no** custom Function domains. A bounded
+GitHub code search found zero references to their exact branch IDs.
+
+The following old **test Function branches** were explicitly cleaned
+from project misty-darkness-46441019, without touching parent branches:
+
+- br-hidden-pond-b4wro919 — issue137-chatgpt0002-serving.
+- br-soft-leaf-b4rv9zgu — issue137-chatgpt0001-serving.
+- br-crimson-star-b4dhtud5 — issue137-xai0001-serving.
+- br-old-mouse-b4962ahn — issue137-deepseek0001-serving.
+
+Each Neon delete_branch succeeded. Independent active-only list_branches
+immediately after each showed the target absent and the default main,
+actual DeepSeek and xAI serving branches still present. A fresh
+App-backed real Session Search probe **between the two ChatGPT deletes
+and the two DeepSeek/xAI deletes**, and again after all four, returned
+FOUND, all four queried, unavailable_shards=[], same two pinned
+ChatGPT generation prefixes. Another read-only Neon inventory confirmed
+six remaining active branches of this historical Function-host project.
+
+**Retained (not part of this batch):** main, xai-candidate live xAI,
+canary-deepseek live DeepSeek, two older Oct31 ChatGPT serving branches
+and ss147-chatgpt0001-serving with separate rollout histories. No
+further removal was inferred from names alone. No billed savings
+or new provider/permission actions claimed.
 
 ## Router canary cleanup — November 8 third batch
 
