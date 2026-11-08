@@ -135,7 +135,9 @@ With an existing *authorized* libpq connection on the agent host (PGSERVICE,
 libpq environment or local keyring; no URL/password in CLI arguments), perform
 one explicit bounded two-way reconciliation:
 
-    python3 -m session_search.feedback_neon       --store-dir "$PRIVATE_FEEDBACK_INBOX" --expected-database neondb
+    python3 -m session_search.feedback_neon \
+      --store-dir "$PRIVATE_FEEDBACK_INBOX" \
+      --expected-database neondb
 
 The command validates every local/remote feedback-record.v0 before writing,
 checks same-key content equality, uploads only absent records in one transaction,
@@ -146,13 +148,48 @@ shortcut. It caps remote reads at 1000 records and fails if this limit is
 exceeded rather than silently accepting an incomplete view; pagination is
 future work only when capacity demands it. Output contains counts only.
 
-**Operational state:** the code/SQL can be verified independently of live
-credential access. Current exe.dev Neon provider integration belongs to the
-separate Session Search data organization; it does **not** provide authority to
-the personal organization owning the selected router database. A native Neon
-management test of the target does not mean the exe.dev↔Neon transfer works.
-Direct ChatGPT session_feedback and automated schedule remain separate,
-unimplemented boundaries.
+**Verified operating state (2026-11-08, issue #232):** the reviewed
+migration was applied to the private personal-organization router project's
+existing neondb. Independent Neon readback confirmed schema
+session_feedback, table records_v0, the feedback_ref primary key and
+feedback-record shape CHECK. PUBLIC table SELECT and schema USAGE are denied.
+A temporary same-transaction PostgreSQL canary verified exact replay,
+conflicting-payload non-overwrite and invalid-shape rejection. Temporary
+test data was not retained; the persistent replica still has **0 records**.
+The serving router remained on deployment #8.
+
+**Current route check (2026-11-08, read-only):** the Neon connector on
+exe.dev **is working**, and the previously accepted provider-native SQL route
+remains the intended operator path:
+exe.dev -> neon.int.exe.xyz -> connection_uri -> psql -f.
+See TeaShaman-cyber/theseus-cloud-shell issue #10 and
+providers/exe-dev/README.md; a historical read-only psql file execution
+was independently verified. Do **not** classify this connector as broken.
+
+The currently attached provider identity lists eight Neon projects in the
+*Theseus Session Search* organization. These are existing provider/shard
+projection projects, including blue/candidate branches; **none is identified
+as a dedicated private feedback store**. The proxy's GET for the existing
+personal-organization router project returned HTTP 404, both by project ID
+and by explicitly requested personal-organization scope. This is a
+**scope/identity mismatch**, not a general inability to perform SQL.
+Native ChatGPT Neon access to that personal-organization project is a
+different authenticated boundary, and is not a bridge for guest credentials.
+
+**BLOCKED, specific postcondition:** the first real feedback record still
+resides only in the exe.dev local inbox; the personal-organization Neon table
+remains at 0 records and the end-to-end sync has not been verified. Do not
+move private feedback into a corpus shard or silently change store ownership.
+
+**One decision remains:** grant the already attached provider integration
+appropriately scoped access to the *existing* private replica, or explicitly
+select a dedicated feedback store in the data organization. Either changes
+permission or storage authority and needs its own approval and current
+readback. Do not create a new key, account, database or adapter by inference.
+Once an authorized end-to-end connection is available, run the versioned
+session_search.feedback_neon adapter, verify exact record readback,
+idempotence and conflict handling, and only then declare synchronization live.
+Direct ChatGPT session_feedback and recurring automation remain separate.
 
 
 ### Remote acceptance before calling synchronization live
