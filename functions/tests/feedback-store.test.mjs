@@ -65,7 +65,10 @@ test('Upstash writer records one private feedback record with HSETNX', async () 
   assert.equal(stored.schema, 'theseus.session-search-feedback-record.v0');
   assert.equal(stored.feedback_ref, result.feedback_ref);
   assert.equal(stored.received_at, '2026-11-08T01:20:00.000Z');
-  assert.deepEqual(stored.feedback, INPUT);
+  assert.deepEqual(stored.feedback, {
+    schema: 'theseus.session-search-feedback-request.v0',
+    ...INPUT,
+  });
 });
 
 test('same feedback payload has stable id and HSETNX duplicate is explicit', async () => {

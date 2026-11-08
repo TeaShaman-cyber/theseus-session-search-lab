@@ -5,6 +5,7 @@ const HASH_KEY = /^[A-Za-z0-9:._-]{1,128}$/;
 
 function normalizedFeedback(input) {
   return {
+    schema: 'theseus.session-search-feedback-request.v0',
     baseline_request_ref: input.baseline_request_ref,
     result_request_ref: input.result_request_ref ?? null,
     failure_class: input.failure_class,
