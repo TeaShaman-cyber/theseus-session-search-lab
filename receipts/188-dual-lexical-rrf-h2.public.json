@@ -1,0 +1,60 @@
+{
+  "baseline": {
+    "candidate_reachable": 5,
+    "top10": 5
+  },
+  "comparison_h2_vs_baseline": {
+    "improved": 3,
+    "same": 5,
+    "worse": 2
+  },
+  "date": "2026-11-08",
+  "disposition": "H2_DEVELOPMENT_SIGNAL / REACHABLE_5_TO_6 / TOP10_UNCHANGED_5 / ONE_MISS_RESCUED_TO_TOP10 / ONE_BASELINE_TOP10_DEMOTED_TO_11_30 / NEW_INDEPENDENT_HOLDOUT_NEXT / NO_CUTOVER",
+  "h1": {
+    "candidate_reachable": 4,
+    "top10": 4
+  },
+  "h2": {
+    "candidate_budget_per_view": 30,
+    "frozen_h1_planner_sha256": "0f9296556311cf4889eb2cd365a046b8ea1912ff23250444b95c48c3bb0ef29d",
+    "fused_candidate_budget": 30,
+    "fusion_sha256": "9f091ac8587a98114a1ab1e3e11bb89d472fe04067cd703fc3e97362c07bb86c",
+    "name": "full_lemma_plus_frozen_h1_rrf",
+    "per_session_cap": 3,
+    "rrf_k": 60
+  },
+  "h2_result": {
+    "candidate_reachable": 6,
+    "top10": 5
+  },
+  "holdout": {
+    "cases": 10,
+    "promotion_independent": false,
+    "role": "h2_development_after_h1_independent_evaluation",
+    "sha256": "3f0dc1313d47c14bd871eda46f261721285f3d6d9e24bfc2483b6d6565938f3c"
+  },
+  "interpretation": {
+    "backend_selected": false,
+    "candidate_reachability_gain": 1,
+    "development_signal": true,
+    "next_gate": "freeze H2 unchanged and evaluate on a new independent historical-query holdout",
+    "rule_tuned_after_rank_evaluation": false,
+    "serving_changed": false,
+    "top10_gain_observed": false
+  },
+  "issue": 188,
+  "privacy": {
+    "query_text_exported": false,
+    "selected_query_tokens_exported": false,
+    "target_fingerprints_exported": false,
+    "target_text_exported": false
+  },
+  "private_receipt_sha256": "34c4edafe88e7d1102e28dc851c4f8f46ae7713c7ae268eaa23607eaf399e7cf",
+  "rank_class_transitions": {
+    "top10_to_11_30": 1,
+    "top10_to_top10": 4,
+    "unreachable_to_top10": 1,
+    "unreachable_to_unreachable": 4
+  },
+  "schema": "theseus.session-search-dual-lexical-rrf-h2.public.v1"
+}
