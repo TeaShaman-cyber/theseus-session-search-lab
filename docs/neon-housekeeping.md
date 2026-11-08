@@ -222,10 +222,12 @@ logical-size-derived estimate.
 
 **Scope:** no current serving data/Function, router, corpus authority,
 catalog, credentials, rollback branches, other-owner research/Vercel
-project or historic Hermes-B Function was modified. The separate
-Hermes project ancient-morning-06623139 remains pending its own
-ownership/function evidence. Neither financial savings nor full
-deletion of recoverable historical Neon records is claimed.
+project or historic Hermes-B Function was modified **during this
+sixth batch**. At that checkpoint, project ancient-morning-06623139
+still awaited separate verification; the subsequent seventh batch
+above confirmed its synthetic-only purpose and removed it. Neither
+financial savings nor full deletion of recoverable historical Neon
+records is claimed.
 
 ## Fifth batch — ss147 isolated ChatGPT Function leaf, 2026-11-08
 
