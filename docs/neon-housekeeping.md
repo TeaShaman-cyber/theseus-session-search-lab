@@ -117,6 +117,33 @@ Shard Function host misty-darkness-46441019 (10 branches total):
    to selected blue pair; both have no returned deployed Functions.
    **Do not delete until** exact current router catalog and all non-App
    consumers/backup references are verified.
+### First duplicate-pair validation — 2026-11-08
+
+Current independent read-only Neon SQL comparisons confirmed that the two
+unselected ss147 projects (super-resonance-00490441 and
+falling-bread-64015288) match the chosen blue shard pair in every compared
+generation metadata field: generation ID, shard/provider, source manifest
+digest, projection schema version, READY state, and exact session and message
+counts. The first pair each contains **254 sessions / 67,293 messages**;
+the second **232 sessions / 46,052 messages**. No private source digests
+or content were published.
+
+Each unselected project has exactly one default branch, zero returned Neon
+Functions, zero custom Function domains and one neondb. Organization-wide
+GitHub code search found zero references to their two project IDs and branch
+IDs; this is a limited source-control check, **not** an exhaustive consumer
+inventory or a proof of no hidden runtime configuration.
+
+A fresh App-backed control query returned FOUND, four queried and zero
+unavailable shards. The production router Function has a completed deployment
+and a SESSION_SEARCH_CATALOG environment key, but the native Function
+reader returns environment variable names only, not their current values;
+the **exact current catalog endpoint-to-project mapping remains unverified**.
+Issue #147 records selection of the blue pair at cutover; this is historical
+evidence, not the current literal endpoint list. Preserve the two unselected
+projects until the current catalog, rollback path and external consumers are
+independently checked. No project deletion is authorized by this audit alone.
+
 3. **Contained experiments:** issue-188 evaluation branch, issue-116 env canary,
    old October canaries and obsolete issue137/issue86 branches. A completed
    issue/test is not itself proof that no URL, job, or rollback depends on it.
