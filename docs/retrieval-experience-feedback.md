@@ -63,12 +63,15 @@ The router has a conditional MCP session_feedback contract. It is advertised
 only when a feedbackWriter function is configured. Without a writer, tools/list
 remains unchanged and exposes only session_search.
 
-No durable feedback-store implementation is selected in the current architecture.
-The feedbackWriter seam is intentionally left unbound until a concrete storage
-requirement justifies choosing and validating an adapter.
+The App feedback storage target selected under #232 is a dedicated
+feedback_issue232 Neon PostgreSQL database, separate from the corpus.
+A tested feedbackWriter adapter is enabled only when the exact database
+connection is configured. It is NOT YET verified active in the production
+App. The server runtime separately retains its local feedback inbox;
+neither automatic sync nor search-policy promotion is planned.
 
-The portable feedback contract therefore stays independent of any database,
-queue, cache, object store or vendor-specific command model.
+The portable feedback contract remains backend-independent. See
+docs/feedback-sync.md for the current two-store/manual-review decision.
 
 ## Feedback request v0
 

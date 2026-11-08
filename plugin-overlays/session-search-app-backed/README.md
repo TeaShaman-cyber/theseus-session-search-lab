@@ -21,7 +21,13 @@ The production Arcade gateway is an allowlist of discovered tool definitions, no
 
 `TheseusSessionSearch.session_search`
 
-The canonical remote-server identity is likewise stable: `theseus-session-search`. A router candidate may exist as an isolated diagnostic server, but production cutover must not add a second Session Search tool such as a version-suffixed sibling to the consumer gateway. The backend router URI changes underneath the existing remote-server identity, then Arcade refreshes that worker's discovered tools; the gateway continues to expose the same one consumer tool.
+The canonical remote-server identity remains theseus-session-search.
+The existing public search tool remains stable (session_search), with
+no version-suffixed sibling. Under issue #232 the same server can
+additionally expose session_feedback for bounded App-only feedback
+writes. This is conditional on an installed database writer and a
+verified Arcade gateway allowlist and App-host tool listing; an
+unverified source change is not proof the tool is live.
 
 This indirection is the reason the App-backed ChatGPT plugin does not need a new domain-tool identity for router upgrades. Skill-overlay updates are only needed when operator/consumer guidance changes.
 

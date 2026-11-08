@@ -1,5 +1,7 @@
 import { createTelemetryFromEnv } from '../telemetry.mjs';
 import { makeRouterHandler } from './handler.mjs';
+import { neon } from '@neondatabase/serverless';
+import { assertFeedbackDatabaseUrl, makeFeedbackWriter } from './feedback.mjs';
 
 const rawCatalog = process.env.SESSION_SEARCH_CATALOG;
 const authToken = process.env.SESSION_SEARCH_ROUTER_AUTH_TOKEN;
@@ -26,4 +28,13 @@ const telemetry = createTelemetryFromEnv({
   flushTimeoutMs: ROUTER_TELEMETRY_FLUSH_TIMEOUT_MS,
 });
 
-export default makeRouterHandler({ catalog, telemetry, authToken, shardAuthToken });
+// No server↔App synchronization: the App writes only to its separate issue232 DB.
+const feedbackDatabaseUrl = process.env.SESSION_SEARCH_FEEDBACK_DATABASE_URL;
+let feedbackWriter = null;
+if (feedbackDatabaseUrl) {
+  assertFeedbackDatabaseUrl(feedbackDatabaseUrl);
+  const sql = neon(feedbackDatabaseUrl);
+  feedbackWriter = makeFeedbackWriter(sql.query.bind(sql));
+}
+
+export default makeRouterHandler({ catalog, telemetry, authToken, shardAuthToken, feedbackWriter });
