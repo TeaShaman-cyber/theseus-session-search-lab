@@ -23,6 +23,7 @@ export function makeRouterHandler({
   telemetry = createNoopTelemetry(),
   authToken,
   shardAuthToken,
+  feedbackWriter = null,
 }) {
   if (typeof authToken !== 'string' || authToken.length === 0) {
     throw new Error('HTTP_AUTH_TOKEN_MISSING');
@@ -32,6 +33,9 @@ export function makeRouterHandler({
   }
   if (!Number.isFinite(shardTimeoutMs) || shardTimeoutMs <= 0) {
     throw new Error('SHARD_TIMEOUT_OUT_OF_BOUNDS');
+  }
+  if (feedbackWriter !== null && typeof feedbackWriter !== 'function') {
+    throw new Error('FEEDBACK_WRITER_INVALID');
   }
 
   async function searchFederated(rawInput, requestContext, requestRef) {
@@ -185,6 +189,7 @@ export function makeRouterHandler({
           const result = await handleMcpRequest(
             message,
             (input) => searchFederated(input, observation.context, observation.requestRef),
+            feedbackWriter,
           );
           if (result === null) return new Response(null, { status: 202 });
           const searchResult = result?.result?.structuredContent;

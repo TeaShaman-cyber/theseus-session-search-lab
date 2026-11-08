@@ -1,5 +1,17 @@
 const VALID_SCOPES = new Set(['dialogue', 'evidence', 'trace']);
 const VALID_SEARCH_MODES = new Set(['strict', 'recall', 'auto']);
+const VALID_FEEDBACK_OUTCOMES = new Set(['improved', 'same', 'regressed', 'mixed', 'unknown']);
+const FEEDBACK_REF = /^[0-9a-f]{32}$/;
+const FEEDBACK_SLUG = /^[a-z0-9][a-z0-9_.-]{0,127}$/;
+const FEEDBACK_FIELDS = new Set([
+  'baseline_request_ref',
+  'result_request_ref',
+  'failure_class',
+  'operator',
+  'outcome',
+  'notes',
+]);
+const FEEDBACK_OPERATOR_FIELDS = new Set(['name', 'version']);
 
 function validateSearchInput(input = {}) {
   const query = typeof input.query === 'string' ? input.query.trim() : '';
@@ -38,6 +50,71 @@ function validateSearchInput(input = {}) {
     session_id: sessionId,
     from_time: fromTime,
     to_time: toTime,
+  };
+}
+
+function assertExactFields(value, allowed, code) {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(code);
+  }
+  const unknown = Object.keys(value).filter((key) => !allowed.has(key)).sort();
+  if (unknown.length) throw new Error(code);
+}
+
+function requireFeedbackRef(value, code) {
+  if (typeof value !== 'string' || !FEEDBACK_REF.test(value)) throw new Error(code);
+  return value;
+}
+
+function requireFeedbackSlug(value, code) {
+  if (typeof value !== 'string' || !FEEDBACK_SLUG.test(value)) throw new Error(code);
+  return value;
+}
+
+function validateFeedbackInput(input = {}) {
+  assertExactFields(input, FEEDBACK_FIELDS, 'FEEDBACK_FIELDS_INVALID');
+
+  const baselineRequestRef = requireFeedbackRef(
+    input.baseline_request_ref,
+    'FEEDBACK_BASELINE_REF_INVALID',
+  );
+  const resultRequestRef = input.result_request_ref == null
+    ? null
+    : requireFeedbackRef(input.result_request_ref, 'FEEDBACK_RESULT_REF_INVALID');
+  const failureClass = requireFeedbackSlug(
+    input.failure_class,
+    'FEEDBACK_FAILURE_CLASS_INVALID',
+  );
+
+  assertExactFields(
+    input.operator,
+    FEEDBACK_OPERATOR_FIELDS,
+    'FEEDBACK_OPERATOR_FIELDS_INVALID',
+  );
+  const operator = {
+    name: requireFeedbackSlug(input.operator.name, 'FEEDBACK_OPERATOR_INVALID'),
+    version: requireFeedbackSlug(input.operator.version, 'FEEDBACK_OPERATOR_INVALID'),
+  };
+
+  if (!VALID_FEEDBACK_OUTCOMES.has(input.outcome)) {
+    throw new Error('FEEDBACK_OUTCOME_INVALID');
+  }
+
+  let notes = null;
+  if (input.notes != null) {
+    if (typeof input.notes !== 'string' || !input.notes.trim() || input.notes.length > 4000) {
+      throw new Error('FEEDBACK_NOTES_INVALID');
+    }
+    notes = input.notes;
+  }
+
+  return {
+    baseline_request_ref: baselineRequestRef,
+    result_request_ref: resultRequestRef,
+    failure_class: failureClass,
+    operator,
+    outcome: input.outcome,
+    notes,
   };
 }
 
@@ -112,7 +189,7 @@ export function mergeShardOutcomes(selected, outcomes, limit) {
   };
 }
 
-export async function handleMcpRequest(request, searchFn) {
+export async function handleMcpRequest(request, searchFn, feedbackFn = null) {
   const id = request?.id ?? null;
   const method = request?.method;
 
@@ -130,34 +207,91 @@ export async function handleMcpRequest(request, searchFn) {
   if (method === 'ping') return { jsonrpc: '2.0', id, result: {} };
   if (method === 'notifications/initialized') return null;
   if (method === 'tools/list') {
+    const tools = [{
+      name: 'session_search',
+      description: 'Search federated Session Search shards with provenance and explicit partial-failure semantics.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['query'],
+        properties: {
+          query: { type: 'string', minLength: 1, maxLength: 512 },
+          scopes: { type: 'array', items: { enum: ['dialogue', 'evidence', 'trace'] }, minItems: 1 },
+          limit: { type: 'integer', minimum: 1, maximum: 100, default: 8 },
+          search_mode: { type: 'string', enum: ['strict', 'recall', 'auto'], default: 'strict' },
+          provider: { type: 'string' },
+          session_id: { type: 'string' },
+          from_time: { type: 'number' },
+          to_time: { type: 'number' },
+        },
+      },
+    }];
+    if (typeof feedbackFn === 'function') {
+      tools.push({
+        name: 'session_feedback',
+        description: 'Record explicit retrieval feedback for a prior Session Search request without changing serving policy.',
+        inputSchema: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['baseline_request_ref', 'failure_class', 'operator', 'outcome'],
+          properties: {
+            baseline_request_ref: { type: 'string', pattern: '^[0-9a-f]{32}$' },
+            result_request_ref: { type: 'string', pattern: '^[0-9a-f]{32}$' },
+            failure_class: { type: 'string', pattern: '^[a-z0-9][a-z0-9_.-]{0,127}$' },
+            operator: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['name', 'version'],
+              properties: {
+                name: { type: 'string', pattern: '^[a-z0-9][a-z0-9_.-]{0,127}$' },
+                version: { type: 'string', pattern: '^[a-z0-9][a-z0-9_.-]{0,127}$' },
+              },
+            },
+            outcome: {
+              type: 'string',
+              enum: ['improved', 'same', 'regressed', 'mixed', 'unknown'],
+            },
+            notes: { type: 'string', minLength: 1, maxLength: 4000 },
+          },
+        },
+      });
+    }
     return {
       jsonrpc: '2.0',
       id,
-      result: {
-        tools: [{
-          name: 'session_search',
-          description: 'Search federated Session Search shards with provenance and explicit partial-failure semantics.',
-          inputSchema: {
-            type: 'object',
-            additionalProperties: false,
-            required: ['query'],
-            properties: {
-              query: { type: 'string', minLength: 1, maxLength: 512 },
-              scopes: { type: 'array', items: { enum: ['dialogue', 'evidence', 'trace'] }, minItems: 1 },
-              limit: { type: 'integer', minimum: 1, maximum: 100, default: 8 },
-              search_mode: { type: 'string', enum: ['strict', 'recall', 'auto'], default: 'strict' },
-              provider: { type: 'string' },
-              session_id: { type: 'string' },
-              from_time: { type: 'number' },
-              to_time: { type: 'number' },
-            },
-          },
-        }],
-      },
+      result: { tools },
     };
   }
   if (method === 'tools/call') {
-    if (request?.params?.name !== 'session_search') {
+    const toolName = request?.params?.name;
+    if (toolName === 'session_feedback') {
+      if (typeof feedbackFn !== 'function') {
+        return { jsonrpc: '2.0', id, error: { code: -32602, message: 'unknown tool' } };
+      }
+      try {
+        const input = validateFeedbackInput(request.params.arguments ?? {});
+        const result = await feedbackFn(input);
+        return {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            content: [{ type: 'text', text: JSON.stringify(result) }],
+            structuredContent: result,
+            isError: false,
+          },
+        };
+      } catch (error) {
+        return {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            content: [{ type: 'text', text: String(error?.message ?? error) }],
+            isError: true,
+          },
+        };
+      }
+    }
+    if (toolName !== 'session_search') {
       return { jsonrpc: '2.0', id, error: { code: -32602, message: 'unknown tool' } };
     }
     try {
@@ -186,4 +320,4 @@ export async function handleMcpRequest(request, searchFn) {
   return { jsonrpc: '2.0', id, error: { code: -32601, message: 'method not found' } };
 }
 
-export { validateSearchInput };
+export { validateFeedbackInput, validateSearchInput };

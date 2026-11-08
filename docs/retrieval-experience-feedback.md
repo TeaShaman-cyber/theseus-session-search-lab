@@ -59,7 +59,12 @@ same value is:
 The ref is independent of untrusted inbound traceparent/tracestate and therefore
 cannot be chosen by the caller.
 
-The live feedback write surface remains a later slice.
+The router now has a conditional MCP session_feedback contract. It is advertised
+only when a feedbackWriter function is configured. Without a writer, tools/list
+remains unchanged and exposes only session_search.
+
+The contract is therefore versioned and testable without pretending persistence
+exists. A durable store adapter remains the next separate slice.
 
 ## Feedback request v0
 

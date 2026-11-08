@@ -56,6 +56,94 @@ test('router reports PARTIAL when one shard fails', () => {
   assert.deepEqual(result.unavailable_shards, [{ shard_id: 'chatgpt-0002', reason: 'QUERY_FAILED' }]);
 });
 
+test('MCP exposes session_feedback only when a writer is configured', async () => {
+  const withoutWriter = await handleMcpRequest(
+    { jsonrpc: '2.0', id: 31, method: 'tools/list', params: {} },
+    async () => ({}),
+  );
+  assert.deepEqual(withoutWriter.result.tools.map((tool) => tool.name), ['session_search']);
+
+  const withWriter = await handleMcpRequest(
+    { jsonrpc: '2.0', id: 32, method: 'tools/list', params: {} },
+    async () => ({}),
+    async () => ({ status: 'RECORDED', feedback_ref: 'f'.repeat(32) }),
+  );
+  assert.deepEqual(
+    withWriter.result.tools.map((tool) => tool.name),
+    ['session_search', 'session_feedback'],
+  );
+  const schema = withWriter.result.tools[1].inputSchema;
+  assert.equal(schema.additionalProperties, false);
+  assert.deepEqual(schema.required, [
+    'baseline_request_ref',
+    'failure_class',
+    'operator',
+    'outcome',
+  ]);
+  assert.equal(schema.properties.operator.additionalProperties, false);
+});
+
+test('session_feedback validates exact bounded input before invoking writer', async () => {
+  const seen = [];
+  const feedback = {
+    baseline_request_ref: 'a'.repeat(32),
+    result_request_ref: 'b'.repeat(32),
+    failure_class: 'noisy_query',
+    operator: { name: 'light_sonar_rephrase', version: 'v1' },
+    outcome: 'improved',
+    notes: 'Recovered a narrower relevant result set.',
+  };
+  const called = await handleMcpRequest(
+    {
+      jsonrpc: '2.0',
+      id: 33,
+      method: 'tools/call',
+      params: { name: 'session_feedback', arguments: feedback },
+    },
+    async () => ({}),
+    async (input) => {
+      seen.push(input);
+      return { status: 'RECORDED', feedback_ref: 'c'.repeat(32) };
+    },
+  );
+  assert.deepEqual(seen, [feedback]);
+  assert.deepEqual(called.result.structuredContent, {
+    status: 'RECORDED',
+    feedback_ref: 'c'.repeat(32),
+  });
+  assert.equal(called.result.isError, false);
+});
+
+test('session_feedback fails closed on unknown or invalid fields', async () => {
+  let calls = 0;
+  const writer = async () => {
+    calls += 1;
+    return { status: 'RECORDED' };
+  };
+  const bad = await handleMcpRequest(
+    {
+      jsonrpc: '2.0',
+      id: 34,
+      method: 'tools/call',
+      params: {
+        name: 'session_feedback',
+        arguments: {
+          baseline_request_ref: 'a'.repeat(32),
+          failure_class: 'noisy_query',
+          operator: { name: 'light_sonar_rephrase', version: 'v1' },
+          outcome: 'improved',
+          query_text: 'must never enter feedback',
+        },
+      },
+    },
+    async () => ({}),
+    writer,
+  );
+  assert.equal(bad.result.isError, true);
+  assert.match(bad.result.content[0].text, /FEEDBACK_FIELDS_INVALID/);
+  assert.equal(calls, 0);
+});
+
 test('MCP exposes one bounded session_search tool', async () => {
   const initialize = await handleMcpRequest({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } }, async () => ({}));
   assert.equal(initialize.result.serverInfo.name, 'theseus-session-search');
