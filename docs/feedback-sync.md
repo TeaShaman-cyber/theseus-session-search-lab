@@ -78,17 +78,29 @@ The App-backed search path after rollout returned FOUND, four
 queried shards, no unavailable shards and unchanged ChatGPT generation
 prefixes.
 
-**Host-level write acceptance remains UNVERIFIED.** The existing
-ChatGPT session still selects only session_search in Arcade_SelectTools,
-even when explicitly asked for session_feedback. This may require
-a fresh App session or tool-discovery refresh; no cause has yet been
-proven. Do not create a replacement plugin/App, gateway or authorization
-system. First perform a fresh App host tool-selection probe and, if
-the tool appears, a single synthetic write / Neon readback /
-exact cleanup.
+**Host-level write acceptance VERIFIED on 2026-11-08.**
+In this existing ChatGPT conversation, Arcade_SelectTools initially
+returned only search after the gateway mutation. A later fresh query
+through the SAME App surfaced both
+TheseusSessionSearch.session_search and
+TheseusSessionSearch.session_feedback without creating another App,
+gateway, server, authorization system or OAuth connection.
+
+The App-backed session_feedback tool accepted one **synthetic-only**
+issue232 canary (baseline c repeated 32 times, failure_class
+issue232_canary), returned RECORDED with immutable feedback_ref
+7fd2c2605f0ec038d6bae3ef5ceb8596. Independent read-only Neon SQL
+confirmed that exact record, schema and timestamp in feedback_issue232.
+Replaying the identical App tool call returned UNCHANGED with the
+same feedback_ref. A narrowly scoped Neon DELETE removed the single
+synthetic record; independent SQL readback verified 0 canary rows
+and 0 total rows. A fresh App-backed search *after* cleanup returned
+FOUND, all four current shards, unavailable_shards=[] and unchanged
+pinned ChatGPT generations.
 
 Current checkpoint: ROUTER_DEPLOYED / GATEWAY_TWO_TOOLS_VERIFIED /
-SEARCH_PASS / APP_FEEDBACK_HOST_REPROBE_REQUIRED.
+APP_WRITE_READBACK_VERIFIED / REPLAY_IDEMPOTENT_VERIFIED /
+SYNTHETIC_TEST_CLEANED / SEARCH_PASS.
 Server-local storage remains unchanged. No synchronization is scheduled.
 
 New Neon resource naming and cleanup rules are in docs/neon-housekeeping.md.

@@ -72,11 +72,14 @@ Preserve returned shard and generation provenance when it matters to the answer 
 The canonical remote MCP server also supports the bounded append-only
 TheseusSessionSearch.session_feedback. The existing Arcade Session Search
 gateway lists both this and TheseusSessionSearch.session_search after
-the November 8 update. The existing ChatGPT host in this conversation,
-however, still selects only session_search when asked for feedback.
-Do not invoke a tool absent from current App discovery, and do not
-claim an accepted App feedback write until an actual operation and
-independent Neon record readback succeed.
+the November 8 update. An initial host selection still returned only
+search; a later fresh host selection in the SAME ChatGPT conversation
+found both tools. The feedback canary returned RECORDED, independent
+Neon SQL readback confirmed it, an identical replay returned UNCHANGED,
+the synthetic row was removed, and the final App search stayed healthy.
+This is a verified host acceptance checkpoint, not an assumption that
+future App sessions expose identical tool catalogs.
+Do not invoke a tool absent from current App discovery.
 
 When feedback is discoverable, use only baseline_request_ref,
 optional result_request_ref, failure_class, operator name/version,
