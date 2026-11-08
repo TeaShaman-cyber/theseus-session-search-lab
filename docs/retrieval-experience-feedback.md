@@ -215,3 +215,32 @@ serving behavior remains a separate step:
       -> explicit project promotion path
 
 No episode count or majority vote bypasses that boundary.
+
+## Opt-in local agent inbox (issue #227)
+
+An agent with an already-authorized local shell may capture explicit feedback
+without provisioning a database or enabling a public feedback endpoint:
+
+    python3 -m session_search.feedback_inbox submit --store-dir PRIVATE_DIR < request.json
+
+The request.json must contain the existing feedback-request.v0 fields, including
+the opaque baseline_request_ref from an actual search result. The command prints
+only the deterministic feedback_ref. It does not invent refs or classify a
+missing corpus as a morphological failure. Never commit the request or inbox;
+use a private directory outside the repository.
+
+Process the local inbox through the existing validated refresh pipeline:
+
+    python3 -m session_search.feedback_inbox refresh \
+      --store-dir PRIVATE_DIR \
+      --episodes PRIVATE_OUTPUT/experience.jsonl \
+      --patterns PRIVATE_OUTPUT/patterns.json
+
+Optionally provide --seed PRIVATE_SEED.jsonl for audited prior episodes.
+The local inbox creates mode 0700 directories and mode 0600 immutable records,
+validates records on readback, rejects tampering, and keeps raw notes out of
+materialized experience/pattern projections. This is not a live MCP
+session_feedback service, not a production storage selection, and not automatic
+policy learning. The current production Session Search must return request_ref
+before a live agent can report correlated feedback. Until then, synthetic refs
+are only appropriate for contract testing, not real feedback.
