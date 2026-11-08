@@ -23,8 +23,10 @@ Two **distinct access scopes**, not a requirement for two future stores:
   previous ChatGPT generations for rollback.
 
 **Baseline inventory:** 16 visible projects, 39 visible branches (including
-default) before deletion. **Post-cleanup:** 14 active projects across both
-organizations, 37 active branches. The two deleted single-branch projects
+default) before deletion. **After the first project batch:** 14 active projects, 37 active branches.
+**After the second branch batch (2026-11-08):** 14 active projects,
+**32 active branches**. Five additional test-only child branches
+were deleted under #235 after explicit user direction to continue cleanup. The two deleted single-branch projects
 remain listed below as historical evidence and are recoverable in Neon's
 deletion window at the observed postcondition. These counts are **not**
 a current price or billed-size estimate. Cloned branches share storage; logical_size values cannot be summed
@@ -59,13 +61,13 @@ Additional non-default branches (do **not** confuse with separate projects):
 
 | Project | Branch name / ID | State |
 | --- | --- | --- |
-| old-smoke-74649402 | issue-188-topk-eval-20261107 / br-rough-queen-bdbvmfn0 | REVIEW_DELETE after #188 fixture/candidate-readback audit; cloned shard Functions are present |
-| spring-glade-75307688 | issue137-retrieval-policy-20261101 / br-floral-boat-b49nvnr4 | REVIEW_DELETE after rollback/candidate consumers checked |
-| plain-wave-74064803 | issue137-retrieval-policy-20261101 / br-wandering-snow-b5b0gb9f | REVIEW_DELETE after rollback/candidate consumers checked |
-| morning-tooth-71193579 | issue137-retrieval-policy-20261101 / br-spring-queen-b5paz3tw | REVIEW_DELETE after consumer audit |
-| wild-surf-61625738 | issue137-retrieval-policy-20261101 / br-broad-wildflower-b5vcg9mu | REVIEW_DELETE after consumer audit |
-| wild-surf-61625738 | issue86-conflict-replay-20261031 / br-shiny-forest-b58tar4p | REVIEW_DELETE after #86 retry/fixture audit |
-| wild-surf-61625738 | issue-116-lakebase-bm25-ab-20261031 / br-sweet-dream-b5qzaztb | REVIEW_DELETE after #116/#188 benchmark artifact coverage |
+| old-smoke-74649402 | issue-188-topk-eval-20261107 / br-rough-queen-bdbvmfn0 | KEEP / RECHECK LATER: #188 open; two cloned Functions present |
+| spring-glade-75307688 | issue137-retrieval-policy-20261101 / br-floral-boat-b49nvnr4 | REMOVED (historical reference) |
+| plain-wave-74064803 | issue137-retrieval-policy-20261101 / br-wandering-snow-b5b0gb9f | REMOVED (historical reference) |
+| morning-tooth-71193579 | issue137-retrieval-policy-20261101 / br-spring-queen-b5paz3tw | REMOVED (historical reference) |
+| wild-surf-61625738 | issue137-retrieval-policy-20261101 / br-broad-wildflower-b5vcg9mu | REMOVED (historical reference) |
+| wild-surf-61625738 | issue86-conflict-replay-20261031 / br-shiny-forest-b58tar4p | REMOVED (historical reference) |
+| wild-surf-61625738 | issue-116-lakebase-bm25-ab-20261031 / br-sweet-dream-b5qzaztb | KEEP / RECHECK LATER: private gold table and BM25 index retained; #116 evidence |
 
 ## Personal organization — projects and branches
 
@@ -161,13 +163,52 @@ projects still present. A second fresh App-backed control again returned
 FOUND with both expected ChatGPT generation prefixes, four queried shards,
 and zero unavailable shards.
 
-**Residual uncertainty:** the literal current SESSION_SEARCH_CATALOG URL
-mapping remained masked by Neon's Function-reader interface, so independent
-proof of every external/third-party consumer is **UNKNOWN**. The action was
+**Evidence boundary:** Neon's Function-reader interface did not reveal the
+literal current SESSION_SEARCH_CATALOG URL mapping; no other actual
+consumer of the deleted projects was observed. The action was
 bounded to the exact user-authorized two projects, backed by source/receipt
-evidence, endpoint/Function inventory, provider recoverability, and live
+evidence, Function inventory, provider recoverability, and live
 post-delete verification. Do not infer that deletion of another candidate
 has passed these same gates. No cost saving has been calculated.
+
+### Second batch — disposable issue137 and issue86 data branches, 2026-11-08
+
+With the user's explicit instruction to continue the cleanup, exactly
+five non-default, non-protected branches were removed:
+
+- issue137: br-floral-boat-b49nvnr4 (spring-glade-75307688),
+  br-wandering-snow-b5b0gb9f (plain-wave-74064803),
+  br-spring-queen-b5paz3tw (morning-tooth-71193579),
+  br-broad-wildflower-b5vcg9mu (wild-surf-61625738).
+- issue86: br-shiny-forest-b58tar4p (wild-surf-61625738).
+
+Each branch had zero Function deployments and zero custom domains, and
+was neither default nor protected. GitHub code search found no references
+to their exact branch IDs. The source work was already accepted:
+issue137 strict/recall/auto serving was promoted and independently tested;
+issue86 conflict-replay was accepted with an exact failed-mismatch
+reproducer and immutable source/receipt. Read-only SQL proved all four
+issue137 branches matched their parent main branch on exact generation
+metadata and message/session counts (136/47,156; 246/55,161;
+43/64,662; 60/17,790 respectively). The issue86 child intentionally
+modified the generation's shard identity as a failure fixture while
+retaining 60/17,790; its outcome is preserved in GitHub issue86.
+
+Neon delete_branch returned success for each. Independent
+list_branches WITHOUT include_deleted omitted each target and preserved
+each default main. With include_deleted enabled, the old branches could
+still appear with archived state; that is historical/recoverable metadata
+rather than an active branch. A fresh real ChatGPT App search AFTER all
+five deletions returned FOUND with four queried shards, zero unavailable,
+and expected refreshed ChatGPT generation prefixes. No selected serving
+project, default branch, Function, catalog or accepted source was
+modified. Billed savings were not measured.
+
+**Deliberately retained:** issue188 topk-eval branch still carries
+Function deployments and belongs to an open research issue. The issue116
+Lakebase BM25 A/B child has a private gold table and index, so it remains
+until the test material has a verified durable recovery path. Neither is
+misclassified as disposable based solely on its experiment label.
 
 3. **Contained experiments:** issue-188 evaluation branch, issue-116 env canary,
    old October canaries and obsolete issue137/issue86 branches. A completed
@@ -200,8 +241,7 @@ or cost-saving claim merely from logical_size.
   proxy sees only data organization. Different access scopes are not extra
   application architecture requirements.
 - **Still UNKNOWN:** literal current router catalog Function URLs for all
-  shards, separately authorized external recovery consumers, billed savings
-  and precise post-#166 retention gate. The completed first pair is
+  shards, billed savings, and precise post-#166 retention gate. The completed first pair is
   verified from active inventory and healthy post-delete consumer search,
   not a claimed full URL/config disclosure. Resolve only these to approve the first
   deletion batch, rather than creating another benchmark.
