@@ -38,6 +38,14 @@ The lab studies portable, verifiable historical session retrieval for assistants
 
 - [Nine-panel Grafana dashboard-as-code](grafana/README.md) — the saved dashboard uses the historical `candidate` filter; an empty panel is not proof of missing live signals. Inspect current environment labels first.
 
+## Agent retrieval feedback and continuity
+
+Feedback from agent searches has a separate private lifecycle from accepted
+conversation history and search-index refresh. See the
+[feedback sync and operator runbook](docs/feedback-sync.md) for current
+availability, local inbox, private record exchange, future Neon adapter,
+verification and recovery. The App-backed feedback tool is not yet live.
+
 ## Runtime boundary
 
 ```text

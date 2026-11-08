@@ -241,6 +241,8 @@ The local inbox creates mode 0700 directories and mode 0600 immutable records,
 validates records on readback, rejects tampering, and keeps raw notes out of
 materialized experience/pattern projections. This is not a live MCP
 session_feedback service, not a production storage selection, and not automatic
-policy learning. The current production Session Search must return request_ref
-before a live agent can report correlated feedback. Until then, synthetic refs
-are only appropriate for contract testing, not real feedback.
+policy learning. The production router began returning request_ref through
+its App-backed search path in #229; that does not make the session_feedback writer live.
+See [feedback sync and operator runbook](feedback-sync.md) for private
+exchange, Neon replica boundaries, verification and recovery. Synthetic refs
+are appropriate only for contract tests, never real feedback.
