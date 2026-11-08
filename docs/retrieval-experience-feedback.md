@@ -63,23 +63,12 @@ The router has a conditional MCP session_feedback contract. It is advertised
 only when a feedbackWriter function is configured. Without a writer, tools/list
 remains unchanged and exposes only session_search.
 
-The first optional durable writer adapter uses Upstash Redis REST. It is enabled
-only when both of these environment variables exist:
+No durable feedback-store implementation is selected in the current architecture.
+The feedbackWriter seam is intentionally left unbound until a concrete storage
+requirement justifies choosing and validating an adapter.
 
-- SESSION_SEARCH_FEEDBACK_UPSTASH_REST_URL
-- SESSION_SEARCH_FEEDBACK_UPSTASH_REST_TOKEN
-
-Optional SESSION_SEARCH_FEEDBACK_UPSTASH_HASH_KEY overrides the default private
-hash key theseus:session-search:feedback:v0.
-
-Each validated feedback payload receives a deterministic 128-bit feedback_ref
-derived from SHA-256 of its canonical payload. The adapter writes one private
-feedback-record.v0 value with HSETNX, so an identical retry is explicit as
-ALREADY_RECORDED and never overwrites the first record.
-
-The adapter is an implementation of feedbackWriter, not canonical feedback
-semantics. No Upstash credential, database, deployment or serving configuration
-is created by the repository change itself.
+The portable feedback contract therefore stays independent of any database,
+queue, cache, object store or vendor-specific command model.
 
 ## Feedback request v0
 
@@ -132,33 +121,17 @@ rewrite accepted conversation authority.
 
 ## Feedback refresh cycle
 
-There are now two deterministic refresh paths.
-
-For already-materialized episode JSONL:
+The deterministic v0 processor remains:
 
     python3 scripts/process_retrieval_feedback.py episodes.jsonl patterns.json
 
-For live durable feedback stored through the optional Upstash adapter:
+Backend-neutral helpers also validate feedback-record.v0 values, convert them into
+retrieval-experience episodes, combine live and seed episodes, reject duplicate
+episode identity, and atomically materialize private projections.
 
-    SESSION_SEARCH_FEEDBACK_UPSTASH_REST_URL=... \
-    SESSION_SEARCH_FEEDBACK_UPSTASH_REST_TOKEN=... \
-    python3 scripts/refresh_retrieval_feedback.py \
-      --episodes-output /private/retrieval-experience.jsonl \
-      --patterns-output /private/retrieval-patterns.json
-
-The live refresh:
-- scans the configured private feedback hash with HSCAN;
-- strictly validates every stored feedback-record.v0;
-- recomputes feedback_ref and rejects tampered payloads;
-- rejects duplicate IDs and cursor loops;
-- drops free-text notes when materializing retrieval-experience episodes;
-- combines live episodes with the hand-audited seed ledger;
-- atomically writes deterministic private projections with mode 0600.
-
-An optional SESSION_SEARCH_FEEDBACK_UPSTASH_REST_READ_TOKEN may be supplied for
-the refresh reader; otherwise it falls back to the configured feedback REST token.
-Actual least-privilege HSCAN permissions must be verified when a live store is
-configured.
+How a future live store is scanned or streamed into those helpers is deliberately
+unselected. Storage-specific pagination, command semantics and credentials do not
+belong to the portable feedback contract.
 
 The existing pattern processor validates every episode and groups only comparable
 failure_class + operator + operator_version observations. It keeps:
@@ -169,11 +142,10 @@ failure_class + operator + operator_version observations. It keeps:
 It never emits an automatically promoted policy. policy_candidates is empty and
 policy_promotion is NOT_PERFORMED in v0.
 
-The live write/read/refresh code path is now explicit, but scheduling and cadence
-remain intentionally unconfigured. A recurring job is the next operational layer
-after a live private store and deployed writer are verified. The scheduler must
-invoke the same deterministic refresh command rather than introduce a second
-processing implementation.
+Scheduling and cadence remain intentionally unconfigured. A recurring job is a
+later operational layer, after a live private store and writer are deliberately
+selected and verified. The scheduler must reuse the same backend-neutral feedback
+contracts and aggregation path rather than introduce a second processing model.
 
 ## Seed evidence
 
