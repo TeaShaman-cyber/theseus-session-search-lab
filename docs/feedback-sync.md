@@ -108,28 +108,60 @@ Export refuses to overwrite an existing snapshot. Snapshot files are mode 0600
 and local inbox directories mode 0700. Encryption in transit and backups
 remain the transport operator's responsibility.
 
-## Neon feedback adapter: explicit next boundary, NOT YET IMPLEMENTED
+## Optional Neon PostgreSQL replica: schema + operator adapter
 
-If Neon is selected as a feedback *replica*, it must consume and emit the
-same validated feedback-record.v0 entries. The portable record contract must
-not depend on Postgres, Neon Functions, cloud credentials or schema.
+The project-owned portable feedback record contract does **not** depend on Neon.
+Issue #232 adds only a replaceable PostgreSQL replica adapter, without a new
+service dependency or model-training loop. The database is a *copy*, not the
+canonical owner of feedback.
 
-Minimum future adapter contract:
+**Before enabling:** select a specifically authorized Neon database and scoped
+PostgreSQL role. The initial target is the empty neondb in the existing private
+router-project branch, isolated under schema session_feedback; verify the live
+branch/project and table inventory before applying any SQL. Do not move raw
+corpus data, personal connection strings or secret keys through ChatGPT.
 
-1. Conditional INSERT keyed by feedback_ref, **no upsert/overwrite**. Exact
-   duplicate is a no-op; same ID with a different record is a conflict.
-2. Bounded export/pages of full validated records, including original timestamp,
-   with stable snapshot identity or resumable cursor.
-3. Reconciliation compares **IDs and contents**, fills missing records in each
-   direction, stops on conflicts and partial reads; verifies counts/digests.
-4. Private least-privilege credentials, no private notes in public telemetry,
-   and no additional database-admin privilege in the router.
-5. Test actual Neon write/readback, replay, malicious/invalid record, conflict,
-   interrupted transfer and local → Neon → local recovery.
+Apply the reviewed migration once as that database's owner:
 
-These are **acceptance requirements**, not a claim that Neon sync exists.
-Select ownership, backup retention and authorization at the separate
-provider/storage boundary rather than making a database canonical by accident.
+    psql -X -v ON_ERROR_STOP=1 -f sql/neon/010_feedback_replica_v0.sql
+
+It creates session_feedback.records_v0, keyed by immutable feedback_ref with a
+shape CHECK. No corpus table is touched. PUBLIC schema/table privileges are
+revoked. A future connection role must receive only schema USAGE and table
+SELECT+INSERT, not UPDATE/DELETE or database-admin. This is a protected
+permission boundary: do not silently create a privileged role.
+
+With an existing *authorized* libpq connection on the agent host (PGSERVICE,
+libpq environment or local keyring; no URL/password in CLI arguments), perform
+one explicit bounded two-way reconciliation:
+
+    python3 -m session_search.feedback_neon       --store-dir "$PRIVATE_FEEDBACK_INBOX" --expected-database neondb
+
+The command validates every local/remote feedback-record.v0 before writing,
+checks same-key content equality, uploads only absent records in one transaction,
+verifies remote readback, imports new remote records by atomic no-overwrite
+local write, then compares both inventories again. Replays are idempotent.
+On interrupted operations, retry after checking status; no delete/rewrite
+shortcut. It caps remote reads at 1000 records and fails if this limit is
+exceeded rather than silently accepting an incomplete view; pagination is
+future work only when capacity demands it. Output contains counts only.
+
+**Operational state:** the code/SQL can be verified independently of live
+credential access. Current exe.dev Neon provider integration belongs to the
+separate Session Search data organization; it does **not** provide authority to
+the personal organization owning the selected router database. A native Neon
+management test of the target does not mean the exe.dev↔Neon transfer works.
+Direct ChatGPT session_feedback and automated schedule remain separate,
+unimplemented boundaries.
+
+
+### Remote acceptance before calling synchronization live
+
+Observe an actual authorized connection, schema/table readback, synthetic
+insert→exact replay→conflict rejection, remote→local→remote reconciliation
+with private record bytes, error handling and a recovery retry. Keep native
+Neon-provider and shell executor evidence separate. Do not claim a live sync
+while one of these surfaces is blocked.
 
 ## Failure and recovery
 
