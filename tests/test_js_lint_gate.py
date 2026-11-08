@@ -13,6 +13,28 @@ class JsLintGateTest(unittest.TestCase):
             result = lint_paths([path])
             self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_valid_json_passes(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "valid.json"
+            path.write_text('{"a":1,"b":[true,null]}\n', encoding="utf-8")
+            result = lint_paths([path])
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_duplicate_json_key_fails(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "duplicate.json"
+            path.write_text('{"a":1,"a":2}\n', encoding="utf-8")
+            result = lint_paths([path])
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("noDuplicateObjectKeys", result.stderr)
+
+    def test_nonstandard_json_constant_fails(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "nan.json"
+            path.write_text('{"a":NaN}\n', encoding="utf-8")
+            result = lint_paths([path])
+            self.assertNotEqual(result.returncode, 0)
+
     def test_undeclared_identifier_fails(self):
         with tempfile.TemporaryDirectory() as td:
             path = pathlib.Path(td) / "undeclared.mjs"

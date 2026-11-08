@@ -10,12 +10,12 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from session_search.strict_json import StrictJsonError, load_strict, loads_strict
+from session_search.strict_json import StrictJsonError, loads_strict
 
 
-def _tracked_json_paths() -> list[pathlib.Path]:
+def _tracked_jsonl_paths() -> list[pathlib.Path]:
     proc = subprocess.run(
-        ["git", "ls-files", "-z", "--", "*.json", "*.jsonl"],
+        ["git", "ls-files", "-z", "--", "*.jsonl"],
         cwd=ROOT,
         check=True,
         capture_output=True,
@@ -52,22 +52,19 @@ def _verify_jsonl(path: pathlib.Path) -> int:
 
 
 def verify_path(path: pathlib.Path) -> int:
-    if path.suffix.lower() == ".jsonl":
-        return _verify_jsonl(path)
-    if path.suffix.lower() == ".json":
-        load_strict(path)
-        return 1
-    raise StrictJsonError("UNSUPPORTED_SUFFIX")
+    if path.suffix.lower() != ".jsonl":
+        raise StrictJsonError("UNSUPPORTED_SUFFIX")
+    return _verify_jsonl(path)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Strictly validate tracked or explicitly supplied JSON/JSONL files."
+        description="Strictly validate tracked or explicitly supplied JSONL ledgers."
     )
     parser.add_argument("paths", nargs="*", type=pathlib.Path)
     args = parser.parse_args()
 
-    paths = args.paths or _tracked_json_paths()
+    paths = args.paths or _tracked_jsonl_paths()
     files = 0
     records = 0
     for supplied in paths:
@@ -79,7 +76,7 @@ def main() -> int:
             return 1
         files += 1
 
-    print(f"STRICT_JSON_PASS files={files} records={records}")
+    print(f"STRICT_JSONL_PASS files={files} records={records}")
     return 0
 
 

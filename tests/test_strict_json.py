@@ -52,13 +52,13 @@ class StrictJsonTest(unittest.TestCase):
         self.assertNotEqual(proc.returncode, 0)
         self.assertIn("JSONL_EMPTY_LINE", proc.stderr)
 
-    def test_json_gate_accepts_valid_file(self):
+    def test_jsonl_gate_rejects_plain_json_files(self):
         with tempfile.TemporaryDirectory() as td:
             path = pathlib.Path(td) / "ok.json"
             path.write_text('{"a":1}\n', encoding="utf-8")
             proc = self.run_gate(path)
-        self.assertEqual(proc.returncode, 0, proc.stderr)
-        self.assertIn("STRICT_JSON_PASS", proc.stdout)
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("UNSUPPORTED_SUFFIX", proc.stderr)
 
 
 if __name__ == "__main__":
