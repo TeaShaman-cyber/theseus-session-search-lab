@@ -17,14 +17,17 @@ Two **distinct access scopes**, not a requirement for two future stores:
   br-patient-union-b5xe6jip, deployment #8. A separate personal project
   misty-darkness-46441019 hosts multiple shard Functions and cannot be treated
   as expendable merely because its project name mentions ChatGPT.
-- Dedicated Theseus Session Search Neon organization: eight projects,
-  currently visible through the governed exe.dev Neon provider proxy.
-  Four projects hold the latest four serving generations. There are other
-  candidate/previous/blue-green projects, whose retained purpose differs.
+- Dedicated Theseus Session Search Neon organization: originally eight
+  projects before the authorized November 8 cleanup; now **six active
+  projects**. Four hold the current serving generations and two retain
+  previous ChatGPT generations for rollback.
 
-**Total:** 16 visible projects, 39 visible branches (including default),
-as listed below. These counts are **not** a current price or billed-size
-estimate. Cloned branches share storage; logical_size values cannot be summed
+**Baseline inventory:** 16 visible projects, 39 visible branches (including
+default) before deletion. **Post-cleanup:** 14 active projects across both
+organizations, 37 active branches. The two deleted single-branch projects
+remain listed below as historical evidence and are recoverable in Neon's
+deletion window at the observed postcondition. These counts are **not**
+a current price or billed-size estimate. Cloned branches share storage; logical_size values cannot be summed
 as cleanup savings. The direct App-backed Session Search read-only probe
 on 2026-11-08 returned FOUND, four queried shards
 (chatgpt-0001, chatgpt-0002, deepseek-0001, xai-0001),
@@ -47,8 +50,8 @@ Classification:
 | purple-cell-65542575, main br-cold-cake-bd2rp458 | Blue ChatGPT-0002 from #147; ACTIVE starts d8604fd227d8; ssshard #3. | KEEP |
 | morning-tooth-71193579, main br-withered-snow-b5amv40x | DeepSeek-0001, ACTIVE starts 5fef1c896745; live #166 release vector. | KEEP |
 | wild-surf-61625738, main br-floral-morning-b5kactgx | xAI-0001, ACTIVE starts 6095e643b3fc; live #166 vector. | KEEP |
-| super-resonance-00490441, main br-silent-river-bdmqdj1n | Other ss147 ChatGPT-0001 candidate. Read-only SQL shows exact same ACTIVE generation as selected blue ChatGPT-0001; no branch Functions returned. | REVIEW_DELETE |
-| falling-bread-64015288, main br-super-butterfly-begln6qu | Other ss147 ChatGPT-0002 candidate. Same ACTIVE generation as selected blue ChatGPT-0002; no branch Functions returned. | REVIEW_DELETE |
+| super-resonance-00490441, former main br-silent-river-bdmqdj1n | Unselected ss147 ChatGPT-0001 duplicate. Same generation/manifest/schema/counts as blue; no Functions/domains; approved and deleted November 8. | REMOVED (recoverable at verification) |
+| falling-bread-64015288, former main br-super-butterfly-begln6qu | Unselected ss147 ChatGPT-0002 duplicate. Same generation/manifest/schema/counts as blue; no Functions/domains; approved and deleted November 8. | REMOVED (recoverable at verification) |
 | spring-glade-75307688, main br-bitter-sea-b45yqusy | Older pre-ss147 ChatGPT-0001 projection; ACTIVE c75478c3..., not current App generation. Retained for rollback by #147. | ROLLBACK |
 | plain-wave-74064803, main br-late-lake-b51uohkq | Older pre-ss147 ChatGPT-0002 projection; ACTIVE bce15b5b..., not current App generation. | ROLLBACK |
 
@@ -112,12 +115,12 @@ Shard Function host misty-darkness-46441019 (10 branches total):
    schema_absent=true, table_absent=true, schema_objects=0. The local genuine
    feedback record on exe.dev is unaffected. A versioned optional migration
    file in Git is **not** proof the table remains deployed.
-2. **Highest-value redundant projects:** super-resonance-00490441 and
-   falling-bread-64015288. They store duplicate ACTIVE generation IDs relative
-   to selected blue pair; both have no returned deployed Functions.
-   **Do not delete until** exact current router catalog and all non-App
-   consumers/backup references are verified.
-### First duplicate-pair validation — 2026-11-08
+2. **Completed first deletion pair:** super-resonance-00490441 and
+   falling-bread-64015288, following explicit user authorization,
+   duplicate-record/Function/dependency checks and sequential App-backed
+   smoke after each deletion. Details and remaining uncertainty below.
+
+### First duplicate-pair validation and deletion — 2026-11-08
 
 Current independent read-only Neon SQL comparisons confirmed that the two
 unselected ss147 projects (super-resonance-00490441 and
@@ -140,9 +143,31 @@ and a SESSION_SEARCH_CATALOG environment key, but the native Function
 reader returns environment variable names only, not their current values;
 the **exact current catalog endpoint-to-project mapping remains unverified**.
 Issue #147 records selection of the blue pair at cutover; this is historical
-evidence, not the current literal endpoint list. Preserve the two unselected
-projects until the current catalog, rollback path and external consumers are
-independently checked. No project deletion is authorized by this audit alone.
+evidence, not the current literal endpoint list.
+
+**Authorized cleanup execution:** the user explicitly authorized deleting
+these two named projects after the #235 review. Immediately before deletion,
+native Neon reconfirmed their exact IDs, one non-protected branch each, no
+Functions/domains, and working blue Functions on the selected projects.
+The historical #147/#166 receipts bound production to the selected blue
+pair; a current App-backed baseline returned FOUND on both refreshed ChatGPT
+generations, four queried shards and no unavailable shards. Neon deleted
+super-resonance-00490441 first. Independent project listing showed it
+absent from active projects and present among recoverable projects; a fresh
+App-backed search still returned FOUND with four available shards. Then
+Neon deleted falling-bread-64015288; independent listing showed **both**
+absent from active projects, both recoverable, and the two selected blue
+projects still present. A second fresh App-backed control again returned
+FOUND with both expected ChatGPT generation prefixes, four queried shards,
+and zero unavailable shards.
+
+**Residual uncertainty:** the literal current SESSION_SEARCH_CATALOG URL
+mapping remained masked by Neon's Function-reader interface, so independent
+proof of every external/third-party consumer is **UNKNOWN**. The action was
+bounded to the exact user-authorized two projects, backed by source/receipt
+evidence, endpoint/Function inventory, provider recoverability, and live
+post-delete verification. Do not infer that deletion of another candidate
+has passed these same gates. No cost saving has been calculated.
 
 3. **Contained experiments:** issue-188 evaluation branch, issue-116 env canary,
    old October canaries and obsolete issue137/issue86 branches. A completed
@@ -174,7 +199,9 @@ or cost-saving claim merely from logical_size.
 - Native Neon confirmed the personal and data project sets; exe.dev provider
   proxy sees only data organization. Different access scopes are not extra
   application architecture requirements.
-- **Still UNKNOWN:** exact current router catalog Function URLs for all
-  shards, separately authorized recovery consumers, billed savings and
-  precise post-#166 retention gate. Resolve only these to approve the first
+- **Still UNKNOWN:** literal current router catalog Function URLs for all
+  shards, separately authorized external recovery consumers, billed savings
+  and precise post-#166 retention gate. The completed first pair is
+  verified from active inventory and healthy post-delete consumer search,
+  not a claimed full URL/config disclosure. Resolve only these to approve the first
   deletion batch, rather than creating another benchmark.
