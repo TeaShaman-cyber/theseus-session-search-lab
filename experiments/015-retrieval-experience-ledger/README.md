@@ -22,3 +22,16 @@ Run:
 Acceptance requires the seed set to include positive, regression and unknown
 outcomes, and requires ineligible diagnostic episodes to remain visible without
 contributing to eligible outcome counts.
+
+## Live feedback refresh
+
+The repository also contains a private-store refresh path:
+
+    python3 scripts/refresh_retrieval_feedback.py \
+      --episodes-output /private/retrieval-experience.jsonl \
+      --patterns-output /private/retrieval-patterns.json
+
+It reads the optional Upstash feedback store from environment configuration,
+strictly validates feedback records, converts them into the same episode contract,
+combines them with this seed ledger, and produces the same pattern projection.
+No live store or schedule is created by this repository experiment.

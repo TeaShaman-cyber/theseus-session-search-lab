@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import pathlib
 import re
+from datetime import datetime
 from collections import defaultdict
 from typing import Any
 
 from session_search.strict_json import StrictJsonError, loads_strict
 
 FEEDBACK_REQUEST_SCHEMA = "theseus.session-search-feedback-request.v0"
+FEEDBACK_RECORD_SCHEMA = "theseus.session-search-feedback-record.v0"
 EXPERIENCE_SCHEMA = "theseus.session-search-retrieval-experience.v0"
 PATTERN_SCHEMA = "theseus.session-search-retrieval-patterns.v0"
 
@@ -30,6 +34,12 @@ _FEEDBACK_FIELDS = {
     "outcome",
     "notes",
 }
+_FEEDBACK_RECORD_FIELDS = {
+    "schema",
+    "feedback_ref",
+    "received_at",
+    "feedback",
+}
 _EXPERIENCE_FIELDS = {
     "schema",
     "episode_id",
@@ -46,6 +56,7 @@ _EXPERIENCE_FIELDS = {
 _OPERATOR_FIELDS = {"name", "version"}
 _PROVENANCE_FIELDS = {"kind", "ref"}
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_.-]{0,127}$")
+_REQUEST_REF_RE = re.compile(r"^[0-9a-f]{32}$")
 
 
 def _require_mapping(value: Any, code: str) -> dict[str, Any]:
@@ -63,6 +74,13 @@ def _require_string(value: Any, code: str) -> str:
 def _require_slug(value: Any, code: str) -> str:
     value = _require_string(value, code)
     if not _SLUG_RE.fullmatch(value):
+        raise ValueError(code)
+    return value
+
+
+def _require_request_ref(value: Any, code: str) -> str:
+    value = _require_string(value, code)
+    if not _REQUEST_REF_RE.fullmatch(value):
         raise ValueError(code)
     return value
 
@@ -108,10 +126,13 @@ def validate_feedback_request(value: dict[str, Any]) -> dict[str, Any]:
     if value.get("schema") != FEEDBACK_REQUEST_SCHEMA:
         raise ValueError("FEEDBACK_SCHEMA_INVALID")
 
-    _require_string(value.get("baseline_request_ref"), "FEEDBACK_BASELINE_REF_INVALID")
+    _require_request_ref(
+        value.get("baseline_request_ref"),
+        "FEEDBACK_BASELINE_REF_INVALID",
+    )
     result_ref = value.get("result_request_ref")
     if result_ref is not None:
-        _require_string(result_ref, "FEEDBACK_RESULT_REF_INVALID")
+        _require_request_ref(result_ref, "FEEDBACK_RESULT_REF_INVALID")
     _require_slug(value.get("failure_class"), "FEEDBACK_FAILURE_CLASS_INVALID")
     _validate_operator(value.get("operator"))
 
@@ -126,6 +147,101 @@ def validate_feedback_request(value: dict[str, Any]) -> dict[str, Any]:
             raise ValueError("FEEDBACK_NOTES_TOO_LONG")
 
     return value
+
+
+def _canonical_feedback_request(value: dict[str, Any]) -> dict[str, Any]:
+    validate_feedback_request(value)
+    return {
+        "schema": FEEDBACK_REQUEST_SCHEMA,
+        "baseline_request_ref": value["baseline_request_ref"],
+        "result_request_ref": value.get("result_request_ref"),
+        "failure_class": value["failure_class"],
+        "operator": {
+            "name": value["operator"]["name"],
+            "version": value["operator"]["version"],
+        },
+        "outcome": value["outcome"],
+        "notes": value.get("notes"),
+    }
+
+
+def feedback_ref_for_request(value: dict[str, Any]) -> str:
+    canonical = _canonical_feedback_request(value)
+    payload = json.dumps(
+        canonical,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    digest = hashlib.sha256()
+    digest.update(b"theseus.session-search-feedback-record.v0\n")
+    digest.update(payload.encode("utf-8"))
+    return digest.hexdigest()[:32]
+
+
+def _require_iso_utc(value: Any, code: str) -> str:
+    value = _require_string(value, code)
+    if not value.endswith("Z"):
+        raise ValueError(code)
+    try:
+        parsed = datetime.fromisoformat(value[:-1] + "+00:00")
+    except ValueError as exc:
+        raise ValueError(code) from exc
+    if parsed.utcoffset() is None:
+        raise ValueError(code)
+    return value
+
+
+def validate_feedback_record(value: dict[str, Any]) -> dict[str, Any]:
+    value = _require_mapping(value, "FEEDBACK_RECORD_INVALID")
+    _require_no_unknown_fields(
+        value,
+        _FEEDBACK_RECORD_FIELDS,
+        "FEEDBACK_RECORD_FIELDS_INVALID",
+    )
+    if value.get("schema") != FEEDBACK_RECORD_SCHEMA:
+        raise ValueError("FEEDBACK_RECORD_SCHEMA_INVALID")
+
+    feedback_ref = _require_request_ref(
+        value.get("feedback_ref"),
+        "FEEDBACK_RECORD_REF_INVALID",
+    )
+    _require_iso_utc(value.get("received_at"), "FEEDBACK_RECORD_TIME_INVALID")
+    feedback = _require_mapping(value.get("feedback"), "FEEDBACK_RECORD_REQUEST_INVALID")
+    validate_feedback_request(feedback)
+    if feedback_ref_for_request(feedback) != feedback_ref:
+        raise ValueError("FEEDBACK_RECORD_REF_MISMATCH")
+    return value
+
+
+def feedback_record_to_episode(value: dict[str, Any]) -> dict[str, Any]:
+    record = validate_feedback_record(value)
+    feedback = record["feedback"]
+    result_ref = feedback.get("result_request_ref")
+    episode = {
+        "schema": EXPERIENCE_SCHEMA,
+        "episode_id": record["feedback_ref"],
+        "observed_at": record["received_at"],
+        "failure_class": feedback["failure_class"],
+        "operator": {
+            "name": feedback["operator"]["name"],
+            "version": feedback["operator"]["version"],
+        },
+        "outcome": feedback["outcome"],
+        "confidence": "FACT",
+        "aggregation_eligible": True,
+        "baseline": {
+            "status": "EXPLICIT_FEEDBACK",
+            "request_ref": feedback["baseline_request_ref"],
+        },
+        "result": {
+            "status": "EXPLICIT_FEEDBACK" if result_ref is not None else "NOT_PROVIDED",
+            "request_ref": result_ref,
+        },
+        "provenance": [
+            {"kind": "feedback", "ref": record["feedback_ref"]},
+        ],
+    }
+    return validate_episode(episode)
 
 
 def validate_episode(value: dict[str, Any]) -> dict[str, Any]:

@@ -7,8 +7,11 @@ import unittest
 
 from session_search.retrieval_experience import (
     aggregate_patterns,
+    feedback_record_to_episode,
+    feedback_ref_for_request,
     load_jsonl,
     validate_episode,
+    validate_feedback_record,
     validate_feedback_request,
 )
 
@@ -37,8 +40,8 @@ class RetrievalExperienceContractTest(unittest.TestCase):
     def test_feedback_request_is_explicit_and_does_not_need_query_plaintext(self):
         request = {
             "schema": "theseus.session-search-feedback-request.v0",
-            "baseline_request_ref": "req-a",
-            "result_request_ref": "req-b",
+            "baseline_request_ref": "a" * 32,
+            "result_request_ref": "b" * 32,
             "failure_class": "noisy_query",
             "operator": {"name": "light_sonar_rephrase", "version": "v1"},
             "outcome": "improved",
@@ -49,7 +52,7 @@ class RetrievalExperienceContractTest(unittest.TestCase):
     def test_feedback_request_rejects_raw_query_or_target_text(self):
         request = {
             "schema": "theseus.session-search-feedback-request.v0",
-            "baseline_request_ref": "req-a",
+            "baseline_request_ref": "a" * 32,
             "failure_class": "no_signal",
             "operator": {"name": "strict_to_recall", "version": "v1"},
             "outcome": "unknown",
@@ -61,7 +64,7 @@ class RetrievalExperienceContractTest(unittest.TestCase):
     def test_feedback_request_rejects_unknown_fields(self):
         request = {
             "schema": "theseus.session-search-feedback-request.v0",
-            "baseline_request_ref": "req-a",
+            "baseline_request_ref": "a" * 32,
             "failure_class": "no_signal",
             "operator": {"name": "strict_to_recall", "version": "v1"},
             "outcome": "unknown",
@@ -73,7 +76,7 @@ class RetrievalExperienceContractTest(unittest.TestCase):
     def test_feedback_request_rejects_unknown_operator_fields(self):
         request = {
             "schema": "theseus.session-search-feedback-request.v0",
-            "baseline_request_ref": "req-a",
+            "baseline_request_ref": "a" * 32,
             "failure_class": "no_signal",
             "operator": {
                 "name": "strict_to_recall",
@@ -95,6 +98,66 @@ class RetrievalExperienceContractTest(unittest.TestCase):
         value = episode(unexpected=True)
         with self.assertRaisesRegex(ValueError, "EXPERIENCE_FIELDS_INVALID"):
             validate_episode(value)
+
+    def test_feedback_record_round_trip_matches_server_writer_identity(self):
+        request = {
+            "schema": "theseus.session-search-feedback-request.v0",
+            "baseline_request_ref": "a" * 32,
+            "result_request_ref": "b" * 32,
+            "failure_class": "noisy_query",
+            "operator": {"name": "light_sonar_rephrase", "version": "v1"},
+            "outcome": "improved",
+            "notes": "Recovered a narrower result set.",
+        }
+        ref = feedback_ref_for_request(request)
+        self.assertEqual(ref, "7f254e82701b5e586625943bbf468311")
+        self.assertRegex(ref, r"^[0-9a-f]{32}$")
+        record = {
+            "schema": "theseus.session-search-feedback-record.v0",
+            "feedback_ref": ref,
+            "received_at": "2026-11-08T01:20:00.000Z",
+            "feedback": request,
+        }
+        self.assertEqual(validate_feedback_record(record), record)
+        episode = feedback_record_to_episode(record)
+        self.assertEqual(episode["episode_id"], ref)
+        self.assertEqual(episode["failure_class"], "noisy_query")
+        self.assertEqual(episode["outcome"], "improved")
+        self.assertEqual(episode["baseline"]["request_ref"], "a" * 32)
+        self.assertEqual(episode["result"]["request_ref"], "b" * 32)
+        self.assertNotIn("notes", episode)
+        self.assertEqual(episode["provenance"], [{"kind": "feedback", "ref": ref}])
+
+    def test_feedback_record_rejects_tampered_payload(self):
+        request = {
+            "schema": "theseus.session-search-feedback-request.v0",
+            "baseline_request_ref": "a" * 32,
+            "result_request_ref": None,
+            "failure_class": "no_signal",
+            "operator": {"name": "strict_to_recall", "version": "v1"},
+            "outcome": "unknown",
+            "notes": None,
+        }
+        ref = feedback_ref_for_request(request)
+        record = {
+            "schema": "theseus.session-search-feedback-record.v0",
+            "feedback_ref": ref,
+            "received_at": "2026-11-08T01:20:00.000Z",
+            "feedback": {**request, "outcome": "improved"},
+        }
+        with self.assertRaisesRegex(ValueError, "FEEDBACK_RECORD_REF_MISMATCH"):
+            validate_feedback_record(record)
+
+    def test_feedback_request_requires_opaque_request_refs(self):
+        value = {
+            "schema": "theseus.session-search-feedback-request.v0",
+            "baseline_request_ref": "req-a",
+            "failure_class": "no_signal",
+            "operator": {"name": "strict_to_recall", "version": "v1"},
+            "outcome": "unknown",
+        }
+        with self.assertRaisesRegex(ValueError, "FEEDBACK_BASELINE_REF_INVALID"):
+            validate_feedback_request(value)
 
     def test_episode_requires_known_outcome_and_confidence(self):
         with self.assertRaisesRegex(ValueError, "EXPERIENCE_OUTCOME_INVALID"):
