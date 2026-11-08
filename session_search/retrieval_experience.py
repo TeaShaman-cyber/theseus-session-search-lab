@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-import json
 import pathlib
 import re
 from collections import defaultdict
 from typing import Any
+
+from session_search.strict_json import StrictJsonError, loads_strict
 
 FEEDBACK_REQUEST_SCHEMA = "theseus.session-search-feedback-request.v0"
 EXPERIENCE_SCHEMA = "theseus.session-search-retrieval-experience.v0"
@@ -20,6 +21,30 @@ _PRIVATE_TEXT_KEYS = {
     "target_text",
     "raw_target",
 }
+_FEEDBACK_FIELDS = {
+    "schema",
+    "baseline_request_ref",
+    "result_request_ref",
+    "failure_class",
+    "operator",
+    "outcome",
+    "notes",
+}
+_EXPERIENCE_FIELDS = {
+    "schema",
+    "episode_id",
+    "observed_at",
+    "failure_class",
+    "operator",
+    "outcome",
+    "confidence",
+    "aggregation_eligible",
+    "baseline",
+    "result",
+    "provenance",
+}
+_OPERATOR_FIELDS = {"name", "version"}
+_PROVENANCE_FIELDS = {"kind", "ref"}
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_.-]{0,127}$")
 
 
@@ -42,13 +67,35 @@ def _require_slug(value: Any, code: str) -> str:
     return value
 
 
-def _forbid_private_text(mapping: dict[str, Any], code: str) -> None:
-    if _PRIVATE_TEXT_KEYS.intersection(mapping):
-        raise ValueError(code)
+def _require_no_unknown_fields(
+    mapping: dict[str, Any],
+    allowed: set[str],
+    code: str,
+) -> None:
+    unknown = set(mapping) - allowed
+    if unknown:
+        raise ValueError(f"{code}:{','.join(sorted(unknown))}")
+
+
+def _forbid_private_text(value: Any, code: str) -> None:
+    if isinstance(value, dict):
+        if _PRIVATE_TEXT_KEYS.intersection(value):
+            raise ValueError(code)
+        for nested in value.values():
+            _forbid_private_text(nested, code)
+        return
+    if isinstance(value, list):
+        for nested in value:
+            _forbid_private_text(nested, code)
 
 
 def _validate_operator(value: Any) -> dict[str, Any]:
     operator = _require_mapping(value, "EXPERIENCE_OPERATOR_INVALID")
+    _require_no_unknown_fields(
+        operator,
+        _OPERATOR_FIELDS,
+        "EXPERIENCE_OPERATOR_FIELDS_INVALID",
+    )
     _require_slug(operator.get("name"), "EXPERIENCE_OPERATOR_INVALID")
     _require_slug(operator.get("version"), "EXPERIENCE_OPERATOR_INVALID")
     return operator
@@ -57,6 +104,7 @@ def _validate_operator(value: Any) -> dict[str, Any]:
 def validate_feedback_request(value: dict[str, Any]) -> dict[str, Any]:
     value = _require_mapping(value, "FEEDBACK_REQUEST_INVALID")
     _forbid_private_text(value, "FEEDBACK_PRIVATE_TEXT_FORBIDDEN")
+    _require_no_unknown_fields(value, _FEEDBACK_FIELDS, "FEEDBACK_FIELDS_INVALID")
     if value.get("schema") != FEEDBACK_REQUEST_SCHEMA:
         raise ValueError("FEEDBACK_SCHEMA_INVALID")
 
@@ -83,6 +131,11 @@ def validate_feedback_request(value: dict[str, Any]) -> dict[str, Any]:
 def validate_episode(value: dict[str, Any]) -> dict[str, Any]:
     value = _require_mapping(value, "EXPERIENCE_INVALID")
     _forbid_private_text(value, "EXPERIENCE_PRIVATE_TEXT_FORBIDDEN")
+    _require_no_unknown_fields(
+        value,
+        _EXPERIENCE_FIELDS,
+        "EXPERIENCE_FIELDS_INVALID",
+    )
     if value.get("schema") != EXPERIENCE_SCHEMA:
         raise ValueError("EXPERIENCE_SCHEMA_INVALID")
 
@@ -117,6 +170,11 @@ def validate_episode(value: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("EXPERIENCE_PROVENANCE_INVALID")
     for item in provenance:
         item = _require_mapping(item, "EXPERIENCE_PROVENANCE_INVALID")
+        _require_no_unknown_fields(
+            item,
+            _PROVENANCE_FIELDS,
+            "EXPERIENCE_PROVENANCE_FIELDS_INVALID",
+        )
         _require_slug(item.get("kind"), "EXPERIENCE_PROVENANCE_INVALID")
         _require_string(item.get("ref"), "EXPERIENCE_PROVENANCE_INVALID")
 
@@ -124,15 +182,28 @@ def validate_episode(value: dict[str, Any]) -> dict[str, Any]:
 
 
 def load_jsonl(path: pathlib.Path) -> list[dict[str, Any]]:
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except UnicodeDecodeError as exc:
+        raise ValueError("EXPERIENCE_UTF8_INVALID") from exc
+    except OSError as exc:
+        raise ValueError(f"EXPERIENCE_READ_FAILED:{exc.__class__.__name__}") from exc
+
     rows: list[dict[str, Any]] = []
-    for line_number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+    seen_episode_ids: set[str] = set()
+    for line_number, raw in enumerate(lines, 1):
         if not raw.strip():
-            continue
+            raise ValueError(f"EXPERIENCE_JSONL_EMPTY_LINE:{line_number}")
         try:
-            row = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"EXPERIENCE_JSON_INVALID:{line_number}") from exc
-        rows.append(validate_episode(row))
+            row = loads_strict(raw)
+        except StrictJsonError as exc:
+            raise ValueError(f"EXPERIENCE_JSON_INVALID:{line_number}:{exc}") from exc
+        row = validate_episode(row)
+        episode_id = row["episode_id"]
+        if episode_id in seen_episode_ids:
+            raise ValueError(f"EXPERIENCE_DUPLICATE_ID:{episode_id}")
+        seen_episode_ids.add(episode_id)
+        rows.append(row)
     return rows
 
 
