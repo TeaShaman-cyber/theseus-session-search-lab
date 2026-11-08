@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run pinned Biome lint over tracked first-party JavaScript/MJS only."""
+"""Run pinned Biome lint over tracked first-party JavaScript/MJS and JSON."""
 
 from __future__ import annotations
 
@@ -11,9 +11,9 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 BIOME = ROOT / "functions" / "node_modules" / ".bin" / "biome"
 
 
-def tracked_js_paths() -> list[pathlib.Path]:
+def tracked_biome_paths() -> list[pathlib.Path]:
     result = subprocess.run(
-        ["git", "ls-files", "-z", "--", "*.js", "*.mjs"],
+        ["git", "ls-files", "-z", "--", "*.js", "*.mjs", "*.json"],
         cwd=ROOT,
         check=True,
         capture_output=True,
@@ -43,6 +43,8 @@ def lint_paths(paths: list[pathlib.Path]) -> subprocess.CompletedProcess[str]:
         [
             str(BIOME),
             "lint",
+            "--config-path",
+            str(ROOT / "biome.json"),
             "--diagnostic-level=error",
             *[str(path) for path in paths],
         ],
@@ -53,7 +55,7 @@ def lint_paths(paths: list[pathlib.Path]) -> subprocess.CompletedProcess[str]:
 
 
 def main() -> int:
-    paths = tracked_js_paths()
+    paths = tracked_biome_paths()
     result = lint_paths(paths)
     if result.stdout:
         sys.stdout.write(result.stdout)
@@ -61,7 +63,7 @@ def main() -> int:
         sys.stderr.write(result.stderr)
     if result.returncode != 0:
         return result.returncode
-    print(f"JS_LINT_PASS files={len(paths)}")
+    print(f"BIOME_LINT_PASS files={len(paths)}")
     return 0
 
 

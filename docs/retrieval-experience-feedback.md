@@ -156,13 +156,16 @@ The v0 feedback/episode contracts also fail closed on:
 This prevents typo fields from being silently ignored and prevents private text
 from being hidden inside nested metadata while still passing the public contract.
 
-Canonical repository QA runs scripts/verify_strict_json.py over every tracked
-.json and .jsonl file, so the same duplicate-key/non-standard-constant invariant
-also covers receipts, fixtures, package metadata and Grafana JSON checked into Git.
+Canonical repository QA delegates ordinary tracked .json syntax and duplicate-key
+linting to the repository-pinned Biome installation. The project-owned
+scripts/verify_strict_json.py is intentionally JSONL-only because Biome does not
+treat .jsonl as JSON input.
+
+The runtime session_search.strict_json.loads_strict() remains project-owned for
+untrusted/stateful feedback ingestion; a CI linter cannot replace runtime parsing.
 
 Stable older import paths that already have their own strict duplicate-key parsing
-remain unchanged by this slice; this gate adds a common repository-wide backstop
-rather than refactoring unrelated ingestion behavior.
+remain unchanged by this slice rather than being mass-refactored.
 
 ## Relationship to Grafana
 

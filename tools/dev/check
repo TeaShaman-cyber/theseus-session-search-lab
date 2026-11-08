@@ -17,10 +17,10 @@ python3 scripts/verify_repo.py
 printf '%s\n' '== app-backed Session Search overlay =='
 python3 scripts/verify_session_search_app_overlay.py
 
-printf '%s\n' '== strict JSON and JSONL =='
+printf '%s\n' '== strict JSONL ledgers =='
 python3 scripts/verify_strict_json.py
 
-printf '%s\n' '== javascript static lint =='
+printf '%s\n' '== Biome JavaScript and JSON lint =='
 python3 scripts/verify_js_lint.py
 
 printf '%s\n' '== PostgreSQL + PL/pgSQL syntax =='
