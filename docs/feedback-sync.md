@@ -146,13 +146,29 @@ shortcut. It caps remote reads at 1000 records and fails if this limit is
 exceeded rather than silently accepting an incomplete view; pagination is
 future work only when capacity demands it. Output contains counts only.
 
-**Operational state:** the code/SQL can be verified independently of live
-credential access. Current exe.dev Neon provider integration belongs to the
-separate Session Search data organization; it does **not** provide authority to
-the personal organization owning the selected router database. A native Neon
-management test of the target does not mean the exe.dev↔Neon transfer works.
-Direct ChatGPT session_feedback and automated schedule remain separate,
-unimplemented boundaries.
+**Verified operating state (2026-11-08, issue #232):** the reviewed
+migration was applied to the private personal-organization router project's
+existing neondb. Independent Neon readback confirmed schema
+session_feedback, table records_v0, the feedback_ref primary key and
+feedback-record shape CHECK. PUBLIC table SELECT and schema USAGE are denied.
+A temporary same-transaction PostgreSQL canary verified exact replay,
+conflicting-payload non-overwrite and invalid-shape rejection. Temporary
+test data was not retained; the persistent replica still has **0 records**.
+The serving router remained on deployment #8.
+
+**BLOCKED:** the available exe.dev provider-native Neon management integration
+belongs only to the separate Session Search data organization, not the
+personal organization that owns this private replica. Therefore the real
+local inbox record has **not** been synchronized. Source, schema and SQL
+acceptance do not prove local↔Neon connectivity. Do not transfer admin
+credentials through chat or promote a different corpus-shard database just to
+circumvent this boundary.
+
+To finish operational acceptance, attach a personal-organization-scoped,
+least-privilege Neon connection to the governed agent runtime through a
+supported authenticated workflow, confirm the exact target, then run the
+above sync command and read back both copies. Direct ChatGPT
+session_feedback and any recurring schedule remain separate and not live.
 
 
 ### Remote acceptance before calling synchronization live
