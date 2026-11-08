@@ -64,7 +64,7 @@ router auth/catalog settings. A green CI test does NOT mean the App write tool
 is live. Require a real App tool listing and successful feedback write/readback
 before claiming it.
 
-## Router and Arcade activation checkpoint — 2026-11-08
+## Router and Arcade activation acceptance — 2026-11-08
 
 Native Neon deployed the source from exact main commit e9c5b23 to the
 existing personal-org ssrouter2 Function with unchanged URI: active
@@ -72,23 +72,28 @@ deployment #9 COMPLETED. The original seven env key names were
 preserved, and SESSION_SEARCH_FEEDBACK_DATABASE_URL was added,
 pointing to the separate issue232 database through its restricted role.
 The Arcade control plane added one discovered tool to the existing
-Session Search gateway, which now reports two exact tools:
+Session Search gateway, which reports two exact tools:
 TheseusSessionSearch.session_search and TheseusSessionSearch.session_feedback.
-The App-backed search path after rollout returned FOUND, four
-queried shards, no unavailable shards and unchanged ChatGPT generation
-prefixes.
 
-**Host-level write acceptance remains UNVERIFIED.** The existing
-ChatGPT session still selects only session_search in Arcade_SelectTools,
-even when explicitly asked for session_feedback. This may require
-a fresh App session or tool-discovery refresh; no cause has yet been
-proven. Do not create a replacement plugin/App, gateway or authorization
-system. First perform a fresh App host tool-selection probe and, if
-the tool appears, a single synthetic write / Neon readback /
-exact cleanup.
+Fresh ChatGPT host discovery now selects both tools. A real
+session_search request returned FOUND with all four expected shards,
+unavailable_shards=[] and request_ref
+72849be85a484a83869fa2e263e824c5. That retrieval was genuinely
+low-relevance for the current issue-232 activation context, so the App
+submitted truthful operational feedback through session_feedback rather
+than a disposable synthetic record. The tool returned RECORDED with
+feedback_ref 0a3b47e20852d6d45763e1d0e2dec60f.
 
-Current checkpoint: ROUTER_DEPLOYED / GATEWAY_TWO_TOOLS_VERIFIED /
-SEARCH_PASS / APP_FEEDBACK_HOST_REPROBE_REQUIRED.
+Independent read-only Neon verification against project
+plain-voice-04214202, branch br-dry-feather-bc0z04nc, database
+feedback_issue232 found exactly one row with that feedback_ref in
+session_feedback.records_v0. The record is retained as genuine retrieval
+feedback. This verifies the ChatGPT host -> existing Arcade gateway ->
+existing router -> dedicated Neon database write path end to end.
+
+Current checkpoint: LIVE_APP_FEEDBACK_VERIFIED /
+NEON_READBACK_VERIFIED / SEARCH_PASS / TWO_INDEPENDENT_STORES /
+NO_AUTOMATIC_SYNC.
 Server-local storage remains unchanged. No synchronization is scheduled.
 
 New Neon resource naming and cleanup rules are in docs/neon-housekeeping.md.
