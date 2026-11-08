@@ -59,12 +59,27 @@ same value is:
 The ref is independent of untrusted inbound traceparent/tracestate and therefore
 cannot be chosen by the caller.
 
-The router now has a conditional MCP session_feedback contract. It is advertised
+The router has a conditional MCP session_feedback contract. It is advertised
 only when a feedbackWriter function is configured. Without a writer, tools/list
 remains unchanged and exposes only session_search.
 
-The contract is therefore versioned and testable without pretending persistence
-exists. A durable store adapter remains the next separate slice.
+The first optional durable writer adapter uses Upstash Redis REST. It is enabled
+only when both of these environment variables exist:
+
+- SESSION_SEARCH_FEEDBACK_UPSTASH_REST_URL
+- SESSION_SEARCH_FEEDBACK_UPSTASH_REST_TOKEN
+
+Optional SESSION_SEARCH_FEEDBACK_UPSTASH_HASH_KEY overrides the default private
+hash key theseus:session-search:feedback:v0.
+
+Each validated feedback payload receives a deterministic 128-bit feedback_ref
+derived from SHA-256 of its canonical payload. The adapter writes one private
+feedback-record.v0 value with HSETNX, so an identical retry is explicit as
+ALREADY_RECORDED and never overwrites the first record.
+
+The adapter is an implementation of feedbackWriter, not canonical feedback
+semantics. No Upstash credential, database, deployment or serving configuration
+is created by the repository change itself.
 
 ## Feedback request v0
 
