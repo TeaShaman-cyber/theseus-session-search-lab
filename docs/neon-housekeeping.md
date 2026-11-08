@@ -32,7 +32,9 @@ the remaining three old router candidates are ancestors of production
 and are not deletable in-place with Neon branch-tree constraints.
 **After the fourth shard-leaf batch (2026-11-08):** **14 active projects,
 27 active branches**. Four accepted issue137 serving test branches have
-been removed; DeepSeek/xAI live Function branches remain. The two deleted single-branch projects
+been removed; DeepSeek/xAI live Function branches remain.
+**After the fifth isolated ss147 Function-leaf cleanup (2026-11-08):
+14 projects and 26 active branches.** The two deleted single-branch projects
 remain listed below as historical evidence and are recoverable in Neon's
 deletion window at the observed postcondition. These counts are **not**
 a current price or billed-size estimate. Cloned branches share storage; logical_size values cannot be summed
@@ -100,20 +102,57 @@ Router project royal-cake-29698192 branches:
 | canary-xai-deepseek-20261025 / br-restless-hall-b5kaph3r | Initial router fan-out leaf; deleted after exact branch/Function checks, verified gone from active branch list. | REMOVED (historical reference) |
 | xai-candidate / br-dark-night-b5hku3bl | Ancestor of #116, #147, production and #166; cannot be deleted as a leaf. | BLOCKED_BY_CHILD_CHAIN |
 
-Shard Function host misty-darkness-46441019 (10 original branches, 6 active after fourth batch):
+Shard Function host misty-darkness-46441019 (10 original branches, 5 active after fifth batch):
 
 | Branch / ID | Why retained or candidate |
 | --- | --- |
 | main / br-raspy-pine-b4y8bsyq | Default legacy shard Function; ROLLBACK pending exact serving URL map |
 | xai-candidate / br-young-art-b47cvyjd | Live xAI Function endpoint established in #126/#166; preserve for serving/rollback. KEEP |
-| ss147-chatgpt0001-serving-20261104 / br-lingering-silence-b41yl5e3 | #147 shard Function; UNKNOWN until live URL/cutover map |
+| ss147-chatgpt0001-serving-20261104 / br-lingering-silence-b41yl5e3 | Isolated #147 trial ssshard Function #7, separate from active blue Function; REMOVED 2026-11-08. |
 | issue137-chatgpt0002-serving-20261101 / br-hidden-pond-b4wro919 | Accepted #137 diagnostic leaf; REMOVED 2026-11-08. |
 | issue137-xai0001-serving-20261101 / br-crimson-star-b4dhtud5 | Accepted #137 diagnostic leaf, not #166 live parent; REMOVED 2026-11-08. |
 | issue137-chatgpt0001-serving-20261101 / br-soft-leaf-b4rv9zgu | Accepted #137 diagnostic leaf; REMOVED 2026-11-08. |
 | issue137-deepseek0001-serving-20261101 / br-old-mouse-b4962ahn | Accepted #137 diagnostic leaf, not #166 live parent; REMOVED 2026-11-08. |
-| chatgpt-0002-serving-20261031 / br-wandering-mountain-b41qo8k1 | Historical ssshard; REVIEW_DELETE after URL map |
-| chatgpt-0001-serving-20261031 / br-withered-lab-b4j729ow | Historical ssshard; REVIEW_DELETE after URL map |
+| chatgpt-0002-serving-20261031 / br-wandering-mountain-b41qo8k1 | Previous ChatGPT-serving Function #2; retain as rollback candidate under open #166 (exact rollback path not retested). |
+| chatgpt-0001-serving-20261031 / br-withered-lab-b4j729ow | Previous ChatGPT-serving Function #2; retain as rollback candidate under open #166 (exact rollback path not retested). |
 | canary-deepseek-0001-20261025 / br-morning-surf-b4au9u4j | Live DeepSeek Function endpoint established in #126/#166; KEEP despite misleading name. |
+
+## Fifth batch — ss147 isolated ChatGPT Function leaf, 2026-11-08
+
+Scoped follow-up to closed #147 and ongoing rollback #166 in the old
+shard Function-host project misty-darkness-46441019.
+
+**Evidence before removal:**
+- Selected live ChatGPT-0001 Function is project old-smoke-74649402
+  on br-mute-paper-bdyf171i, ssshard deployment #3. Live App
+  LIGHT_SONAR strict control returned FOUND, four queried and
+  zero unavailable; the current blue ChatGPT generation was observed.
+  #147's accepted cutover receipts independently identify the blue pair.
+- The candidate br-lingering-silence-b41yl5e3 was a distinct legacy-host
+  URL/branch, non-default and unprotected, with zero child branches,
+  a single ssshard deployment #7, zero Function custom domains,
+  and no branch-ID references from the bounded GitHub code search.
+- The two older October 31 ChatGPT-serving Function branches
+  br-wandering-mountain-b41qo8k1 and br-withered-lab-b4j729ow
+  have different histories and were **not** classified as disposable:
+  #147 retained previous generations for rollback, and #166 has not
+  completed the rollback/deletion acceptance.
+
+**Action and postcondition:** user-directed cleanup deleted only
+br-lingering-silence-b41yl5e3. Native Neon delete_branch returned
+success and a fresh active-only branch list omitted it while retaining
+the five expected branches: main, DeepSeek serving, xAI serving,
+and both old October ChatGPT serving branches. An independent fresh
+App-backed strict control again returned FOUND, all four shards queried,
+zero unavailable, unchanged blue ChatGPT generation prefixes.
+No router, data generation, permissions, source, or rollback Function
+was modified. No billing savings claim.
+
+**Disposition:** the old shard Function-host project now has five
+active branches, not ten. This fifth batch deletes a single leaf and
+explicitly **retains** the two October rollback candidates. Further
+deletion of the rollback pair requires #166's actual rollback/drain
+disposition rather than a new speculative dependency investigation.
 
 ## Fourth batch — issue137 transitional shard leaves, 2026-11-08
 
@@ -146,8 +185,9 @@ six remaining active branches of this historical Function-host project.
 
 **Retained (not part of this batch):** main, xai-candidate live xAI,
 canary-deepseek live DeepSeek, two older Oct31 ChatGPT serving branches
-and ss147-chatgpt0001-serving with separate rollout histories. No
-further removal was inferred from names alone. No billed savings
+and (at that checkpoint) ss147-chatgpt0001-serving with separate
+rollout histories. The latter was subsequently removed by the
+independently verified fifth batch below. No billed savings
 or new provider/permission actions claimed.
 
 ## Router canary cleanup — November 8 third batch
