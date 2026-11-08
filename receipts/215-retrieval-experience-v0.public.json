@@ -1,0 +1,68 @@
+{
+  "episode_count": 5,
+  "patterns": {
+    "candidate_recall::per_session_cap_relaxation::cap7-budget30": {
+      "eligible": 1,
+      "ineligible": 0,
+      "observed": 1,
+      "outcomes": {
+        "improved": 0,
+        "mixed": 0,
+        "regressed": 0,
+        "same": 1,
+        "unknown": 0
+      }
+    },
+    "noisy_query::fallback_continuity_route::historical": {
+      "eligible": 0,
+      "ineligible": 1,
+      "observed": 1,
+      "outcomes": {
+        "improved": 0,
+        "mixed": 0,
+        "regressed": 0,
+        "same": 0,
+        "unknown": 0
+      }
+    },
+    "noisy_query::lemma_oracle_term_selection::diagnostic-v1": {
+      "eligible": 0,
+      "ineligible": 1,
+      "observed": 1,
+      "outcomes": {
+        "improved": 0,
+        "mixed": 0,
+        "regressed": 0,
+        "same": 0,
+        "unknown": 0
+      }
+    },
+    "translation_entity_drift::azure_notranslate_term_preservation::v3": {
+      "eligible": 1,
+      "ineligible": 0,
+      "observed": 1,
+      "outcomes": {
+        "improved": 1,
+        "mixed": 0,
+        "regressed": 0,
+        "same": 0,
+        "unknown": 0
+      }
+    },
+    "translation_morphology_drift::azure_notranslate_term_preservation::v3": {
+      "eligible": 1,
+      "ineligible": 0,
+      "observed": 1,
+      "outcomes": {
+        "improved": 0,
+        "mixed": 0,
+        "regressed": 1,
+        "same": 0,
+        "unknown": 0
+      }
+    }
+  },
+  "policy_candidates": [],
+  "policy_promotion": "NOT_PERFORMED",
+  "schema": "theseus.session-search-retrieval-patterns.v0"
+}
