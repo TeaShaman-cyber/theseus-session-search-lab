@@ -62,12 +62,17 @@ function runtime() {
 
 test('noop telemetry preserves handler behavior when OTLP is disabled', async () => {
   const telemetry = createNoopTelemetry();
+  let requestRef;
   const response = await telemetry.withRequest(
     new Request('https://router.test/search?secret=must-not-matter'),
     'search',
-    async () => Response.json({ status: 'FOUND' }),
+    async (scope) => {
+      requestRef = scope.requestRef;
+      return Response.json({ status: 'FOUND' });
+    },
   );
   assert.equal(response.status, 200);
+  assert.match(requestRef, /^[0-9a-f]{32}$/);
   assert.equal((await response.json()).status, 'FOUND');
 });
 
@@ -94,6 +99,8 @@ test('router propagates W3C trace context to shard and flushes serverless teleme
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ query: 'super-secret-query' }),
     }));
     assert.equal(response.status, 200);
+    const responseBody = await response.json();
+    assert.match(responseBody.request_ref, /^[0-9a-f]{32}$/);
     assert.match(traceparent ?? '', /^00-[0-9a-f]{32}-[0-9a-f]{16}-0[01]$/);
 
     const spans = spanExporter.getFinishedSpans();
@@ -104,6 +111,7 @@ test('router propagates W3C trace context to shard and flushes serverless teleme
     assert.ok(dispatch);
     assert.equal(server.spanContext().traceId, dispatch.spanContext().traceId);
     assert.equal(dispatch.parentSpanContext?.spanId, server.spanContext().spanId);
+    assert.equal(server.attributes['session_search.request_ref'], responseBody.request_ref);
 
     const encoded = JSON.stringify(spans.map((span) => ({ name: span.name, attributes: span.attributes })));
     assert.equal(encoded.includes('super-secret-query'), false);
@@ -119,6 +127,7 @@ test('router propagates W3C trace context to shard and flushes serverless teleme
     assert.equal(metricPayload.includes('token=never-export'), false);
     assert.equal(metricPayload.includes('https://'), false);
     assert.equal(metricPayload.includes('a'.repeat(64)), false);
+    assert.equal(metricPayload.includes(responseBody.request_ref), false);
     assert.match(metricPayload, /deepseek-0001/);
 
     const counts = flushes();
