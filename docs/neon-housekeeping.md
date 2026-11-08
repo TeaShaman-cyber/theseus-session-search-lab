@@ -25,8 +25,11 @@ Two **distinct access scopes**, not a requirement for two future stores:
 **Baseline inventory:** 16 visible projects, 39 visible branches (including
 default) before deletion. **After the first project batch:** 14 active projects, 37 active branches.
 **After the second branch batch (2026-11-08):** 14 active projects,
-**32 active branches**. Five additional test-only child branches
-were deleted under #235 after explicit user direction to continue cleanup. The two deleted single-branch projects
+32 active branches. Five test-only data branches were removed. **After
+the third router-canary batch (2026-11-08):** 14 active projects and
+**31 active branches**. One independent router leaf branch was removed;
+the remaining three old router candidates are ancestors of production
+and are not deletable in-place with Neon branch-tree constraints. The two deleted single-branch projects
 remain listed below as historical evidence and are recoverable in Neon's
 deletion window at the observed postcondition. These counts are **not**
 a current price or billed-size estimate. Cloned branches share storage; logical_size values cannot be summed
@@ -89,10 +92,10 @@ Router project royal-cake-29698192 branches:
 | issue137-retrieval-policy-router-20261101 / br-patient-union-b5xe6jip | **Production** ssrouter2 deployment #8. | KEEP |
 | main / br-soft-base-b55ple0i | Original project default and ssrouter2; possible rollback asset. | ROLLBACK |
 | ss166-s2-pinned-canary-20261106 / br-quiet-term-b5uqmx74 | Isolated pinned serving canary #166; ssrouter2 deployment #3. | REVIEW_DELETE only after #166 closes S2 rollback |
-| chatgpt-router-candidate-20261031 / br-old-union-b5qyign2 | #147 candidate ssrouter147 and earlier ssrouter2. | REVIEW_DELETE after current catalog / old-router rollback audit |
-| issue-116-env-only-deploy-canary-20261031 / br-divine-glitter-b5tl65gc | #116 Function environment canary. | REVIEW_DELETE |
-| canary-xai-deepseek-20261025 / br-restless-hall-b5kaph3r | Initial router fan-out canary. | REVIEW_DELETE |
-| xai-candidate / br-dark-night-b5hku3bl | Early xAI router candidate. | REVIEW_DELETE |
+| chatgpt-router-candidate-20261031 / br-old-union-b5qyign2 | #147 candidate; parent of CURRENT production branch, not deletable as a leaf. | BLOCKED_BY_CHILD_CHAIN |
+| issue-116-env-only-deploy-canary-20261031 / br-divine-glitter-b5tl65gc | #116 envcanary116 + ssrouter2; parent of #147 candidate, hence of production; attempted deletion correctly rejected by Neon 422. | BLOCKED_BY_CHILD_CHAIN |
+| canary-xai-deepseek-20261025 / br-restless-hall-b5kaph3r | Initial router fan-out leaf; deleted after exact branch/Function checks, verified gone from active branch list. | REMOVED (historical reference) |
+| xai-candidate / br-dark-night-b5hku3bl | Ancestor of #116, #147, production and #166; cannot be deleted as a leaf. | BLOCKED_BY_CHILD_CHAIN |
 
 Shard Function host misty-darkness-46441019 (10 branches total):
 
@@ -108,6 +111,59 @@ Shard Function host misty-darkness-46441019 (10 branches total):
 | chatgpt-0002-serving-20261031 / br-wandering-mountain-b41qo8k1 | Historical ssshard; REVIEW_DELETE after URL map |
 | chatgpt-0001-serving-20261031 / br-withered-lab-b4j729ow | Historical ssshard; REVIEW_DELETE after URL map |
 | canary-deepseek-0001-20261025 / br-morning-surf-b4au9u4j | Older ssshard canary; REVIEW_DELETE after URL map |
+
+## Router canary cleanup — November 8 third batch
+
+The existing router project is a **lineage**, not four independent
+disposable branches. Fresh Neon read-only parent_id inventory:
+
+    main br-soft-base-b55ple0i (keep)
+      -> xai-candidate br-dark-night-b5hku3bl
+         -> issue116-env-canary br-divine-glitter-b5tl65gc
+            -> chatgpt-router-candidate br-old-union-b5qyign2
+               -> PRODUCTION br-patient-union-b5xe6jip (keep)
+                  -> ss166-pinned-canary br-quiet-term-b5uqmx74 (keep)
+         -> canary-xai-deepseek br-restless-hall-b5kaph3r (REMOVED)
+
+The user approved cleaning old router-canaries; preflight located
+the correct personal router project and current production
+ssrouter2 deployment #8. Historical closed #116 already documents
+env-only deployment inheritance and executable marker readback. Current
+Neon Function inventory confirmed the #116 branch contains
+envcanary116 #2 and ssrouter2 #2; October canary leaf contained
+ssrouter2 #1; xai-candidate still hosts ssrouter2 #12. None of the
+three old canary branches had a custom Function domain. A GitHub
+owner code search found no branch-ID references. Live App-backed
+Session Search baseline was FOUND, four queried, zero unavailable.
+
+A **single** attempted deletion of br-divine-glitter-b5tl65gc failed
+with Neon HTTP 422: child branch br-old-union-b5qyign2 exists.
+Independent active-branch readback showed no removal. That child is
+parent of **the actual serving production branch**. Therefore #116
+and its parent xai-candidate and descendant #147 candidate remain
+untouched: removing them requires a separate supported branch-tree
+migration/recreation with release and rollback validation, not
+a routine housekeeping deletion. This is an observed structural
+blocker, not conjecture about undiscovered consumers.
+
+The independent October canary leaf
+br-restless-hall-b5kaph3r had no children, was non-default and
+unprotected. Its targeted deletion succeeded. Independent Neon active
+list_branches omitted that ID, while include_deleted reported its
+archived historical record. Production branch, original main and #166
+pinned canary remained; production ssrouter2 deployment #8 was
+re-read as completed. A **fresh App-backed search after deletion**
+returned FOUND with the same four queried shards, zero unavailable,
+and the two expected ChatGPT blue generation prefixes. No change
+to production router code/config, source releases or catalog.
+
+**Disposition:** 1 router canary leaf REMOVED, 3 old ancestors
+BLOCKED_BY_CHILD_CHAIN and preserved, 0 production/rollback branches
+mutated. The remaining historical envcanary116 Function names on
+production-related branches are *inherited metadata* and have not
+been separately removed. Do not delete them as part of this batch.
+Avoid adding infrastructure just to flatten a branch tree.
+No dollar savings are claimed.
 
 ## What can be cleaned first — bounded order
 
