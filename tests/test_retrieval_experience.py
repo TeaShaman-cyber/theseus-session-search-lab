@@ -58,6 +58,44 @@ class RetrievalExperienceContractTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "FEEDBACK_PRIVATE_TEXT_FORBIDDEN"):
             validate_feedback_request(request)
 
+    def test_feedback_request_rejects_unknown_fields(self):
+        request = {
+            "schema": "theseus.session-search-feedback-request.v0",
+            "baseline_request_ref": "req-a",
+            "failure_class": "no_signal",
+            "operator": {"name": "strict_to_recall", "version": "v1"},
+            "outcome": "unknown",
+            "outocme": "typo-that-must-not-be-ignored",
+        }
+        with self.assertRaisesRegex(ValueError, "FEEDBACK_FIELDS_INVALID"):
+            validate_feedback_request(request)
+
+    def test_feedback_request_rejects_unknown_operator_fields(self):
+        request = {
+            "schema": "theseus.session-search-feedback-request.v0",
+            "baseline_request_ref": "req-a",
+            "failure_class": "no_signal",
+            "operator": {
+                "name": "strict_to_recall",
+                "version": "v1",
+                "prompt": "hidden implementation detail",
+            },
+            "outcome": "unknown",
+        }
+        with self.assertRaisesRegex(ValueError, "EXPERIENCE_OPERATOR_FIELDS_INVALID"):
+            validate_feedback_request(request)
+
+    def test_episode_rejects_private_text_at_any_depth(self):
+        value = episode()
+        value["result"]["metadata"] = {"query_text": "private nested query"}
+        with self.assertRaisesRegex(ValueError, "EXPERIENCE_PRIVATE_TEXT_FORBIDDEN"):
+            validate_episode(value)
+
+    def test_episode_rejects_unknown_top_level_fields(self):
+        value = episode(unexpected=True)
+        with self.assertRaisesRegex(ValueError, "EXPERIENCE_FIELDS_INVALID"):
+            validate_episode(value)
+
     def test_episode_requires_known_outcome_and_confidence(self):
         with self.assertRaisesRegex(ValueError, "EXPERIENCE_OUTCOME_INVALID"):
             validate_episode(episode(outcome="great"))
@@ -107,6 +145,34 @@ class RetrievalExperienceContractTest(unittest.TestCase):
             )
             rows = load_jsonl(path)
         self.assertEqual([row["episode_id"] for row in rows], ["a", "b"])
+
+    def test_jsonl_loader_rejects_duplicate_json_keys(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "episodes.jsonl"
+            path.write_text(
+                '{"schema":"theseus.session-search-retrieval-experience.v0",'
+                '"episode_id":"a","episode_id":"b"}\n',
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "DUPLICATE_KEY:episode_id"):
+                load_jsonl(path)
+
+    def test_jsonl_loader_rejects_duplicate_episode_id(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "episodes.jsonl"
+            path.write_text(
+                "\n".join(
+                    json.dumps(row)
+                    for row in [
+                        episode(episode_id="same"),
+                        episode(episode_id="same", outcome="regressed"),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "EXPERIENCE_DUPLICATE_ID:same"):
+                load_jsonl(path)
 
     def test_seed_ledger_contains_positive_negative_and_unknown(self):
         rows = load_jsonl(

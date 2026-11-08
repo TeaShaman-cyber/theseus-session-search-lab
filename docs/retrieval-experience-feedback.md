@@ -134,6 +134,36 @@ The initial public sanitized seed set is hand-audited rather than mined blindly:
 
 The public seed records contain no raw query or target text.
 
+## Strict JSON / JSONL QA
+
+Feedback evidence is fail-closed at the serialization boundary.
+
+The shared strict parser rejects:
+- duplicate object keys at any nesting level;
+- non-standard JSON constants such as NaN and Infinity;
+- trailing JSON content;
+- malformed UTF-8 / malformed JSON.
+
+The feedback JSONL loader additionally rejects:
+- blank records;
+- duplicate episode_id values within one ledger.
+
+The v0 feedback/episode contracts also fail closed on:
+- unknown top-level fields;
+- unknown operator/provenance fields;
+- raw query/target keys at any nested object depth.
+
+This prevents typo fields from being silently ignored and prevents private text
+from being hidden inside nested metadata while still passing the public contract.
+
+Canonical repository QA runs scripts/verify_strict_json.py over every tracked
+.json and .jsonl file, so the same duplicate-key/non-standard-constant invariant
+also covers receipts, fixtures, package metadata and Grafana JSON checked into Git.
+
+Stable older import paths that already have their own strict duplicate-key parsing
+remain unchanged by this slice; this gate adds a common repository-wide backstop
+rather than refactoring unrelated ingestion behavior.
+
 ## Relationship to Grafana
 
 Grafana #109 remains the operational observability plane. Current traces provide
