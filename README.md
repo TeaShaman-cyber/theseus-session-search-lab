@@ -38,6 +38,12 @@ The lab studies portable, verifiable historical session retrieval for assistants
 
 - [Nine-panel Grafana dashboard-as-code](grafana/README.md) — the saved dashboard uses the historical `candidate` filter; an empty panel is not proof of missing live signals. Inspect current environment labels first.
 
+## Neon resource housekeeping
+
+See the [dated Neon resource inventory and cleanup gates](docs/neon-housekeeping.md)
+(issue #235) before deleting any search project, branch, or Function.
+Do not use resource names alone to decide what is obsolete.
+
 ## Agent retrieval feedback and continuity
 
 Feedback from agent searches has a separate private lifecycle from accepted

@@ -115,13 +115,15 @@ Issue #232 adds only a replaceable PostgreSQL replica adapter, without a new
 service dependency or model-training loop. The database is a *copy*, not the
 canonical owner of feedback.
 
-**Before enabling:** select a specifically authorized Neon database and scoped
-PostgreSQL role. The initial target is the empty neondb in the existing private
-router-project branch, isolated under schema session_feedback; verify the live
-branch/project and table inventory before applying any SQL. Do not move raw
-corpus data, personal connection strings or secret keys through ChatGPT.
+**Before enabling:** no Neon feedback replica is currently selected or
+deployed. The mistakenly selected personal router-project target was cleaned
+up under #235. Choose an explicitly approved private feedback target through
+#232; do not apply this migration to a production router database or an
+active corpus shard merely because they are reachable. Verify the exact
+branch, database, credentials, role and existing tables first. Keep private
+connection strings, feedback notes and source data out of ChatGPT.
 
-Apply the reviewed migration once as that database's owner:
+Only after selecting the target, apply the reviewed migration as its owner:
 
     psql -X -v ON_ERROR_STOP=1 -f sql/neon/010_feedback_replica_v0.sql
 
@@ -137,7 +139,7 @@ one explicit bounded two-way reconciliation:
 
     python3 -m session_search.feedback_neon \
       --store-dir "$PRIVATE_FEEDBACK_INBOX" \
-      --expected-database neondb
+      --expected-database "$EXPECTED_FEEDBACK_DATABASE"
 
 The command validates every local/remote feedback-record.v0 before writing,
 checks same-key content equality, uploads only absent records in one transaction,
@@ -148,49 +150,25 @@ shortcut. It caps remote reads at 1000 records and fails if this limit is
 exceeded rather than silently accepting an incomplete view; pagination is
 future work only when capacity demands it. Output contains counts only.
 
-**Verified operating state (2026-11-08, issue #232):** the reviewed
-migration was applied to the private personal-organization router project's
-existing neondb. Independent Neon readback confirmed schema
-session_feedback, table records_v0, the feedback_ref primary key and
-feedback-record shape CHECK. PUBLIC table SELECT and schema USAGE are denied.
-A temporary same-transaction PostgreSQL canary verified exact replay,
-conflicting-payload non-overwrite and invalid-shape rejection. Temporary
-test data was not retained; the persistent replica still has **0 records**.
-The serving router remained on deployment #8.
+**Observed life cycle (2026-11-08, issues #232/#235):** An experimental
+feedback table and schema were temporarily created in the personal router
+project. The canary and shape checks passed with zero persistent records.
+When the user rejected that unnecessary target, the empty table and schema
+were dropped under a guarded transaction; independent Neon readback confirmed
+both absent, with no residual objects. The versioned migration in this repo
+is an **optional template**, not an installed schema or permission to rerun it.
 
-**Current route check (2026-11-08, read-only):** the Neon connector on
-exe.dev **is working**, and the previously accepted provider-native SQL route
-remains the intended operator path:
-exe.dev -> neon.int.exe.xyz -> connection_uri -> psql -f.
-See TeaShaman-cyber/theseus-cloud-shell issue #10 and
-providers/exe-dev/README.md; a historical read-only psql file execution
-was independently verified. Do **not** classify this connector as broken.
+The provider-native exe.dev Neon SQL route remains verified in the existing
+Theseus Session Search data organization (cloud-shell issue #10). The
+personal-org router project is outside the current exe.dev proxy scope; that
+does not make the connector generally broken. The first genuine feedback
+record remains only in the private local inbox (not copied to Git). The
+choice of actual private replica and write authority belongs to #232,
+and must not be made by repurposing an active corpus shard.
 
-The currently attached provider identity lists eight Neon projects in the
-*Theseus Session Search* organization. These are existing provider/shard
-projection projects, including blue/candidate branches; **none is identified
-as a dedicated private feedback store**. The proxy's GET for the existing
-personal-organization router project returned HTTP 404, both by project ID
-and by explicitly requested personal-organization scope. This is a
-**scope/identity mismatch**, not a general inability to perform SQL.
-Native ChatGPT Neon access to that personal-organization project is a
-different authenticated boundary, and is not a bridge for guest credentials.
-
-**BLOCKED, specific postcondition:** the first real feedback record still
-resides only in the exe.dev local inbox; the personal-organization Neon table
-remains at 0 records and the end-to-end sync has not been verified. Do not
-move private feedback into a corpus shard or silently change store ownership.
-
-**One decision remains:** grant the already attached provider integration
-appropriately scoped access to the *existing* private replica, or explicitly
-select a dedicated feedback store in the data organization. Either changes
-permission or storage authority and needs its own approval and current
-readback. Do not create a new key, account, database or adapter by inference.
-Once an authorized end-to-end connection is available, run the versioned
-session_search.feedback_neon adapter, verify exact record readback,
-idempotence and conflict handling, and only then declare synchronization live.
-Direct ChatGPT session_feedback and recurring automation remain separate.
-
+Full current resource map and protected legacy deletion gates:
+[Neon housekeeping](neon-housekeeping.md). Direct ChatGPT
+session_feedback and recurring sync are still not live.
 
 ### Remote acceptance before calling synchronization live
 
