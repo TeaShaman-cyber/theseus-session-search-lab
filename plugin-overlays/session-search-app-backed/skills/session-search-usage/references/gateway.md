@@ -43,10 +43,12 @@ All seven preexisting deployment environment keys were preserved, and one
 feedback-specific database URL setting was added. Existing Arcade gateway
 gw_3L9SqeBQ5L5Cs2V1GB6yvnKhR8P now lists exactly two tools,
 session_search and session_feedback. A production App-backed search probe
-returned FOUND across all four shards with none unavailable. The current
-ChatGPT host session still selected ONLY session_search; feedback write
-acceptance requires a fresh host tool discovery and genuine write/readback.
-The one-tool statement above describes the pre-issue232 period.
+returned FOUND across all four shards with none unavailable. The first current ChatGPT host selection still returned only
+session_search; later discovery in the same host selected both tools.
+A synthetic feedback write, independent Neon readback, idempotent replay,
+exact test cleanup and final four-shard search PASS have since verified
+App host functionality. The one-tool statement above describes the
+pre-issue232 period.
 
 ## Current acceptance
 
