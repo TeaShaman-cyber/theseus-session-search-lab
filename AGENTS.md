@@ -53,12 +53,25 @@ PL/pgSQL parser. Модельный review после этого фокусир�
 2. Ограничить чтение точным repo/head либо service/time window, достаточным для
    вопроса. Отсутствие данных классифицировать как `NO_SIGNAL`, устаревшие данные
    как `STALE`, недоступный маршрут как `UNAVAILABLE`, а не как PASS.
-3. Значимый сигнал сверять с авторитетным доменом: GitHub Actions — exact-head
-   CI; Grafana #109 — live availability/latency/error; accepted artifacts/ledger —
-   история корпуса и provenance. PostHog остаётся производным свидетельством.
-4. Не пропускать шаг молча: рядом с выводом оставлять компактный receipt
+3. Использовать PostHog как **longitudinal navigator**, а не как источник
+   причинности: он хорошо находит повторяемость, failure/recovery-кандидатов,
+   инженерные flow-паттерны и редкие lifecycle-переходы, но сам по себе не
+   доказывает причину или семантику события.
+4. Подозрительный эпизод разрешать через issue/receipt и авторитетный домен:
+   GitHub Actions — exact-head CI; Grafana #109 — live availability/latency/error;
+   accepted artifacts/ledger — история корпуса и provenance. Если PostHog
+   `PARTIAL`/`STALE` и не хватает точного GitHub evidence, брать недостающий
+   факт через текущий авторизованный GitHub route; в governed cloud shell следовать
+   Project Contract и текущим Cloud Shell rules (exe.dev native `gh`, когда его
+   current capability заново подтверждён).
+5. Не превращать автоматически `failure -> next green` в MTTR/incident recovery.
+   `failure` может быть ожидаемым fail-closed/negative acceptance. До агрегации
+   пометить семантику хотя бы как
+   `INCIDENT|EXPECTED_FAILURE|REGRESSION|NO_SIGNAL`; при недостатке evidence
+   оставить кандидат навигацией, а не KPI или alert.
+6. Не пропускать шаг молча: рядом с выводом оставлять компактный receipt
    `POSTHOG_EVIDENCE status=VERIFIED|STALE|NO_SIGNAL|UNAVAILABLE scope=<...> freshness=<...> signal=<...>`.
-5. Недоступность PostHog не блокирует обычный авторитетный маршрут и не требует
+7. Недоступность PostHog не блокирует обычный авторитетный маршрут и не требует
    переноса OAuth/API key в CI.
 
 Не отправлять в PostHog ради этого шага raw query/message text, приватный корпус,
