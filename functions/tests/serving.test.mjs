@@ -185,11 +185,25 @@ test('router retrieval policy defaults to strict and validates explicit modes', 
   );
 });
 
+test('public router contract rejects internal grouped-canary controls', () => {
+  assert.throws(
+    () => validateSearchInput({ query: 'needle', grouping: 'exact_text_v1' }),
+    /GROUPED_SEARCH_NOT_PUBLIC/,
+  );
+  assert.throws(
+    () => validateSearchInput({ query: 'needle', candidate_budget: 24 }),
+    /GROUPED_SEARCH_NOT_PUBLIC/,
+  );
+});
+
 test('MCP advertises strict recall auto retrieval policy', async () => {
   const listed = await handleMcpRequest({ jsonrpc: '2.0', id: 21, method: 'tools/list', params: {} }, async () => ({}));
   const schema = listed.result.tools[0].inputSchema.properties.search_mode;
   assert.deepEqual(schema.enum, ['strict', 'recall', 'auto']);
   assert.equal(schema.default, 'strict');
+  const properties = listed.result.tools[0].inputSchema.properties;
+  assert.equal(Object.hasOwn(properties, 'grouping'), false);
+  assert.equal(Object.hasOwn(properties, 'candidate_budget'), false);
 });
 
 test('shard bounded SQL call carries strict or recall mode through versioned search_v2', () => {

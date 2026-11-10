@@ -1,6 +1,25 @@
 import { hasValidBearerToken } from '../auth.mjs';
 import { createNoopTelemetry } from '../telemetry.mjs';
-import { buildSearchCall } from './core.mjs';
+import { buildGroupedSearchCall, buildSearchCall } from './core.mjs';
+
+function buildCanaryAwareSearchCall(input) {
+  const grouping = input?.grouping ?? null;
+  const hasCandidateBudget = Object.prototype.hasOwnProperty.call(input ?? {}, 'candidate_budget');
+  if (grouping === null) {
+    if (hasCandidateBudget) throw new Error('CANDIDATE_BUDGET_REQUIRES_GROUPING');
+    return buildSearchCall(input);
+  }
+  if (grouping !== 'exact_text_v1') throw new Error('GROUPING_OUT_OF_BOUNDS');
+  return buildGroupedSearchCall(input);
+}
+
+function isClientValidationError(message) {
+  return message.endsWith('_OUT_OF_BOUNDS')
+    || message === 'TIME_BOUNDS_INVERTED'
+    || message === 'GROUPED_SEARCH_RECALL_ONLY'
+    || message === 'GENERATION_REQUIRED_FOR_GROUPED_SEARCH'
+    || message === 'CANDIDATE_BUDGET_REQUIRES_GROUPING';
+}
 
 function json(value, status = 200) {
   return new Response(JSON.stringify(value), {
@@ -38,7 +57,7 @@ export function makeShardHandler(executeSearch, { telemetry = createNoopTelemetr
         }
         try {
           const input = await request.json();
-          const call = buildSearchCall(input);
+          const call = buildCanaryAwareSearchCall(input);
           const pinned = Object.prototype.hasOwnProperty.call(input, 'generation_id');
           const result = await executeSearch(call);
           if (pinned && result?.generation_id !== input.generation_id) {
@@ -53,7 +72,7 @@ export function makeShardHandler(executeSearch, { telemetry = createNoopTelemetr
           return json(pinned ? { ...result, generation_binding: 'router_pinned_v1' } : result);
         } catch (error) {
           const message = String(error?.message ?? error);
-          const clientError = message.endsWith('_OUT_OF_BOUNDS') || message === 'TIME_BOUNDS_INVERTED';
+          const clientError = isClientValidationError(message);
           observation.setErrorClass(clientError ? 'validation' : 'upstream');
           if (!clientError) {
             console.error(JSON.stringify({

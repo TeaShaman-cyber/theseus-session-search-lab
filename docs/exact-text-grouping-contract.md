@@ -135,8 +135,11 @@ parity on the federated serverless shards. Cutover remains a separate gated chan
 `candidate_budget` a separate bounded argument from `result_limit`. The internal
 JavaScript builder always supplies both values; when the canary caller omits an
 explicit budget it preserves the measured parity policy
-`min(300, 3 * result_limit)`. The serving handler still does not call this builder,
-so public HTTP/MCP behaviour remains flat and unchanged.
+`min(300, 3 * result_limit)`. The authenticated shard `/search` handler can select
+this path only with the internal `grouping: exact_text_v1` control; a candidate
+budget without that selector fails closed. The public router validation rejects
+`grouping` and `candidate_budget`, and the MCP schema exposes neither, so public
+router/MCP behaviour remains flat and unchanged.
 
 ## Strong-ranker cross-check
 
