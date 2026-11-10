@@ -1,6 +1,6 @@
 # Independent Session Search serving plane
 
-Issue #64 moves the Session Search read path out of MarcoPolo.
+Issue #64 originally moved the Session Search read path out of MarcoPolo; later issues retained that boundary while promoting real corpora and the grouped-default result contract.
 
 ## Request path
 
@@ -8,11 +8,13 @@ Issue #64 moves the Session Search read path out of MarcoPolo.
 ChatGPT
   -> Arcade Session Search gateway
   -> Neon router Function
-      -> Neon shard Function: chatgpt-0001
-          -> bounded grouped session_search.search(...)
-      -> Neon shard Function: hermes-0001
-          -> bounded grouped session_search.search(...)
+      -> selected READY Neon shard Functions
+          -> bounded grouped search_generation_grouped_v3(...)
+      -> exact-text merge across shards
+      -> final grouped Top-K
 ```
+
+At the verified 2026-11-10 production checkpoint the live catalog queried four shards: `chatgpt-0001`, `chatgpt-0002`, `deepseek-0001`, and `xai-0001`. Treat that list as dated runtime evidence, not a hard-coded future topology.
 
 MarcoPolo remains an engineering, ingest, QA, rebuild, and recovery workbench. It is not part of the deployed HTTP/MCP request path.
 
@@ -26,10 +28,11 @@ The same federated search implementation serves both:
 - `POST /search`;
 - the MCP `session_search` tool at `POST /mcp`.
 
-### Source-only stage 1 compatibility contract (issue #166)
+### Historical migration compatibility contract (issue #166)
 
-This is a **migration candidate in source**, not evidence of a live shard deployment
-or permission to change the router/catalog:
+This section records the pre-#264 migration sequence. It is historical evidence, not the current serving contract. #264 completed the grouped-default promotion; the current router explicitly requests grouped results and the flat v2 path remains only as a rollback/rolling-upgrade seam.
+
+The original #166 migration candidate required:
 
 - Requests **without** `generation_id` keep the legacy `search_v2` / ACTIVE path,
   so the deployed old router does not require an immediate change.
@@ -62,7 +65,7 @@ or permission to change the router/catalog:
 
 A failed shard is never silently omitted. Healthy groups remain available under `PARTIAL`. The old flat `hits[]` shape is retained only behind the internal `flat_v1` rollback setting; it is not a public MCP option.
 
-## Live synthetic canary  2026-10-24
+## Historical live synthetic canary — 2026-10-24
 
 Three disposable Neon projects were used:
 - `chatgpt-0001`: projection shard;
@@ -86,12 +89,11 @@ A prior router slug retained stale environment behavior after an env-only rollba
 
 The router MCP endpoint is registered as remote server `theseus-session-search`.
 
-The dedicated Arcade gateway `Session Search` exposes one consumer tool:
-`TheseusSessionSearch.session_search`.
+The dedicated Arcade gateway `Session Search` currently exposes two intentional consumer tools: `TheseusSessionSearch.session_search` and `TheseusSessionSearch.session_feedback`. The search tool keeps the stable qualified identity used by the serving path; feedback is a separate bounded append-only capability.
 
 This is a stable qualified tool identity. The Arcade gateway is an allowlist of discovered tool definitions, not a transparent proxy for all tools from every registered remote server. Router upgrades therefore keep both the canonical Arcade remote-server ID `theseus-session-search` and `TheseusSessionSearch.session_search` stable. A separately registered candidate server may be used for diagnostics, but must not be promoted by adding a version-suffixed sibling tool to the production gateway.
 
-The supported in-place Arcade control-plane shape is to update the existing worker with `PATCH /v1/workers/{id}`, refresh discovery with `POST /v1/workers/{id}/tools/refresh`, then verify the gateway still exposes the same one consumer tool with the refreshed schema. If the active management surface does not expose worker PATCH/refresh and no authenticated dashboard/API route is available, classify cutover as `UNAVAILABLE` rather than replacing the tool identity.
+The supported in-place Arcade control-plane shape is to update the existing worker with `PATCH /v1/workers/{id}`, refresh discovery with `POST /v1/workers/{id}/tools/refresh`, then verify the gateway still exposes the same qualified `session_search` tool with the refreshed schema and preserves the intentional `session_feedback` tool when that capability remains enabled. If the active management surface does not expose worker PATCH/refresh and no authenticated dashboard/API route is available, classify cutover as `UNAVAILABLE` rather than replacing the tool identity.
 
 The ChatGPT host binding is an App-backed private plugin with stable identities:
 - App: `asdk_app_6adcf7fcb44c8191b4a0da4d734b91da`
@@ -109,6 +111,19 @@ Host execution is VERIFIED. In the selected App-backed ChatGPT plugin:
 3. the result was `FOUND` with both `chatgpt-0001` and `hermes-0001`;
 4. `unavailable_shards=[]`;
 5. the same host smoke passed again after the skill overlay update.
+
+
+## Current production checkpoint — 2026-11-10
+
+Verified after #264:
+- production router `ssrouter2` deployment #10 is active/completed;
+- the App-backed `TheseusSessionSearch.session_search` path returns exact-text `groups[]` by default;
+- the same probe had no legacy `hits[]`;
+- four shards were queried and `unavailable_shards=[]`;
+- the grouped retrieval receipt exposes `candidate_count`, `candidate_group_count`, `requested_mode`, `effective_mode`, `strict_group_count`, and `returned_group_count`;
+- flat output remains an internal rollback/replay and rolling-upgrade seam, not a public MCP option.
+
+This checkpoint proves the observed serving state only; live topology and deployment numbers must still be re-read when currentness matters.
 
 ## HTTP authentication boundary
 
@@ -151,7 +166,7 @@ The affected credential was rotated and application logging was changed to keep
 only bounded error class/code. The bundle regression and handler tests preserve
 that guard.
 
-## Terminal acceptance
+## Historical #64 terminal acceptance
 
 VERIFIED:
 - two independent Neon project shards;
@@ -172,7 +187,9 @@ Historical handoff receipt
 pre-creation state and is intentionally retained unchanged. It is superseded by
 `receipts/064-federated-serving-final.public.json`.
 
-## Remaining production boundary
+## Historical #64 production boundary
+
+At #64 completion, the following boundary still applied. Later issues promoted real corpora and the grouped-default serving path; keep this section only as historical scope for #64.
 
 Issue #64 proves the federated serving architecture with synthetic/private-safe
 data. It does **not** authorize:

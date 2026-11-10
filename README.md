@@ -49,8 +49,10 @@ Do not use resource names alone to decide what is obsolete.
 Feedback from agent searches has a separate private lifecycle from accepted
 conversation history and search-index refresh. See the
 [feedback sync and operator runbook](docs/feedback-sync.md) for current
-availability, local inbox, private record exchange, future Neon adapter,
-verification and recovery. The App-backed feedback tool is not yet live.
+availability, local inbox, private record exchange, Neon feedback store,
+verification and recovery. The App-backed `session_feedback` tool is live as a
+separate bounded append-only capability; it does not change serving policy or
+synchronize automatically with server-local feedback.
 
 ## Runtime boundary
 

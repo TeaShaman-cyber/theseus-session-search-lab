@@ -86,7 +86,7 @@ for forbidden in ("mcp.json", ".mcp.json", ".app.json"):
 print("SESSION_SEARCH_APP_OVERLAY_PASS")
 
 for marker in (
-    "one consumer tool",
+    "two intentional consumer tools",
     "stable qualified tool identity",
     "PATCH /v1/workers/{id}",
     "POST /v1/workers/{id}/tools/refresh",

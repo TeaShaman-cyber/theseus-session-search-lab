@@ -24,7 +24,7 @@ The current Arcade REST API documents the supported in-place operations:
 - `PATCH /v1/workers/{id}` — update the existing worker configuration according to the current Arcade API schema;
 - `POST /v1/workers/{id}/tools/refresh` — refresh the worker's discovered tool definitions after the backend change.
 
-After those operations, verify that the `Session Search` gateway still contains exactly one Session Search consumer tool with the same qualified identity and that fresh discovery exposes the new `search_mode` schema.
+After those operations, verify that the `Session Search` gateway still exposes the same qualified `TheseusSessionSearch.session_search` identity with the refreshed schema and preserves the intentional `TheseusSessionSearch.session_feedback` tool when feedback remains enabled.
 
 In the current ChatGPT-native Arcade management surface, the exposed server actions are Add/Remove/List and do not include worker PATCH or tool refresh. Therefore an in-place URI cutover is `UNAVAILABLE` through that surface alone. Use an authenticated Arcade dashboard/API surface when available; do not silently substitute delete/re-add or a second production tool identity.
 
@@ -36,7 +36,7 @@ The invariant is that the existing App-backed host can discover and execute `The
 
 For retrieval-policy capable deployments, fresh discovery must expose `search_mode` with `strict`, `recall`, and `auto` (default `strict`). The stable `session_search` tool returns exact-text result groups by default, preserving all matched occurrences/provenance under each group. `auto` must return a `retrieval` receipt that distinguishes requested from effective mode; a strict grouped miss may escalate to recall, while `PARTIAL` must remain visible and must not be hidden by retry.
 
-## Current issue232 gateway checkpoint, November 8 2026
+## Historical issue232 gateway checkpoint, November 8 2026
 
 The original Neon router URL remains unchanged; deployment #9 is completed.
 All seven preexisting deployment environment keys were preserved, and one
@@ -46,7 +46,20 @@ session_search and session_feedback. A production App-backed search probe
 returned FOUND across all four shards with none unavailable. The current
 ChatGPT host session still selected ONLY session_search; feedback write
 acceptance requires a fresh host tool discovery and genuine write/readback.
-The one-tool statement above describes the pre-issue232 period.
+Older one-tool acceptance receipts remain historical pre-#232 evidence.
+
+## Current grouped-default checkpoint, November 10 2026
+
+After #264 promotion and runtime rollout:
+- the production Neon router is `ssrouter2` deployment #10, active/completed;
+- the existing Arcade/App-backed search identity remains `TheseusSessionSearch.session_search`;
+- a fresh read-only host probe returned `FOUND`;
+- the result contained `groups[]` and no legacy `hits[]`;
+- four shards were queried with `unavailable_shards=[]`;
+- the retrieval receipt contained `candidate_count`, `candidate_group_count`, `requested_mode`, `effective_mode`, `strict_group_count`, and `returned_group_count`;
+- the gateway continues to have the two intentional consumer tools introduced by #232: `session_search` and `session_feedback`.
+
+This is a dated production checkpoint. Re-read deployment/tool discovery when freshness matters.
 
 ## Current acceptance
 

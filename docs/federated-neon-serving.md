@@ -10,7 +10,7 @@ Issue #64 evaluates a read-only Session Search serving plane whose request path 
 Google Drive / accepted source exports = durable source authority
 Neon project shards                  = rebuildable derived projections
 Session Search router                = deterministic fan-out and merge
-Arcade / serving endpoint            = future ChatGPT-facing request plane
+Arcade / serving endpoint            = future ChatGPT-facing request plane at #64
 MarcoPolo                            = engineering, QA, ingest, rebuild, recovery
 ```
 
@@ -38,7 +38,7 @@ Terminal search states:
 
 A failed shard is never silently omitted.
 
-## 2026-10-24 live synthetic canary
+## Historical live synthetic canary — 2026-10-24
 
 Two disposable Neon PostgreSQL 17 projects were provisioned in `aws-us-east-2`:
 
@@ -56,7 +56,7 @@ Fresh live results from both projects were then passed through the repository `s
 
 Neon automatically exposes provider-managed `cloud_admin -> neondb_owner` administration membership for created roles. That managed edge is distinct from the application reader capability and must not be used as evidence that an end-user serving credential is least privilege.
 
-## Still unverified
+## Historical #64 — still unverified at that checkpoint
 
 This checkpoint does **not** prove the final ChatGPT request path. Pending work under #64:
 

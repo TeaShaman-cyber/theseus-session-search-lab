@@ -92,17 +92,17 @@ before the final group Top-K. Its internal `candidate_budget` is explicit and
 independent from the final `limit`; omitting it preserves the previous `3 * limit`
 policy. The former event-row behavior is available only through the explicit internal `search_corpus_flat()` rollback/replay helper.
 
-Acceptance on the private frozen 20-row gold set:
+Historical #188 local acceptance on the private frozen 20-row gold set:
 - flat ranks from the refactored core matched the previously accepted #188 public
   receipt exactly;
 - grouped ranks from `search_corpus_grouped_recall()` matched the accepted #188
-  grouped ranks exactly for 20/20 cases;
-- no CLI, HTTP, MCP, shard SQL or serving route uses grouped results by default.
+  grouped ranks exactly for 20/20 cases.
 
-This function is a reference seam for algorithm/conformance work, not a production
-backend decision.
+At that checkpoint grouping was still a reference seam and was not the serving
+default. #264 later superseded that deployment state and promoted the same contract
+to the normal local/shard/router/MCP result shape.
 
-## Serverless/Postgres opt-in adapter
+## Historical Postgres precursors and current grouped adapter
 
 `sql/neon/009_exact_text_grouped_retrieval.sql` defines the experimental
 `session_search.search_generation_grouped_v1()` seam. It is deliberately:
@@ -114,9 +114,11 @@ backend decision.
 - provenance-preserving within the bounded candidate pool;
 - separate from `search_generation_v2` / `search_v2`.
 
-`functions/shard/core.mjs` exposes `buildGroupedSearchCall()` for conformance and
-future guarded integration, but the current router/shard serving path still calls
-the existing v2 functions.
+`functions/shard/core.mjs` originally exposed `buildGroupedSearchCall()` only for
+conformance and guarded integration. That statement describes the #188 precursor,
+not the current serving state: after #264 the normal router explicitly requests the
+grouped v3 path, while the older flat v2 path is retained only for rollback/replay
+and rolling-upgrade compatibility.
 
 A real PostgreSQL smoke was executed transactionally on an isolated benchmark
 branch under the existing `session_search_owner` capability. For K=10 it observed
@@ -137,6 +139,10 @@ explicit budget it preserves the measured parity policy
 the grouped SQL path with an explicit candidate budget. Under #264, the normal shard/router path selects grouped results by default. `grouping`, `candidate_budget`, and `result_shape` remain internal controls and are not exposed in the public MCP input schema.
 
 The historical authenticated canary route remains disabled by default for diagnostic compatibility. The normal `/search` route and MCP `session_search` tool now use the same grouped merge directly. Production source defaults to `grouped_v1`; `SESSION_SEARCH_RESULT_SHAPE=flat_v1` is an internal rollback switch, not a public search option.
+
+`sql/neon/012_exact_text_grouped_default.sql` is the current grouped serving migration. It adds `search_generation_grouped_v3()` plus the ACTIVE-generation `search_grouped_v3()` wrapper, supports both strict and recall retrieval, and keeps `candidate_budget` separate from the final result limit. The current router sends `result_shape=grouped_v1` to shards; a missing internal result-shape field remains flat only so an older router can coexist during a rolling upgrade.
+
+Verified production checkpoint on 2026-11-10: router deployment #10 was active/completed; a live App-backed Session Search probe returned `FOUND` with `groups[]`, no legacy `hits[]`, four queried shards and zero unavailable shards. This is runtime evidence for that checkpoint, not a permanent topology constant.
 
 ## Strong-ranker cross-check
 

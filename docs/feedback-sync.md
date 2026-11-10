@@ -64,7 +64,7 @@ router auth/catalog settings. A green CI test does NOT mean the App write tool
 is live. Require a real App tool listing and successful feedback write/readback
 before claiming it.
 
-## Router and Arcade activation acceptance — 2026-11-08
+## Historical router and Arcade activation acceptance — 2026-11-08
 
 Native Neon deployed the source from exact main commit e9c5b23 to the
 existing personal-org ssrouter2 Function with unchanged URI: active
@@ -95,5 +95,7 @@ Current checkpoint: LIVE_APP_FEEDBACK_VERIFIED /
 NEON_READBACK_VERIFIED / SEARCH_PASS / TWO_INDEPENDENT_STORES /
 NO_AUTOMATIC_SYNC.
 Server-local storage remains unchanged. No synchronization is scheduled.
+
+The write/readback above is the #232 acceptance checkpoint. After the #264 grouped-default rollout, the production router advanced to deployment #10. Fresh 2026-11-10 Arcade discovery still exposed both `TheseusSessionSearch.session_search` and `TheseusSessionSearch.session_feedback`. No new feedback write was performed for that docs-currentness probe, so the #10 checkpoint proves tool discovery/availability, not a second end-to-end feedback write.
 
 New Neon resource naming and cleanup rules are in docs/neon-housekeeping.md.
