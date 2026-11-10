@@ -206,22 +206,39 @@ test('shard bounded SQL call carries strict or recall mode through versioned sea
 });
 
 
-test('opt-in grouped shard call requires pinned generation and recall without changing legacy call', () => {
+test('opt-in grouped shard call separates candidate budget from result limit without changing legacy call', () => {
   const generation = 'c'.repeat(64);
   const grouped = buildGroupedSearchCall({
     generation_id: generation,
     query: 'needle',
     scopes: ['dialogue', 'evidence'],
     limit: 10,
+    candidate_budget: 25,
     search_mode: 'recall',
   });
   assert.equal(
     grouped.text,
-    'SELECT session_search.search_generation_grouped_v1($1,$2,$3::text[],$4,$5,$6,$7,$8) AS result',
+    'SELECT session_search.search_generation_grouped_v2($1,$2,$3::text[],$4,$5,$6,$7,$8,$9) AS result',
   );
   assert.deepEqual(grouped.values, [
-    generation, 'needle', ['dialogue', 'evidence'], 10, null, null, null, 'recall',
+    generation, 'needle', ['dialogue', 'evidence'], 10, 25, null, null, null, 'recall',
   ]);
+
+  const parityDefault = buildGroupedSearchCall({
+    generation_id: generation,
+    query: 'needle',
+    limit: 10,
+    search_mode: 'recall',
+  });
+  assert.equal(parityDefault.values[4], 30);
+
+  const cappedDefault = buildGroupedSearchCall({
+    generation_id: generation,
+    query: 'needle',
+    limit: 100,
+    search_mode: 'recall',
+  });
+  assert.equal(cappedDefault.values[4], 300);
 
   const legacy = buildSearchCall({
     generation_id: generation,
@@ -230,6 +247,7 @@ test('opt-in grouped shard call requires pinned generation and recall without ch
     search_mode: 'recall',
   });
   assert.match(legacy.text, /search_generation_v2/);
+  assert.equal(legacy.values.length, 8);
   assert.throws(
     () => buildGroupedSearchCall({ query: 'needle', search_mode: 'recall' }),
     /GENERATION_REQUIRED_FOR_GROUPED_SEARCH/,
@@ -238,4 +256,16 @@ test('opt-in grouped shard call requires pinned generation and recall without ch
     () => buildGroupedSearchCall({ generation_id: generation, query: 'needle', search_mode: 'strict' }),
     /GROUPED_SEARCH_RECALL_ONLY/,
   );
+  for (const candidateBudget of [9, 301, 1.5, '30']) {
+    assert.throws(
+      () => buildGroupedSearchCall({
+        generation_id: generation,
+        query: 'needle',
+        limit: 10,
+        candidate_budget: candidateBudget,
+        search_mode: 'recall',
+      }),
+      /CANDIDATE_BUDGET_OUT_OF_BOUNDS/,
+    );
+  }
 });

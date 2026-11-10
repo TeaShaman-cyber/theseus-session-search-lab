@@ -130,6 +130,14 @@ absent afterward. Public receipt:
 This proves SQL/runtime viability of the opt-in seam, not production relevance
 parity on the federated serverless shards. Cutover remains a separate gated change.
 
+`sql/neon/011_exact_text_grouped_candidate_budget.sql` adds the opt-in
+`search_generation_grouped_v2()` canary contract. It keeps v1 intact but makes
+`candidate_budget` a separate bounded argument from `result_limit`. The internal
+JavaScript builder always supplies both values; when the canary caller omits an
+explicit budget it preserves the measured parity policy
+`min(300, 3 * result_limit)`. The serving handler still does not call this builder,
+so public HTTP/MCP behaviour remains flat and unchanged.
+
 ## Strong-ranker cross-check
 
 A second real-data cross-check reused the surviving #118 two-stage lexical stack:

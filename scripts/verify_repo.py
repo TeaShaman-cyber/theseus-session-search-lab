@@ -58,6 +58,7 @@ REQUIRED = [
     'sql/neon/007_safe_message_tsvector.sql',
     'sql/neon/008_retrieval_policy.sql',
     'sql/neon/009_exact_text_grouped_retrieval.sql',
+    'sql/neon/011_exact_text_grouped_candidate_budget.sql',
     'session_search/shard_bundle.py',
     'scripts/shard_bundle.py',
     'session_search/shard_integrity.py',

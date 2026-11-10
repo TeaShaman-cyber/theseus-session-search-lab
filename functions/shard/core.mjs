@@ -53,8 +53,24 @@ export function buildGroupedSearchCall(input = {}) {
   if (input.search_mode !== 'recall') throw new Error('GROUPED_SEARCH_RECALL_ONLY');
 
   const validated = buildSearchCall(input);
+  const [generationId, query, scopes, resultLimit, sessionId, fromTime, toTime, searchMode] = validated.values;
+  const candidateBudget = input.candidate_budget ?? Math.min(300, resultLimit * 3);
+  if (!Number.isInteger(candidateBudget) || candidateBudget < resultLimit || candidateBudget > 300) {
+    throw new Error('CANDIDATE_BUDGET_OUT_OF_BOUNDS');
+  }
+
   return {
-    text: 'SELECT session_search.search_generation_grouped_v1($1,$2,$3::text[],$4,$5,$6,$7,$8) AS result',
-    values: validated.values,
+    text: 'SELECT session_search.search_generation_grouped_v2($1,$2,$3::text[],$4,$5,$6,$7,$8,$9) AS result',
+    values: [
+      generationId,
+      query,
+      scopes,
+      resultLimit,
+      candidateBudget,
+      sessionId,
+      fromTime,
+      toTime,
+      searchMode,
+    ],
   };
 }

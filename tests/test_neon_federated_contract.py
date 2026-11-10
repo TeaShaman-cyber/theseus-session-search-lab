@@ -11,6 +11,7 @@ READY_MARKER = ROOT / "sql" / "neon" / "005_ready_marker_capability.sql"
 ACTIVATION_MARKER = ROOT / "sql" / "neon" / "006_activation_marker_capability.sql"
 FTS_GUARD = ROOT / "sql" / "neon" / "007_safe_message_tsvector.sql"
 GROUPED_RETRIEVAL = ROOT / "sql" / "neon" / "009_exact_text_grouped_retrieval.sql"
+GROUPED_RETRIEVAL_BUDGET = ROOT / "sql" / "neon" / "011_exact_text_grouped_candidate_budget.sql"
 
 
 class NeonFederatedContractTest(unittest.TestCase):
@@ -37,6 +38,19 @@ class NeonFederatedContractTest(unittest.TestCase):
         self.assertIn("'candidate_count'", text)
         self.assertIn("'groups'", text)
         self.assertNotIn("md5(", text.lower())
+        self.assertNotIn("activate_generation", text)
+
+    def test_grouped_retrieval_v2_separates_candidate_budget_from_result_limit(self):
+        text = GROUPED_RETRIEVAL_BUDGET.read_text()
+        self.assertIn("CREATE FUNCTION session_search.search_generation_grouped_v2", text)
+        self.assertIn("candidate_budget integer", text)
+        self.assertIn("candidate budget out of bounds", text)
+        self.assertIn("candidate_budget < result_limit", text)
+        self.assertIn("candidate_budget > 300", text)
+        self.assertIn("LIMIT candidate_budget", text)
+        self.assertIn("\'candidate_budget\',candidate_budget", text)
+        self.assertIn("search mode must be recall for grouped v2", text)
+        self.assertNotIn("candidate_limit := LEAST(300, result_limit * 3)", text)
         self.assertNotIn("activate_generation", text)
 
     def test_query_plane_migration_exposes_generation_scoped_read_only_surface(self):
