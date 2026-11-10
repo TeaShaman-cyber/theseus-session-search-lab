@@ -8,3 +8,9 @@ test('production router does not select a feedback storage vendor', async () => 
   assert.equal(source.includes('feedback/upstash'), false);
   assert.equal(source.includes('SESSION_SEARCH_FEEDBACK_UPSTASH'), false);
 });
+test('production router leaves grouped canary disabled', async () => {
+  const source = await readFile(new URL('../router/index.mjs', import.meta.url), 'utf8');
+
+  assert.equal(source.includes('groupedCanaryEnabled'), false);
+  assert.equal(source.includes('SESSION_SEARCH_GROUPED_CANARY'), false);
+});

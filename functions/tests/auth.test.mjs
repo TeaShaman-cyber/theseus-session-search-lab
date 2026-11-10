@@ -49,12 +49,13 @@ test('shard accepts the configured bearer token', async () => {
   assert.equal(calls, 1);
 });
 
-test('router rejects unauthenticated search and MCP calls', async () => {
+test('router rejects unauthenticated search, MCP, and enabled grouped-canary calls', async () => {
   const handler = makeRouterHandler({
     catalog: [{ shard_id: 'chatgpt-0001', provider: 'chatgpt', state: 'READY', url: 'https://a.test/search' }],
     fetchImpl: async () => { throw new Error('must not dispatch'); },
     authToken: ROUTER_TOKEN,
     shardAuthToken: SHARD_TOKEN,
+    groupedCanaryEnabled: true,
   });
 
   for (const request of [
@@ -72,6 +73,11 @@ test('router rejects unauthenticated search and MCP calls', async () => {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+    }),
+    new Request('https://router.test/internal/grouped-search', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ query: 'canary', search_mode: 'recall' }),
     }),
   ]) {
     const response = await handler.fetch(request);

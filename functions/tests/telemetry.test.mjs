@@ -139,6 +139,32 @@ test('router propagates W3C trace context to shard and flushes serverless teleme
 });
 
 
+test('grouped canary request keeps its bounded telemetry route name', async () => {
+  const { telemetry, spanExporter } = runtime();
+  try {
+    const handler = makeRouterHandler({
+      catalog: [],
+      telemetry,
+      groupedCanaryEnabled: true,
+      fetchImpl: async () => { throw new Error('empty catalog must not dispatch'); },
+    });
+    const response = await handler.fetch(new Request('https://router.test/internal/grouped-search', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ query: 'canary', search_mode: 'recall', limit: 2, candidate_budget: 6 }),
+    }));
+    assert.equal(response.status, 200);
+    const server = spanExporter.getFinishedSpans().find(
+      (span) => span.name === 'session_search.grouped_search_canary',
+    );
+    assert.ok(server);
+    assert.equal(server.attributes['session_search.route'], 'grouped_search_canary');
+    assert.notEqual(server.attributes['session_search.route'], 'not_found');
+  } finally {
+    await telemetry.shutdown();
+  }
+});
+
 test('request spans expose bounded status and error class for TraceQL window metrics', async () => {
   const { telemetry, spanExporter } = runtime();
   try {
