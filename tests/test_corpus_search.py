@@ -76,6 +76,38 @@ class CorpusSearchTest(unittest.TestCase):
                 sum(group["occurrence_count"] for group in groups), 3
             )
 
+            narrow_groups = search_corpus_grouped_recall(
+                corpus,
+                "lightweight IDE",
+                ["dialogue", "evidence"],
+                2,
+                candidate_budget=2,
+            )
+            widened_groups = search_corpus_grouped_recall(
+                corpus,
+                "lightweight IDE",
+                ["dialogue", "evidence"],
+                2,
+                candidate_budget=3,
+            )
+            self.assertEqual([group["text"] for group in narrow_groups], ["lightweight IDE"])
+            self.assertEqual(
+                [group["text"] for group in widened_groups],
+                ["lightweight IDE", "lightweight IDE unique"],
+            )
+
+    def test_grouped_recall_candidate_budget_cannot_be_smaller_than_result_limit(self):
+        with tempfile.TemporaryDirectory() as td:
+            corpus = build_two_session_corpus(pathlib.Path(td), "copper compass")
+            with self.assertRaisesRegex(ValueError, "CANDIDATE_BUDGET_BELOW_RESULT_LIMIT"):
+                search_corpus_grouped_recall(
+                    corpus,
+                    "copper compass",
+                    ["dialogue", "evidence"],
+                    3,
+                    candidate_budget=2,
+                )
+
     def test_grouped_recall_same_message_id_different_text_stays_distinct(self):
         rows = [
             {"session_id": "a", "message_id": "shared", "ordinal": 0, "text": "alpha"},

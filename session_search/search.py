@@ -151,8 +151,10 @@ def _recall_candidate_rows(
     conn: sqlite3.Connection,
     query: str,
     scopes: list[str],
-    limit: int,
+    result_limit: int,
     session_id: str | None,
+    *,
+    candidate_budget: int | None = None,
 ) -> list[dict]:
     placeholders = ",".join("?" for _ in scopes)
     where = ["messages_fts MATCH ?", f"m.search_class IN ({placeholders})"]
@@ -161,8 +163,14 @@ def _recall_candidate_rows(
         where.append("m.session_id=?")
         params.append(session_id)
 
-    per_session_limit = limit if session_id is not None else min(3, limit)
-    candidate_limit = limit * 3
+    if candidate_budget is None:
+        candidate_budget = result_limit * 3
+    if not isinstance(candidate_budget, int) or isinstance(candidate_budget, bool):
+        raise ValueError("CANDIDATE_BUDGET_OUT_OF_BOUNDS")
+    if candidate_budget < result_limit:
+        raise ValueError("CANDIDATE_BUDGET_BELOW_RESULT_LIMIT")
+
+    per_session_limit = result_limit if session_id is not None else min(3, result_limit)
     sql = f"""
         SELECT * FROM (
             SELECT
@@ -190,11 +198,11 @@ def _recall_candidate_rows(
         ORDER BY score, session_id, ordinal
         LIMIT ?
     """
-    params.extend([per_session_limit, candidate_limit])
+    params.extend([per_session_limit, candidate_budget])
     rows = [dict(row) for row in conn.execute(sql, params).fetchall()]
     for row in rows:
         row.pop("session_rank", None)
-    return rerank_recall_rows(rows, query, candidate_limit)
+    return rerank_recall_rows(rows, query, candidate_budget)
 
 
 def search_corpus_grouped_recall(
@@ -203,6 +211,8 @@ def search_corpus_grouped_recall(
     scopes: list[str],
     limit: int,
     session_id: str | None = None,
+    *,
+    candidate_budget: int | None = None,
 ) -> list[dict]:
     paths = CorpusPaths.from_root(pathlib.Path(corpus_root))
     if not paths.db.exists():
@@ -210,7 +220,15 @@ def search_corpus_grouped_recall(
     conn = sqlite3.connect(paths.db)
     conn.row_factory = sqlite3.Row
     try:
-        candidates = _recall_candidate_rows(conn, query, scopes, limit, session_id)
+        effective_candidate_budget = candidate_budget if candidate_budget is not None else limit * 3
+        candidates = _recall_candidate_rows(
+            conn,
+            query,
+            scopes,
+            limit,
+            session_id,
+            candidate_budget=effective_candidate_budget,
+        )
         return group_exact_search_rows(candidates)[:limit]
     finally:
         conn.close()
@@ -238,7 +256,14 @@ def search_corpus(
             where.append("m.session_id=?")
             params.append(session_id)
         if recall:
-            return _recall_candidate_rows(conn, query, scopes, limit, session_id)[:limit]
+            return _recall_candidate_rows(
+                conn,
+                query,
+                scopes,
+                limit,
+                session_id,
+                candidate_budget=limit * 3,
+            )[:limit]
 
         sql = f"""
             SELECT

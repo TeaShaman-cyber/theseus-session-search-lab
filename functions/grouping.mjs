@@ -48,3 +48,48 @@ export function groupExactTextHits(hits = []) {
   }
   return groups;
 }
+
+function validateGroup(group) {
+  if (group == null || typeof group !== 'object' || Array.isArray(group)) {
+    throw new Error('GROUP_INVALID');
+  }
+  if (typeof group.text !== 'string') throw new Error('GROUP_TEXT_INVALID');
+  if (group.representative == null || typeof group.representative !== 'object'
+      || Array.isArray(group.representative)) {
+    throw new Error('GROUP_REPRESENTATIVE_INVALID');
+  }
+  if (!Array.isArray(group.occurrences)) throw new Error('GROUP_OCCURRENCES_INVALID');
+  if (group.occurrence_count !== group.occurrences.length) {
+    throw new Error('GROUP_OCCURRENCE_COUNT_MISMATCH');
+  }
+}
+
+export function mergeExactTextGroups(rankedGroups = [], resultLimit = rankedGroups.length) {
+  if (!Array.isArray(rankedGroups)) throw new Error('GROUPS_INVALID');
+  if (!Number.isInteger(resultLimit) || resultLimit < 1) {
+    throw new Error('GROUP_RESULT_LIMIT_INVALID');
+  }
+
+  const merged = [];
+  const byText = new Map();
+  for (const inputGroup of rankedGroups) {
+    validateGroup(inputGroup);
+
+    let group = byText.get(inputGroup.text);
+    if (!group) {
+      group = {
+        text: inputGroup.text,
+        representative: { ...inputGroup.representative },
+        occurrence_count: 0,
+        occurrences: [],
+      };
+      byText.set(inputGroup.text, group);
+      merged.push(group);
+    }
+
+    group.occurrences.push(...inputGroup.occurrences.map((occurrence) => ({ ...occurrence })));
+    group.occurrence_count = group.occurrences.length;
+  }
+
+  return merged.slice(0, resultLimit);
+}

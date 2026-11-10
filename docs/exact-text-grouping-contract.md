@@ -82,7 +82,7 @@ implement the measured algorithm.
   candidate pool; the contract preserves all **candidate occurrences** presented to it.
 - No production/API cutover under this document.
 
-Implementation helper: `functions/grouping.mjs`.
+Implementation helpers: `functions/grouping.mjs` owns both single-list exact grouping and the pure, still-unwired `mergeExactTextGroups()` cross-shard group merge.
 Real-corpus evidence: `receipts/188-exact-grouping-real-corpus.public.json`.
 
 ## Local SQLite reference implementation
@@ -90,8 +90,9 @@ Real-corpus evidence: `receipts/188-exact-grouping-real-corpus.public.json`.
 `session_search.search.search_corpus_grouped_recall()` is an opt-in local
 reference implementation. It reuses the same internal recall candidate query and
 reranker as `search_corpus(..., recall=True)`, then applies exact-text grouping
-before the final group Top-K. Existing flat `search_corpus()` behavior remains the
-default and is unchanged.
+before the final group Top-K. Its internal `candidate_budget` is explicit and
+independent from the final `limit`; omitting it preserves the previous `3 * limit`
+policy. Existing flat `search_corpus()` behavior remains the default and is unchanged.
 
 Acceptance on the private frozen 20-row gold set:
 - flat ranks from the refactored core matched the previously accepted #188 public

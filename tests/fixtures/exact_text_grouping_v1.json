@@ -1,25 +1,115 @@
 {
   "hits": [
-    {"session_id":"a","message_id":"m1","ordinal":1,"text":"same","score":9,"search_class":"dialogue","provider":"chatgpt","shard_id":"s1","generation_id":"g1","shard_rank":1},
-    {"session_id":"b","message_id":"m2","ordinal":2,"text":"same","score":8,"search_class":"dialogue","provider":"deepseek","shard_id":"s2","generation_id":"g2","shard_rank":1},
-    {"session_id":"c","message_id":"m1","ordinal":1,"text":"other","score":7,"search_class":"dialogue","provider":"chatgpt","shard_id":"s1","generation_id":"g1","shard_rank":2}
+    {
+      "schema": "theseus.session-search-candidate.v1",
+      "session_id": "a",
+      "message_id": "m1",
+      "ordinal": 1,
+      "text": "same",
+      "search_class": "dialogue",
+      "provider": "chatgpt",
+      "shard_id": "s1",
+      "generation_id": "g1",
+      "shard_rank": 1,
+      "backend_score": 0.9,
+      "backend_score_order": "higher_better"
+    },
+    {
+      "schema": "theseus.session-search-candidate.v1",
+      "session_id": "b",
+      "message_id": "m2",
+      "ordinal": 2,
+      "text": "same",
+      "search_class": "dialogue",
+      "provider": "deepseek",
+      "shard_id": "s2",
+      "generation_id": "g2",
+      "shard_rank": 1,
+      "backend_score": 0.8,
+      "backend_score_order": "higher_better"
+    },
+    {
+      "schema": "theseus.session-search-candidate.v1",
+      "session_id": "c",
+      "message_id": "m1",
+      "ordinal": 1,
+      "text": "other",
+      "search_class": "dialogue",
+      "provider": "chatgpt",
+      "shard_id": "s1",
+      "generation_id": "g1",
+      "shard_rank": 2,
+      "backend_score": 0.7,
+      "backend_score_order": "higher_better"
+    }
   ],
   "expected": [
     {
-      "text":"same",
-      "representative":{"session_id":"a","message_id":"m1","ordinal":1,"score":9,"search_class":"dialogue","provider":"chatgpt","shard_id":"s1","generation_id":"g1","shard_rank":1},
-      "occurrence_count":2,
-      "occurrences":[
-        {"session_id":"a","message_id":"m1","ordinal":1,"search_class":"dialogue","provider":"chatgpt","shard_id":"s1","generation_id":"g1","shard_rank":1},
-        {"session_id":"b","message_id":"m2","ordinal":2,"search_class":"dialogue","provider":"deepseek","shard_id":"s2","generation_id":"g2","shard_rank":1}
+      "text": "same",
+      "representative": {
+        "schema": "theseus.session-search-candidate.v1",
+        "session_id": "a",
+        "message_id": "m1",
+        "ordinal": 1,
+        "search_class": "dialogue",
+        "provider": "chatgpt",
+        "shard_id": "s1",
+        "generation_id": "g1",
+        "shard_rank": 1,
+        "backend_score": 0.9,
+        "backend_score_order": "higher_better"
+      },
+      "occurrence_count": 2,
+      "occurrences": [
+        {
+          "session_id": "a",
+          "message_id": "m1",
+          "ordinal": 1,
+          "search_class": "dialogue",
+          "provider": "chatgpt",
+          "shard_id": "s1",
+          "generation_id": "g1",
+          "shard_rank": 1
+        },
+        {
+          "session_id": "b",
+          "message_id": "m2",
+          "ordinal": 2,
+          "search_class": "dialogue",
+          "provider": "deepseek",
+          "shard_id": "s2",
+          "generation_id": "g2",
+          "shard_rank": 1
+        }
       ]
     },
     {
-      "text":"other",
-      "representative":{"session_id":"c","message_id":"m1","ordinal":1,"score":7,"search_class":"dialogue","provider":"chatgpt","shard_id":"s1","generation_id":"g1","shard_rank":2},
-      "occurrence_count":1,
-      "occurrences":[
-        {"session_id":"c","message_id":"m1","ordinal":1,"search_class":"dialogue","provider":"chatgpt","shard_id":"s1","generation_id":"g1","shard_rank":2}
+      "text": "other",
+      "representative": {
+        "schema": "theseus.session-search-candidate.v1",
+        "session_id": "c",
+        "message_id": "m1",
+        "ordinal": 1,
+        "search_class": "dialogue",
+        "provider": "chatgpt",
+        "shard_id": "s1",
+        "generation_id": "g1",
+        "shard_rank": 2,
+        "backend_score": 0.7,
+        "backend_score_order": "higher_better"
+      },
+      "occurrence_count": 1,
+      "occurrences": [
+        {
+          "session_id": "c",
+          "message_id": "m1",
+          "ordinal": 1,
+          "search_class": "dialogue",
+          "provider": "chatgpt",
+          "shard_id": "s1",
+          "generation_id": "g1",
+          "shard_rank": 2
+        }
       ]
     }
   ]
