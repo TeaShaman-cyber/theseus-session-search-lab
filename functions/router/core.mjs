@@ -14,6 +14,10 @@ const FEEDBACK_FIELDS = new Set([
 const FEEDBACK_OPERATOR_FIELDS = new Set(['name', 'version']);
 
 function validateSearchInput(input = {}) {
+  if (Object.prototype.hasOwnProperty.call(input, 'grouping')
+      || Object.prototype.hasOwnProperty.call(input, 'candidate_budget')) {
+    throw new Error('GROUPED_SEARCH_NOT_PUBLIC');
+  }
   const query = typeof input.query === 'string' ? input.query.trim() : '';
   if (!query || query.length > 512) throw new Error('QUERY_OUT_OF_BOUNDS');
   const scopes = Array.isArray(input.scopes) && input.scopes.length ? input.scopes : ['dialogue', 'evidence'];

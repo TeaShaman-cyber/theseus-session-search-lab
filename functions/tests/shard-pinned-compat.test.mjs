@@ -62,6 +62,65 @@ test('pinned response carries verified protocol witness only after exact-generat
   assert.equal(result.generation_id, B);
 });
 
+test('authenticated internal grouped canary selects grouped v2 without changing flat default', async () => {
+  const calls = [];
+  const shard = makeShardHandler(async (call) => {
+    calls.push(call);
+    return {
+      status: 'FOUND',
+      shard_id: 'synthetic-0001',
+      provider: 'synthetic',
+      generation_id: B,
+      grouping: 'exact_text_v1',
+      candidate_budget: 6,
+      candidate_count: 3,
+      returned_group_count: 2,
+      groups: [
+        { text: 'same', representative: { session_id: 's1' }, occurrence_count: 2, occurrences: [{ session_id: 's1' }, { session_id: 's2' }] },
+        { text: 'other', representative: { session_id: 's3' }, occurrence_count: 1, occurrences: [{ session_id: 's3' }] },
+      ],
+    };
+  }, { authToken: TOKEN });
+
+  const response = await shard.fetch(makeRequest({
+    query: 'needle',
+    generation_id: B,
+    scopes: ['dialogue'],
+    limit: 2,
+    candidate_budget: 6,
+    search_mode: 'recall',
+    grouping: 'exact_text_v1',
+  }));
+
+  assert.equal(response.status, 200);
+  assert.equal(calls.length, 1);
+  assert.equal(
+    calls[0].text,
+    'SELECT session_search.search_generation_grouped_v2($1,$2,$3::text[],$4,$5,$6,$7,$8,$9) AS result',
+  );
+  assert.deepEqual(calls[0].values, [B, 'needle', ['dialogue'], 2, 6, null, null, null, 'recall']);
+  const result = await response.json();
+  assert.equal(result.generation_binding, 'router_pinned_v1');
+  assert.equal(result.grouping, 'exact_text_v1');
+  assert.equal(result.groups[0].occurrence_count, 2);
+});
+
+test('internal grouped canary fails closed for invalid selection without executing SQL', async () => {
+  for (const [body, expected] of [
+    [{ query: 'needle', generation_id: B, candidate_budget: 6, search_mode: 'recall' }, 'CANDIDATE_BUDGET_REQUIRES_GROUPING'],
+    [{ query: 'needle', generation_id: B, grouping: 'semantic', search_mode: 'recall' }, 'GROUPING_OUT_OF_BOUNDS'],
+    [{ query: 'needle', grouping: 'exact_text_v1', search_mode: 'recall' }, 'GENERATION_REQUIRED_FOR_GROUPED_SEARCH'],
+    [{ query: 'needle', generation_id: B, grouping: 'exact_text_v1', search_mode: 'strict' }, 'GROUPED_SEARCH_RECALL_ONLY'],
+  ]) {
+    let calls = 0;
+    const shard = makeShardHandler(async () => { calls += 1; }, { authToken: TOKEN });
+    const response = await shard.fetch(makeRequest(body));
+    assert.equal(response.status, 400, expected);
+    assert.equal((await response.json()).error, expected);
+    assert.equal(calls, 0);
+  }
+});
+
 test('explicit null, empty, malformed, uppercase or non-string generation never falls back to ACTIVE', async () => {
   let calls = 0;
   const shard = makeShardHandler(async () => { calls++; return { status: 'FOUND', generation_id: A, hits: [] }; }, { authToken: TOKEN });
