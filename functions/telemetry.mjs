@@ -14,7 +14,7 @@ import { SimpleSpanProcessor, TracerProvider } from '@opentelemetry/sdk-trace';
 
 const propagator = new W3CTraceContextPropagator();
 const ERROR_CLASSES = new Set(['none', 'validation', 'not_found', 'upstream', 'timeout', 'internal', 'not_ready']);
-const ROUTES = new Set(['health', 'search', 'mcp', 'not_found']);
+const ROUTES = new Set(['health', 'search', 'mcp', 'grouped_search_canary', 'not_found']);
 const RESULT_STATUSES = new Set(['OK', 'FOUND', 'NO_SIGNAL', 'PARTIAL', 'READY', 'BUILDING', 'ACTIVATED', 'ERROR', 'UNKNOWN']);
 const SAFE_ID = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const GENERATION_ID = /^[0-9a-f]{64}$/;
