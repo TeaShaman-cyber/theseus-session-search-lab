@@ -6,6 +6,7 @@ import { assertFeedbackDatabaseUrl, makeFeedbackWriter } from './feedback.mjs';
 const rawCatalog = process.env.SESSION_SEARCH_CATALOG;
 const authToken = process.env.SESSION_SEARCH_ROUTER_AUTH_TOKEN;
 const shardAuthToken = process.env.SESSION_SEARCH_SHARD_AUTH_TOKEN;
+const resultShape = process.env.SESSION_SEARCH_RESULT_SHAPE ?? 'grouped_v1';
 
 if (!rawCatalog) throw new Error('SESSION_SEARCH_CATALOG_MISSING');
 if (!authToken) throw new Error('SESSION_SEARCH_ROUTER_AUTH_TOKEN_MISSING');
@@ -37,4 +38,11 @@ if (feedbackDatabaseUrl) {
   feedbackWriter = makeFeedbackWriter(sql.query.bind(sql));
 }
 
-export default makeRouterHandler({ catalog, telemetry, authToken, shardAuthToken, feedbackWriter });
+export default makeRouterHandler({
+  catalog,
+  telemetry,
+  authToken,
+  shardAuthToken,
+  feedbackWriter,
+  resultShape,
+});

@@ -14,7 +14,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from session_search.corpus_store import CorpusPaths, ingest_artifact, verify_corpus
-from session_search.search import search_corpus
+from session_search.search import search_corpus_flat as search_corpus
 
 SCHEMA = "theseus.session-search-authority-retrieval-benchmark.v0"
 SCOPES = ["dialogue", "evidence"]

@@ -24,6 +24,34 @@ function makeShardHandler(executeSearch, options = {}) {
   );
 }
 
+function groupedPayload({
+  generationId,
+  shardId,
+  provider,
+  text = null,
+  sessionId = 's',
+  messageId = 'm',
+  ordinal = 1,
+}) {
+  const groups = text == null ? [] : [{
+    text,
+    representative: { session_id: sessionId, message_id: messageId, ordinal },
+    occurrence_count: 1,
+    occurrences: [{ session_id: sessionId, message_id: messageId, ordinal }],
+  }];
+  return {
+    status: groups.length ? 'FOUND' : 'NO_SIGNAL',
+    generation_binding: 'router_pinned_v1',
+    generation_id: generationId,
+    ...(shardId ? { shard_id: shardId } : {}),
+    ...(provider ? { provider } : {}),
+    grouping: 'exact_text_v1',
+    candidate_count: groups.length,
+    returned_group_count: groups.length,
+    groups,
+  };
+}
+
 function makeRouterHandler(options) {
   return withBearer(
     makeRouterHandlerImpl({
@@ -36,7 +64,7 @@ function makeRouterHandler(options) {
 }
 
 
-test('shard HTTP adapter executes one bounded query and returns its result', async () => {
+test('shard keeps missing result_shape flat for rolling-upgrade compatibility', async () => {
   const calls = [];
   const handler = makeShardHandler(async (call) => {
     calls.push(call);
@@ -49,7 +77,29 @@ test('shard HTTP adapter executes one bounded query and returns its result', asy
   }));
   assert.equal(response.status, 200);
   assert.equal(calls.length, 1);
-  assert.deepEqual((await response.json()).hits.map((x) => x.message_id), ['c1']);
+  assert.match(calls[0].text, /search_v2/);
+  assert.equal((await response.json()).hits[0].message_id, 'c1');
+});
+
+test('shard executes grouped v3 when the current router requests grouped_v1', async () => {
+  const calls = [];
+  const handler = makeShardHandler(async (call) => {
+    calls.push(call);
+    return groupedPayload({ generationId: 'a'.repeat(64), text: 'copper compass', messageId: 'c1' });
+  });
+  const response = await handler.fetch(new Request('https://shard.test/search', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      query: 'copper compass', scopes: ['dialogue'], limit: 8, result_shape: 'grouped_v1',
+    }),
+  }));
+  assert.equal(response.status, 200);
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].text, /search_grouped_v3/);
+  const result = await response.json();
+  assert.equal(result.grouping, 'exact_text_v1');
+  assert.equal(result.groups[0].text, 'copper compass');
 });
 
 test('shard logs redact database error messages', async () => {
@@ -75,7 +125,7 @@ test('shard logs redact database error messages', async () => {
   assert.equal(logs[0].includes('secret-pass'), false);
 });
 
-test('router HTTP adapter fans out and merges the same search path', async () => {
+test('router HTTP adapter defaults to exact-text groups across shards', async () => {
   const catalog = [
     { shard_id: 'chatgpt-0001', provider: 'chatgpt', generation_id: 'a'.repeat(64), state: 'READY', url: 'https://a.test/search' },
     { shard_id: 'hermes-0001', provider: 'hermes', generation_id: 'b'.repeat(64), state: 'READY', url: 'https://b.test/search' },
@@ -85,12 +135,17 @@ test('router HTTP adapter fans out and merges the same search path', async () =>
     seen.push(String(url));
     const request = JSON.parse(init.body);
     assert.equal(request.query, 'copper compass');
+    assert.equal(request.result_shape, 'grouped_v1');
+    assert.equal(request.candidate_budget, 24);
     const a = String(url).includes('a.test');
-    return Response.json({ generation_binding: 'router_pinned_v1',
-      status: 'FOUND',
-      generation_id: a ? 'a'.repeat(64) : 'b'.repeat(64),
-      hits: [{ session_id: a ? 'ca' : 'hb', message_id: a ? 'c1' : 'h1', ordinal: 1, text: 'shared' }],
-    });
+    return Response.json(groupedPayload({
+      generationId: a ? 'a'.repeat(64) : 'b'.repeat(64),
+      shardId: a ? 'chatgpt-0001' : 'hermes-0001',
+      provider: a ? 'chatgpt' : 'hermes',
+      text: 'shared',
+      sessionId: a ? 'ca' : 'hb',
+      messageId: a ? 'c1' : 'h1',
+    }));
   };
   const handler = makeRouterHandler({ catalog, fetchImpl: fakeFetch });
   const response = await handler.fetch(new Request('https://router.test/search', {
@@ -100,10 +155,18 @@ test('router HTTP adapter fans out and merges the same search path', async () =>
   }));
   const result = await response.json();
   assert.equal(result.status, 'FOUND');
+  assert.equal(result.grouping, 'exact_text_v1');
   assert.match(result.request_ref, /^[0-9a-f]{32}$/);
   assert.deepEqual(seen.sort(), ['https://a.test/search', 'https://b.test/search']);
-  assert.deepEqual(result.hits.map((x) => x.shard_id), ['chatgpt-0001', 'hermes-0001']);
+  assert.equal(result.groups.length, 1);
+  assert.equal(result.groups[0].text, 'shared');
+  assert.equal(result.groups[0].occurrence_count, 2);
+  assert.deepEqual(
+    result.groups[0].occurrences.map((item) => item.shard_id).sort(),
+    ['chatgpt-0001', 'hermes-0001'],
+  );
 });
+
 
 test('grouped router canary is disabled by default', async () => {
   const handler = makeRouterHandler({ catalog: [] });
@@ -125,7 +188,7 @@ test('enabled grouped router canary fans out grouped shard requests and merges e
   const fakeFetch = async (url, init) => {
     const request = JSON.parse(init.body);
     seen.push(request);
-    assert.equal(request.grouping, 'exact_text_v1');
+    assert.equal(request.result_shape, 'grouped_v1');
     assert.equal(request.candidate_budget, 6);
     assert.equal(request.search_mode, 'recall');
     const chatgpt = String(url).includes('a.test');
@@ -181,15 +244,18 @@ test('enabled grouped router canary fans out grouped shard requests and merges e
   assert.equal(seen.length, 2);
 });
 
-test('router MCP tool call reuses federated search', async () => {
+test('router MCP tool returns the grouped default result', async () => {
   const catalog = [
     { shard_id: 'chatgpt-0001', provider: 'chatgpt', generation_id: 'a'.repeat(64), state: 'READY', url: 'https://a.test/search' },
   ];
-  const fakeFetch = async () => Response.json({ generation_binding: 'router_pinned_v1',
-    status: 'FOUND',
-    generation_id: 'a'.repeat(64),
-    hits: [{ session_id: 'ca', message_id: 'c1', ordinal: 1, text: 'shared' }],
-  });
+  const fakeFetch = async () => Response.json(groupedPayload({
+    generationId: 'a'.repeat(64),
+    shardId: 'chatgpt-0001',
+    provider: 'chatgpt',
+    text: 'shared',
+    sessionId: 'ca',
+    messageId: 'c1',
+  }));
   const handler = makeRouterHandler({ catalog, fetchImpl: fakeFetch });
   const response = await handler.fetch(new Request('https://router.test/mcp', {
     method: 'POST',
@@ -202,23 +268,25 @@ test('router MCP tool call reuses federated search', async () => {
     }),
   }));
   const message = await response.json();
-  assert.equal(message.result.structuredContent.status, 'FOUND');
-  assert.match(message.result.structuredContent.request_ref, /^[0-9a-f]{32}$/);
-  assert.equal(message.result.structuredContent.hits[0].shard_id, 'chatgpt-0001');
+  const result = message.result.structuredContent;
+  assert.equal(result.status, 'FOUND');
+  assert.equal(result.grouping, 'exact_text_v1');
+  assert.match(result.request_ref, /^[0-9a-f]{32}$/);
+  assert.equal(result.groups[0].representative.shard_id, 'chatgpt-0001');
 });
 
 
-test('router times out a stalled shard and preserves healthy hits as PARTIAL', async () => {
+test('router times out a stalled shard and preserves healthy groups as PARTIAL', async () => {
   const catalog = [
     { shard_id: 'chatgpt-0001', provider: 'chatgpt', generation_id: 'a'.repeat(64), state: 'READY', url: 'https://a.test/search' },
     { shard_id: 'hermes-0001', provider: 'hermes', generation_id: 'b'.repeat(64), state: 'READY', url: 'https://b.test/search' },
   ];
   const fakeFetch = async (url) => {
     if (String(url).includes('a.test')) {
-      return Response.json({ generation_binding: 'router_pinned_v1',
-        status: 'FOUND', generation_id: 'a'.repeat(64),
-        hits: [{ session_id: 'ca', message_id: 'c1', ordinal: 1, text: 'healthy' }],
-      });
+      return Response.json(groupedPayload({
+        generationId: 'a'.repeat(64), shardId: 'chatgpt-0001', provider: 'chatgpt',
+        text: 'healthy', sessionId: 'ca', messageId: 'c1',
+      }));
     }
     return {
       ok: true,
@@ -235,12 +303,12 @@ test('router times out a stalled shard and preserves healthy hits as PARTIAL', a
   }));
   const result = await response.json();
   assert.equal(result.status, 'PARTIAL');
-  assert.deepEqual(result.hits.map((x) => x.shard_id), ['chatgpt-0001']);
+  assert.deepEqual(result.groups.map((x) => x.representative.shard_id), ['chatgpt-0001']);
   assert.deepEqual(result.unavailable_shards, [{ shard_id: 'hermes-0001', reason: 'TIMEOUT' }]);
 });
 
 
-test('router auto mode escalates NO_SIGNAL strict search to recall and returns retrieval receipt', async () => {
+test('router auto mode escalates grouped NO_SIGNAL to grouped recall with receipt', async () => {
   const catalog = [
     { shard_id: 'chatgpt-0001', provider: 'chatgpt', generation_id: 'a'.repeat(64), state: 'READY', url: 'https://a.test/search' },
   ];
@@ -249,12 +317,12 @@ test('router auto mode escalates NO_SIGNAL strict search to recall and returns r
     const request = JSON.parse(init.body);
     seenModes.push(request.search_mode);
     if (request.search_mode === 'strict') {
-      return Response.json({ generation_binding: 'router_pinned_v1', status: 'NO_SIGNAL', generation_id: 'a'.repeat(64), hits: [] });
+      return Response.json(groupedPayload({ generationId: 'a'.repeat(64) }));
     }
-    return Response.json({ generation_binding: 'router_pinned_v1',
-      status: 'FOUND', generation_id: 'a'.repeat(64),
-      hits: [{ session_id: 'ca', message_id: 'c1', ordinal: 1, text: 'recalled' }],
-    });
+    return Response.json(groupedPayload({
+      generationId: 'a'.repeat(64), shardId: 'chatgpt-0001', provider: 'chatgpt',
+      text: 'recalled', sessionId: 'ca', messageId: 'c1',
+    }));
   };
   const handler = makeRouterHandler({ catalog, fetchImpl: fakeFetch });
   const response = await handler.fetch(new Request('https://router.test/search', {
@@ -267,11 +335,13 @@ test('router auto mode escalates NO_SIGNAL strict search to recall and returns r
   assert.deepEqual(result.retrieval, {
     requested_mode: 'auto',
     effective_mode: 'recall',
-    strict_hit_count: 0,
+    strict_group_count: 0,
     candidate_count: 1,
-    returned_hit_count: 1,
+    candidate_group_count: 1,
+    returned_group_count: 1,
   });
 });
+
 
 test('router auto mode does not hide PARTIAL by escalating', async () => {
   const catalog = [
@@ -283,7 +353,7 @@ test('router auto mode does not hide PARTIAL by escalating', async () => {
     const request = JSON.parse(init.body);
     seenModes.push(request.search_mode);
     if (String(url).includes('b.test')) return new Response('bad', { status: 503 });
-    return Response.json({ generation_binding: 'router_pinned_v1', status: 'NO_SIGNAL', generation_id: 'a'.repeat(64), hits: [] });
+    return Response.json(groupedPayload({ generationId: 'a'.repeat(64) }));
   };
   const handler = makeRouterHandler({ catalog, fetchImpl: fakeFetch });
   const response = await handler.fetch(new Request('https://router.test/search', {

@@ -10,7 +10,7 @@ import sqlite3
 import statistics
 
 from session_search.corpus_lock import resolve_corpus_lock
-from session_search.search import fts_query, rerank_recall_rows, search_corpus
+from session_search.search import fts_query, rerank_recall_rows, search_corpus_flat as search_corpus
 
 SCOPES = ["dialogue", "evidence"]
 

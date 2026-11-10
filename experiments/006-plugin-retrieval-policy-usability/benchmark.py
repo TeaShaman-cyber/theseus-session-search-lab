@@ -14,7 +14,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from session_search.corpus_store import ingest_artifact, verify_corpus
-from session_search.search import search_corpus
+from session_search.search import search_corpus_flat as search_corpus
 
 SCHEMA = "theseus.session-search-plugin-retrieval-policy-usability.v0"
 LIMIT = 8

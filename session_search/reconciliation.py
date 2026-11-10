@@ -152,9 +152,9 @@ def reconcile_search(
     session_id: str | None = None,
     recall: bool = False,
 ) -> dict[str, Any]:
-    from .search import search_corpus
+    from .search import search_corpus_flat
 
-    strict = search_corpus(
+    strict = search_corpus_flat(
         corpus_root,
         query,
         scopes,
@@ -163,7 +163,7 @@ def reconcile_search(
         recall=False,
     )
     recalled = (
-        search_corpus(
+        search_corpus_flat(
             corpus_root,
             query,
             scopes,
@@ -241,7 +241,7 @@ def reconcile_search(
         for form in expanded_forms:
             expanded = _merge_rows(
                 expanded,
-                search_corpus(
+                search_corpus_flat(
                     corpus_root,
                     form,
                     scopes,

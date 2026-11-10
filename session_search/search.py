@@ -87,7 +87,21 @@ def rerank_recall_rows(rows: list[dict], query: str, limit: int) -> list[dict]:
     return ranked
 
 
-def search(db: str, query: str, scopes: list[str], limit: int) -> list[dict]:
+def _bounded_candidate_budget(result_limit: int, candidate_budget: int | None = None) -> int:
+    if not isinstance(result_limit, int) or isinstance(result_limit, bool) or result_limit < 1 or result_limit > 100:
+        raise ValueError("RESULT_LIMIT_OUT_OF_BOUNDS")
+    if candidate_budget is None:
+        candidate_budget = min(300, result_limit * 3)
+    if not isinstance(candidate_budget, int) or isinstance(candidate_budget, bool):
+        raise ValueError("CANDIDATE_BUDGET_OUT_OF_BOUNDS")
+    if candidate_budget < result_limit:
+        raise ValueError("CANDIDATE_BUDGET_BELOW_RESULT_LIMIT")
+    if candidate_budget > 300:
+        raise ValueError("CANDIDATE_BUDGET_OUT_OF_BOUNDS")
+    return candidate_budget
+
+
+def search_flat(db: str, query: str, scopes: list[str], limit: int) -> list[dict]:
     conn = sqlite3.connect(db)
     conn.row_factory = sqlite3.Row
     try:
@@ -104,6 +118,18 @@ def search(db: str, query: str, scopes: list[str], limit: int) -> list[dict]:
         return [dict(r) for r in rows]
     finally:
         conn.close()
+
+
+def search(
+    db: str,
+    query: str,
+    scopes: list[str],
+    limit: int,
+    *,
+    candidate_budget: int | None = None,
+) -> list[dict]:
+    budget = _bounded_candidate_budget(limit, candidate_budget)
+    return group_exact_search_rows(search_flat(db, query, scopes, budget))[:limit]
 
 
 
@@ -147,6 +173,44 @@ def group_exact_search_rows(rows: list[dict]) -> list[dict]:
     return groups
 
 
+def _strict_candidate_rows(
+    conn: sqlite3.Connection,
+    query: str,
+    scopes: list[str],
+    session_id: str | None,
+    *,
+    candidate_budget: int,
+) -> list[dict]:
+    placeholders = ",".join("?" for _ in scopes)
+    where = ["messages_fts MATCH ?", f"m.search_class IN ({placeholders})"]
+    params: list[object] = [fts_query(query), *scopes]
+    if session_id is not None:
+        where.append("m.session_id=?")
+        params.append(session_id)
+    sql = f"""
+        SELECT
+            m.session_id,
+            s.title AS session_title,
+            s.coverage_state AS session_coverage,
+            m.ordinal,
+            m.message_id,
+            m.role,
+            m.content_type,
+            m.search_class,
+            m.create_time,
+            m.text,
+            bm25(messages_fts) AS score
+        FROM messages_fts
+        JOIN messages m ON m.row_id=messages_fts.rowid
+        JOIN sessions s ON s.session_id=m.session_id
+        WHERE {' AND '.join(where)}
+        ORDER BY score, m.session_id, m.ordinal
+        LIMIT ?
+    """
+    params.append(candidate_budget)
+    return [dict(row) for row in conn.execute(sql, params).fetchall()]
+
+
 def _recall_candidate_rows(
     conn: sqlite3.Connection,
     query: str,
@@ -164,11 +228,13 @@ def _recall_candidate_rows(
         params.append(session_id)
 
     if candidate_budget is None:
-        candidate_budget = result_limit * 3
+        candidate_budget = min(300, result_limit * 3)
     if not isinstance(candidate_budget, int) or isinstance(candidate_budget, bool):
         raise ValueError("CANDIDATE_BUDGET_OUT_OF_BOUNDS")
     if candidate_budget < result_limit:
         raise ValueError("CANDIDATE_BUDGET_BELOW_RESULT_LIMIT")
+    if candidate_budget > 300:
+        raise ValueError("CANDIDATE_BUDGET_OUT_OF_BOUNDS")
 
     per_session_limit = result_limit if session_id is not None else min(3, result_limit)
     sql = f"""
@@ -214,27 +280,18 @@ def search_corpus_grouped_recall(
     *,
     candidate_budget: int | None = None,
 ) -> list[dict]:
-    paths = CorpusPaths.from_root(pathlib.Path(corpus_root))
-    if not paths.db.exists():
-        raise ValueError("CORPUS_PROJECTION_MISSING")
-    conn = sqlite3.connect(paths.db)
-    conn.row_factory = sqlite3.Row
-    try:
-        effective_candidate_budget = candidate_budget if candidate_budget is not None else limit * 3
-        candidates = _recall_candidate_rows(
-            conn,
-            query,
-            scopes,
-            limit,
-            session_id,
-            candidate_budget=effective_candidate_budget,
-        )
-        return group_exact_search_rows(candidates)[:limit]
-    finally:
-        conn.close()
+    return search_corpus(
+        corpus_root,
+        query,
+        scopes,
+        limit,
+        session_id=session_id,
+        recall=True,
+        candidate_budget=candidate_budget,
+    )
 
 
-def search_corpus(
+def search_corpus_flat(
     corpus_root: pathlib.Path,
     query: str,
     scopes: list[str],
@@ -248,13 +305,6 @@ def search_corpus(
     conn = sqlite3.connect(paths.db)
     conn.row_factory = sqlite3.Row
     try:
-        placeholders = ",".join("?" for _ in scopes)
-        where = ["messages_fts MATCH ?", f"m.search_class IN ({placeholders})"]
-        match_query = fts_query(query, operator="OR" if recall else "AND")
-        params: list[object] = [match_query, *scopes]
-        if session_id is not None:
-            where.append("m.session_id=?")
-            params.append(session_id)
         if recall:
             return _recall_candidate_rows(
                 conn,
@@ -262,31 +312,41 @@ def search_corpus(
                 scopes,
                 limit,
                 session_id,
-                candidate_budget=limit * 3,
+                candidate_budget=min(300, limit * 3),
             )[:limit]
+        return _strict_candidate_rows(
+            conn, query, scopes, session_id, candidate_budget=limit
+        )
+    finally:
+        conn.close()
 
-        sql = f"""
-            SELECT
-                m.session_id,
-                s.title AS session_title,
-                s.coverage_state AS session_coverage,
-                m.ordinal,
-                m.message_id,
-                m.role,
-                m.content_type,
-                m.search_class,
-                m.create_time,
-                m.text,
-                bm25(messages_fts) AS score
-            FROM messages_fts
-            JOIN messages m ON m.row_id=messages_fts.rowid
-            JOIN sessions s ON s.session_id=m.session_id
-            WHERE {' AND '.join(where)}
-            ORDER BY score, m.session_id, m.ordinal
-            LIMIT ?
-        """
-        params.append(limit)
-        return [dict(row) for row in conn.execute(sql, params).fetchall()]
+
+def search_corpus(
+    corpus_root: pathlib.Path,
+    query: str,
+    scopes: list[str],
+    limit: int,
+    session_id: str | None = None,
+    recall: bool = False,
+    *,
+    candidate_budget: int | None = None,
+) -> list[dict]:
+    paths = CorpusPaths.from_root(pathlib.Path(corpus_root))
+    if not paths.db.exists():
+        raise ValueError("CORPUS_PROJECTION_MISSING")
+    budget = _bounded_candidate_budget(limit, candidate_budget)
+    conn = sqlite3.connect(paths.db)
+    conn.row_factory = sqlite3.Row
+    try:
+        if recall:
+            candidates = _recall_candidate_rows(
+                conn, query, scopes, limit, session_id, candidate_budget=budget
+            )
+        else:
+            candidates = _strict_candidate_rows(
+                conn, query, scopes, session_id, candidate_budget=budget
+            )
+        return group_exact_search_rows(candidates)[:limit]
     finally:
         conn.close()
 
@@ -363,22 +423,28 @@ def main(argv: list[str] | None = None) -> int:
                 f"mode={reconciliation_result['query_mode']} ==="
             )
         for i, row in enumerate(rows, 1):
-            if corpus_mode:
-                suffix = ""
-                if reconciliation_result is not None:
-                    suffix = (
-                        f" basis={row['retrieval_basis']} "
-                        f"promotion={row['promotion_eligibility']}"
-                    )
+            if reconciliation_result is None:
+                representative = row["representative"]
+                session = representative.get("session_id", "legacy")
+                coverage = representative.get("session_coverage", "UNKNOWN")
+                scope = representative.get("search_class", "unknown")
+                ordinal = representative.get("ordinal", "?")
+                role = representative.get("role", "unknown")
                 print(
-                    f"=== HIT {i} session={row['session_id']} coverage={row['session_coverage']} "
-                    f"scope={row['search_class']} ordinal={row['ordinal']} role={row['role']}{suffix} ==="
+                    f"=== RESULT {i} occurrences={row['occurrence_count']} session={session} "
+                    f"coverage={coverage} scope={scope} ordinal={ordinal} role={role} ==="
                 )
-            else:
-                print(
-                    f"=== HIT {i} scope={row['search_class']} ordinal={row['ordinal']} "
-                    f"role={row['role']} ==="
-                )
+                print(row["text"])
+                continue
+
+            suffix = (
+                f" basis={row['retrieval_basis']} "
+                f"promotion={row['promotion_eligibility']}"
+            )
+            print(
+                f"=== HIT {i} session={row['session_id']} coverage={row['session_coverage']} "
+                f"scope={row['search_class']} ordinal={row['ordinal']} role={row['role']}{suffix} ==="
+            )
             print(row["text"])
     return 0
 

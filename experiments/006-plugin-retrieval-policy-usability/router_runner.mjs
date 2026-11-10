@@ -19,6 +19,10 @@ async function runMode(searchMode) {
     catalog,
     authToken: ROUTER_TOKEN,
     shardAuthToken: SHARD_TOKEN,
+    // This frozen benchmark compares the historical flat retrieval-policy contract.
+    // The production default is grouped; flat_v1 is retained only as an internal
+    // rollback/replay seam so the old receipt remains reproducible.
+    resultShape: 'flat_v1',
     fetchImpl: async (_url, options) => {
       const body = JSON.parse(options.body);
       dispatchModes.push(body.search_mode);

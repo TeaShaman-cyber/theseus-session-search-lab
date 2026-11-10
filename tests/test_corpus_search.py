@@ -7,7 +7,14 @@ import unittest
 
 from session_search.corpus_store import ingest_artifact
 from session_search.importer import import_export
-from session_search.search import query_tokens, search, search_corpus, search_corpus_grouped_recall
+from session_search.search import (
+    query_tokens,
+    search,
+    search_corpus,
+    search_corpus_flat,
+    search_corpus_grouped_recall,
+    search_flat,
+)
 from tests.test_bootstrap_contract import synthetic_export
 from tests.test_corpus_store import _message, _write_capture
 
@@ -55,14 +62,26 @@ class CorpusSearchTest(unittest.TestCase):
                 )
                 ingest_artifact(capture, corpus)
 
-            flat = search_corpus(
+            flat = search_corpus_flat(
                 corpus, "lightweight IDE", ["dialogue", "evidence"], 2, recall=True
             )
             groups = search_corpus_grouped_recall(
                 corpus, "lightweight IDE", ["dialogue", "evidence"], 2
             )
+            default_strict_groups = search_corpus(
+                corpus,
+                "lightweight IDE",
+                ["dialogue", "evidence"],
+                2,
+                candidate_budget=3,
+            )
 
             self.assertEqual(len(flat), 2)
+            self.assertEqual(
+                [group["text"] for group in default_strict_groups],
+                ["lightweight IDE", "lightweight IDE unique"],
+            )
+            self.assertEqual(default_strict_groups[0]["occurrence_count"], 2)
             self.assertEqual([group["text"] for group in groups], [
                 "lightweight IDE", "lightweight IDE unique"
             ])
@@ -124,10 +143,10 @@ class CorpusSearchTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             corpus = build_two_session_corpus(pathlib.Path(td), "copper compass")
             rows = search_corpus(corpus, "copper compass", ["dialogue", "evidence"], 10)
-            self.assertEqual({row["session_id"] for row in rows}, {"session-a", "session-b"})
-            self.assertEqual({row["session_title"] for row in rows}, {"Alpha", "Beta"})
+            self.assertEqual({row["representative"]["session_id"] for row in rows}, {"session-a", "session-b"})
+            self.assertEqual({row["representative"]["session_title"] for row in rows}, {"Alpha", "Beta"})
             self.assertEqual(
-                {row["session_coverage"] for row in rows},
+                {row["representative"]["session_coverage"] for row in rows},
                 {"COMPLETE_EXPOSED_CONVERSATION", "PARTIAL_SESSION_SLICE"},
             )
 
@@ -142,7 +161,7 @@ class CorpusSearchTest(unittest.TestCase):
                 session_id="session-b",
             )
             self.assertTrue(rows)
-            self.assertEqual({row["session_id"] for row in rows}, {"session-b"})
+            self.assertEqual({row["representative"]["session_id"] for row in rows}, {"session-b"})
 
     def test_recall_mode_expands_candidates_without_changing_strict_default(self):
         with tempfile.TemporaryDirectory() as td:
@@ -173,8 +192,8 @@ class CorpusSearchTest(unittest.TestCase):
                 corpus, "lightweight IDE", ["dialogue", "evidence"], 8, recall=True
             )
 
-            self.assertEqual([row["session_id"] for row in strict], ["session-distractor"])
-            self.assertIn("session-target", {row["session_id"] for row in recalled})
+            self.assertEqual([row["representative"]["session_id"] for row in strict], ["session-distractor"])
+            self.assertIn("session-target", {row["representative"]["session_id"] for row in recalled})
 
     def test_recall_ranks_dialogue_session_ahead_of_single_evidence_dump(self):
         with tempfile.TemporaryDirectory() as td:
@@ -205,8 +224,8 @@ class CorpusSearchTest(unittest.TestCase):
             )
 
             self.assertTrue(rows)
-            self.assertEqual(rows[0]["session_id"], "session-target")
-            self.assertEqual(rows[0]["search_class"], "dialogue")
+            self.assertEqual(rows[0]["representative"]["session_id"], "session-target")
+            self.assertEqual(rows[0]["representative"]["search_class"], "dialogue")
 
     def test_recall_output_keeps_session_diversity_when_one_session_has_many_hits(self):
         with tempfile.TemporaryDirectory() as td:
@@ -239,8 +258,8 @@ class CorpusSearchTest(unittest.TestCase):
                 corpus, "lightweight IDE", ["dialogue", "evidence"], 8, recall=True
             )
 
-            self.assertEqual(rows[0]["session_id"], "session-dominant")
-            self.assertIn("session-target", {row["session_id"] for row in rows})
+            self.assertEqual(rows[0]["representative"]["session_id"], "session-dominant")
+            self.assertIn("session-target", {row["representative"]["session_id"] for row in rows})
 
     def test_recall_ranks_complete_lexical_coverage_before_dialogue_provenance(self):
         with tempfile.TemporaryDirectory() as td:
@@ -268,7 +287,7 @@ class CorpusSearchTest(unittest.TestCase):
             )
 
             self.assertTrue(rows)
-            self.assertEqual(rows[0]["session_id"], "session-evidence")
+            self.assertEqual(rows[0]["representative"]["session_id"], "session-evidence")
 
     def test_recall_rerank_normalizes_diacritics_and_hyphen_like_fts5(self):
         with tempfile.TemporaryDirectory() as td:
@@ -296,7 +315,7 @@ class CorpusSearchTest(unittest.TestCase):
             )
 
             self.assertTrue(rows)
-            self.assertEqual(rows[0]["session_id"], "session-target")
+            self.assertEqual(rows[0]["representative"]["session_id"], "session-target")
 
     def test_recall_rerank_casefolds_like_unicode61_for_sigma_and_long_s(self):
         with tempfile.TemporaryDirectory() as td:
@@ -324,7 +343,7 @@ class CorpusSearchTest(unittest.TestCase):
             )
 
             self.assertTrue(rows)
-            self.assertEqual(rows[0]["session_id"], "session-target")
+            self.assertEqual(rows[0]["representative"]["session_id"], "session-target")
 
     def test_strict_search_preserves_unicode_tokens_that_casefold_expands(self):
         with tempfile.TemporaryDirectory() as td:
@@ -341,7 +360,7 @@ class CorpusSearchTest(unittest.TestCase):
 
             rows = search_corpus(corpus, "Straße", ["dialogue", "evidence"], 8)
 
-            self.assertEqual([row["session_id"] for row in rows], ["session-unicode"])
+            self.assertEqual([row["representative"]["session_id"] for row in rows], ["session-unicode"])
 
     def test_explicit_corpus_overrides_environment_default(self):
         with tempfile.TemporaryDirectory() as td:
@@ -411,7 +430,7 @@ class CorpusSearchTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             rows = json.loads(result.stdout)
             self.assertTrue(rows)
-            self.assertEqual(rows[0]["session_id"], "session-target")
+            self.assertEqual(rows[0]["representative"]["session_id"], "session-target")
 
     def test_environment_default_enables_no_path_cli(self):
         with tempfile.TemporaryDirectory() as td:
@@ -427,21 +446,25 @@ class CorpusSearchTest(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             rows = json.loads(result.stdout)
-            self.assertEqual({row["session_id"] for row in rows}, {"session-a", "session-b"})
+            self.assertEqual({row["representative"]["session_id"] for row in rows}, {"session-a", "session-b"})
 
-    def test_legacy_db_search_still_returns_existing_shape(self):
+    def test_legacy_db_search_defaults_to_grouped_shape_with_flat_rollback_helper(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)
             capture = root / "legacy.zip"
             db = root / "legacy.sqlite3"
             synthetic_export(capture)
             import_export(capture, db)
-            rows = search(str(db), "copper kettle", ["dialogue", "evidence"], 8)
-            self.assertTrue(rows)
+            groups = search(str(db), "copper kettle", ["dialogue", "evidence"], 8)
+            self.assertTrue(groups)
             self.assertEqual(
-                set(rows[0]),
-                {"ordinal", "message_id", "role", "content_type", "search_class", "text", "score"},
+                set(groups[0]),
+                {"text", "representative", "occurrence_count", "occurrences"},
             )
+            flat = search_flat(str(db), "copper kettle", ["dialogue", "evidence"], 8)
+            self.assertTrue(flat)
+            self.assertIn("message_id", flat[0])
+            self.assertIn("score", flat[0])
 
 
 if __name__ == "__main__":
