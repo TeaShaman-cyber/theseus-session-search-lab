@@ -141,6 +141,15 @@ budget without that selector fails closed. The public router validation rejects
 `grouping` and `candidate_budget`, and the MCP schema exposes neither, so public
 router/MCP behaviour remains flat and unchanged.
 
+The router source also contains a disabled-by-default authenticated canary route,
+`POST /internal/grouped-search`, gated by `groupedCanaryEnabled`. When explicitly
+enabled by a caller constructing the router handler, it sends the grouped selector
+and candidate budget to pinned READY shards, ranks each shard's returned groups by
+its existing reciprocal-rank rule, and uses `mergeExactTextGroups()` to merge equal
+text across shards before final group Top-K. The normal `/search` route and MCP tool
+do not use this path. The default production constructor leaves the canary disabled;
+this source path is not evidence of runtime enablement or production cutover.
+
 ## Strong-ranker cross-check
 
 A second real-data cross-check reused the surviving #118 two-stage lexical stack:

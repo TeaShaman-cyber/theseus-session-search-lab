@@ -105,6 +105,82 @@ test('router HTTP adapter fans out and merges the same search path', async () =>
   assert.deepEqual(result.hits.map((x) => x.shard_id), ['chatgpt-0001', 'hermes-0001']);
 });
 
+test('grouped router canary is disabled by default', async () => {
+  const handler = makeRouterHandler({ catalog: [] });
+  const response = await handler.fetch(new Request('https://router.test/internal/grouped-search', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ query: 'needle', search_mode: 'recall' }),
+  }));
+  assert.equal(response.status, 404);
+  assert.deepEqual(await response.json(), { error: 'NOT_FOUND' });
+});
+
+test('enabled grouped router canary fans out grouped shard requests and merges exact text', async () => {
+  const catalog = [
+    { shard_id: 'chatgpt-0001', provider: 'chatgpt', generation_id: 'a'.repeat(64), state: 'READY', url: 'https://a.test/search' },
+    { shard_id: 'hermes-0001', provider: 'hermes', generation_id: 'b'.repeat(64), state: 'READY', url: 'https://b.test/search' },
+  ];
+  const seen = [];
+  const fakeFetch = async (url, init) => {
+    const request = JSON.parse(init.body);
+    seen.push(request);
+    assert.equal(request.grouping, 'exact_text_v1');
+    assert.equal(request.candidate_budget, 6);
+    assert.equal(request.search_mode, 'recall');
+    const chatgpt = String(url).includes('a.test');
+    const shardId = chatgpt ? 'chatgpt-0001' : 'hermes-0001';
+    const provider = chatgpt ? 'chatgpt' : 'hermes';
+    const generation = chatgpt ? 'a'.repeat(64) : 'b'.repeat(64);
+    const prefix = chatgpt ? 'c' : 'h';
+    return Response.json({
+      generation_binding: 'router_pinned_v1',
+      status: 'FOUND',
+      shard_id: shardId,
+      provider,
+      generation_id: generation,
+      grouping: 'exact_text_v1',
+      groups: [
+        {
+          text: 'shared',
+          representative: { session_id: `${prefix}a`, message_id: `${prefix}1`, ordinal: 1 },
+          occurrence_count: 1,
+          occurrences: [{ session_id: `${prefix}a`, message_id: `${prefix}1`, provider, shard_id: shardId, generation_id: generation }],
+        },
+        {
+          text: chatgpt ? 'chat only' : 'hermes only',
+          representative: { session_id: `${prefix}b`, message_id: `${prefix}2`, ordinal: 2 },
+          occurrence_count: 1,
+          occurrences: [{ session_id: `${prefix}b`, message_id: `${prefix}2`, provider, shard_id: shardId, generation_id: generation }],
+        },
+      ],
+    });
+  };
+  const handler = makeRouterHandler({ catalog, fetchImpl: fakeFetch, groupedCanaryEnabled: true });
+  const response = await handler.fetch(new Request('https://router.test/internal/grouped-search', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      query: 'needle',
+      search_mode: 'recall',
+      limit: 2,
+      candidate_budget: 6,
+    }),
+  }));
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.status, 'FOUND');
+  assert.equal(result.grouping, 'exact_text_v1');
+  assert.equal(result.groups[0].text, 'shared');
+  assert.equal(result.groups[0].occurrence_count, 2);
+  assert.equal(result.groups[1].text, 'chat only');
+  assert.equal(result.retrieval.candidate_budget, 6);
+  assert.equal(result.retrieval.candidate_group_count, 4);
+  assert.equal(result.retrieval.returned_group_count, 2);
+  assert.match(result.request_ref, /^[0-9a-f]{32}$/);
+  assert.equal(seen.length, 2);
+});
+
 test('router MCP tool call reuses federated search', async () => {
   const catalog = [
     { shard_id: 'chatgpt-0001', provider: 'chatgpt', generation_id: 'a'.repeat(64), state: 'READY', url: 'https://a.test/search' },

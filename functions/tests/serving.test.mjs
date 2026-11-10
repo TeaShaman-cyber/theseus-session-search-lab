@@ -2,7 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { buildGroupedSearchCall, buildSearchCall } from '../shard/core.mjs';
-import { mergeShardOutcomes, selectShards, handleMcpRequest, validateSearchInput } from '../router/core.mjs';
+import {
+  handleMcpRequest,
+  mergeGroupedShardOutcomes,
+  mergeShardOutcomes,
+  selectShards,
+  validateGroupedCanaryInput,
+  validateSearchInput,
+} from '../router/core.mjs';
 
 test('shard request becomes one bounded SQL function call', () => {
   const call = buildSearchCall({
@@ -41,6 +48,95 @@ test('router merges ready outcomes deterministically with provenance', () => {
     ['chatgpt-0001', 'a'.repeat(64)],
     ['hermes-0001', 'b'.repeat(64)],
   ]);
+});
+
+test('router grouped merge collapses equal text across shards and preserves occurrences', () => {
+  const selected = [
+    { shard_id: 'chatgpt-0001', provider: 'chatgpt', generation_id: 'a'.repeat(64) },
+    { shard_id: 'hermes-0001', provider: 'hermes', generation_id: 'b'.repeat(64) },
+  ];
+  const outcomes = [
+    { shard: selected[0], ok: true, body: { generation_id: 'a'.repeat(64), grouping: 'exact_text_v1', groups: [
+      { text: 'same', representative: { session_id: 'ca', message_id: 'c1', ordinal: 1 }, occurrence_count: 1, occurrences: [{ session_id: 'ca', message_id: 'c1', provider: 'chatgpt', shard_id: 'chatgpt-0001', generation_id: 'a'.repeat(64) }] },
+      { text: 'chat only', representative: { session_id: 'ca', message_id: 'c2', ordinal: 2 }, occurrence_count: 1, occurrences: [{ session_id: 'ca', message_id: 'c2', provider: 'chatgpt', shard_id: 'chatgpt-0001', generation_id: 'a'.repeat(64) }] },
+    ] } },
+    { shard: selected[1], ok: true, body: { generation_id: 'b'.repeat(64), grouping: 'exact_text_v1', groups: [
+      { text: 'same', representative: { session_id: 'hb', message_id: 'h1', ordinal: 1 }, occurrence_count: 1, occurrences: [{ session_id: 'hb', message_id: 'h1', provider: 'hermes', shard_id: 'hermes-0001', generation_id: 'b'.repeat(64) }] },
+      { text: 'hermes only', representative: { session_id: 'hb', message_id: 'h2', ordinal: 2 }, occurrence_count: 1, occurrences: [{ session_id: 'hb', message_id: 'h2', provider: 'hermes', shard_id: 'hermes-0001', generation_id: 'b'.repeat(64) }] },
+    ] } },
+  ];
+
+  const result = mergeGroupedShardOutcomes(selected, outcomes, 2);
+  assert.equal(result.status, 'FOUND');
+  assert.equal(result.grouping, 'exact_text_v1');
+  assert.equal(result.candidate_group_count, 4);
+  assert.equal(result.returned_group_count, 2);
+  assert.deepEqual(result.groups.map((group) => group.text), ['same', 'chat only']);
+  assert.equal(result.groups[0].occurrence_count, 2);
+  assert.deepEqual(
+    result.groups[0].occurrences.map((occurrence) => [occurrence.provider, occurrence.shard_id, occurrence.generation_id]),
+    [
+      ['chatgpt', 'chatgpt-0001', 'a'.repeat(64)],
+      ['hermes', 'hermes-0001', 'b'.repeat(64)],
+    ],
+  );
+});
+
+test('router grouped merge preserves healthy groups and PARTIAL on shard failure', () => {
+  const selected = [
+    { shard_id: 'chatgpt-0001', provider: 'chatgpt', generation_id: 'a'.repeat(64) },
+    { shard_id: 'chatgpt-0002', provider: 'chatgpt', generation_id: 'b'.repeat(64) },
+  ];
+  const result = mergeGroupedShardOutcomes(selected, [
+    { shard: selected[0], ok: true, body: { generation_id: 'a'.repeat(64), grouping: 'exact_text_v1', groups: [
+      { text: 'healthy', representative: { session_id: 's1' }, occurrence_count: 1, occurrences: [{ session_id: 's1' }] },
+    ] } },
+    { shard: selected[1], ok: false, reason: 'TIMEOUT' },
+  ], 8);
+  assert.equal(result.status, 'PARTIAL');
+  assert.deepEqual(result.groups.map((group) => group.text), ['healthy']);
+  assert.deepEqual(result.unavailable_shards, [{ shard_id: 'chatgpt-0002', reason: 'TIMEOUT' }]);
+});
+
+test('router grouped merge isolates malformed shard group payload as PARTIAL', () => {
+  const selected = [
+    { shard_id: 'chatgpt-0001', provider: 'chatgpt', generation_id: 'a'.repeat(64) },
+    { shard_id: 'chatgpt-0002', provider: 'chatgpt', generation_id: 'b'.repeat(64) },
+  ];
+  const result = mergeGroupedShardOutcomes(selected, [
+    { shard: selected[0], ok: true, body: { generation_id: 'a'.repeat(64), grouping: 'exact_text_v1', groups: [
+      { text: 'healthy', representative: { session_id: 's1' }, occurrence_count: 1, occurrences: [{ session_id: 's1' }] },
+    ] } },
+    { shard: selected[1], ok: true, body: { generation_id: 'b'.repeat(64), grouping: 'exact_text_v1', groups: [
+      { text: 'broken', representative: { session_id: 's2' }, occurrence_count: 2, occurrences: [{ session_id: 's2' }] },
+    ] } },
+  ], 8);
+  assert.equal(result.status, 'PARTIAL');
+  assert.deepEqual(result.groups.map((group) => group.text), ['healthy']);
+  assert.deepEqual(result.unavailable_shards, [{ shard_id: 'chatgpt-0002', reason: 'GROUP_PAYLOAD_INVALID' }]);
+});
+
+test('grouped canary validation is recall-only and keeps candidate budget separate', () => {
+  const input = validateGroupedCanaryInput({
+    query: 'needle',
+    search_mode: 'recall',
+    limit: 10,
+    candidate_budget: 25,
+  });
+  assert.equal(input.limit, 10);
+  assert.equal(input.candidate_budget, 25);
+  assert.equal(
+    validateGroupedCanaryInput({ query: 'needle', search_mode: 'recall', limit: 10 }).candidate_budget,
+    30,
+  );
+  assert.throws(
+    () => validateGroupedCanaryInput({ query: 'needle', search_mode: 'strict' }),
+    /GROUPED_SEARCH_RECALL_ONLY/,
+  );
+  assert.throws(
+    () => validateGroupedCanaryInput({ query: 'needle', search_mode: 'recall', grouping: 'exact_text_v1' }),
+    /GROUPING_CONTROL_IMPLICIT/,
+  );
 });
 
 test('router reports PARTIAL when one shard fails', () => {

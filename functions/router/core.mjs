@@ -1,3 +1,5 @@
+import { mergeExactTextGroups } from '../grouping.mjs';
+
 const VALID_SCOPES = new Set(['dialogue', 'evidence', 'trace']);
 const VALID_SEARCH_MODES = new Set(['strict', 'recall', 'auto']);
 const VALID_FEEDBACK_OUTCOMES = new Set(['improved', 'same', 'regressed', 'mixed', 'unknown']);
@@ -55,6 +57,23 @@ function validateSearchInput(input = {}) {
     from_time: fromTime,
     to_time: toTime,
   };
+}
+
+export function validateGroupedCanaryInput(input = {}) {
+  if (Object.prototype.hasOwnProperty.call(input, 'grouping')) {
+    throw new Error('GROUPING_CONTROL_IMPLICIT');
+  }
+  const { candidate_budget: rawCandidateBudget, ...flatInput } = input;
+  const validated = validateSearchInput(flatInput);
+  if (validated.search_mode !== 'recall') throw new Error('GROUPED_SEARCH_RECALL_ONLY');
+
+  const candidateBudget = rawCandidateBudget ?? Math.min(300, validated.limit * 3);
+  if (!Number.isInteger(candidateBudget)
+      || candidateBudget < validated.limit
+      || candidateBudget > 300) {
+    throw new Error('CANDIDATE_BUDGET_OUT_OF_BOUNDS');
+  }
+  return { ...validated, candidate_budget: candidateBudget };
 }
 
 function assertExactFields(value, allowed, code) {
@@ -188,6 +207,99 @@ export function mergeShardOutcomes(selected, outcomes, limit) {
     status: unavailable.length ? 'PARTIAL' : hits.length ? 'FOUND' : 'NO_SIGNAL',
     hits,
     candidate_count: candidateCount,
+    queried_shards: queried,
+    unavailable_shards: unavailable,
+  };
+}
+
+function normalizeShardGroup(shard, group) {
+  if (group == null || typeof group !== 'object' || Array.isArray(group)) {
+    throw new Error('GROUP_PAYLOAD_INVALID');
+  }
+  if (typeof group.text !== 'string') throw new Error('GROUP_PAYLOAD_INVALID');
+  if (group.representative == null || typeof group.representative !== 'object'
+      || Array.isArray(group.representative)) {
+    throw new Error('GROUP_PAYLOAD_INVALID');
+  }
+  if (!Array.isArray(group.occurrences) || group.occurrence_count !== group.occurrences.length) {
+    throw new Error('GROUP_PAYLOAD_INVALID');
+  }
+  return {
+    ...group,
+    representative: {
+      ...group.representative,
+      provider: shard.provider,
+      shard_id: shard.shard_id,
+      generation_id: shard.generation_id,
+    },
+    occurrences: group.occurrences.map((occurrence) => ({
+      ...occurrence,
+      provider: shard.provider,
+      shard_id: shard.shard_id,
+      generation_id: shard.generation_id,
+    })),
+  };
+}
+
+export function mergeGroupedShardOutcomes(selected, outcomes, limit) {
+  const queried = [];
+  const unavailable = [];
+  const ranked = [];
+
+  for (const shard of selected) {
+    if (shard.state && shard.state !== 'READY') {
+      unavailable.push({ shard_id: shard.shard_id, reason: 'NOT_READY' });
+      continue;
+    }
+    queried.push(shard.shard_id);
+    const outcome = outcomes.find((item) => item.shard.shard_id === shard.shard_id);
+    if (!outcome || !outcome.ok) {
+      unavailable.push({ shard_id: shard.shard_id, reason: outcome?.reason ?? 'QUERY_FAILED' });
+      continue;
+    }
+    if (outcome.body?.generation_id !== shard.generation_id) {
+      unavailable.push({ shard_id: shard.shard_id, reason: 'STALE_GENERATION' });
+      continue;
+    }
+    if (outcome.body?.grouping !== 'exact_text_v1' || !Array.isArray(outcome.body?.groups)) {
+      unavailable.push({ shard_id: shard.shard_id, reason: 'GROUPING_NOT_CONFIRMED' });
+      continue;
+    }
+    let groups;
+    try {
+      groups = outcome.body.groups.map((group) => normalizeShardGroup(shard, group));
+    } catch {
+      unavailable.push({ shard_id: shard.shard_id, reason: 'GROUP_PAYLOAD_INVALID' });
+      continue;
+    }
+    for (let i = 0; i < groups.length; i += 1) {
+      const rank = i + 1;
+      ranked.push({
+        reciprocal: 1 / (60 + rank),
+        shard_id: shard.shard_id,
+        group: groups[i],
+      });
+    }
+  }
+
+  ranked.sort((a, b) =>
+    b.reciprocal - a.reciprocal
+    || a.shard_id.localeCompare(b.shard_id)
+    || String(a.group?.text ?? '').localeCompare(String(b.group?.text ?? ''))
+    || String(a.group?.representative?.session_id ?? '').localeCompare(String(b.group?.representative?.session_id ?? ''))
+    || Number(a.group?.representative?.ordinal ?? 0) - Number(b.group?.representative?.ordinal ?? 0)
+    || String(a.group?.representative?.message_id ?? '').localeCompare(String(b.group?.representative?.message_id ?? ''))
+  );
+  unavailable.sort((a, b) => a.shard_id.localeCompare(b.shard_id));
+
+  const candidateGroupCount = ranked.length;
+  const groups = mergeExactTextGroups(ranked.map((item) => item.group), limit);
+  return {
+    status: unavailable.length ? 'PARTIAL' : groups.length ? 'FOUND' : 'NO_SIGNAL',
+    grouping: 'exact_text_v1',
+    groups,
+    candidate_group_count: candidateGroupCount,
+    returned_group_count: groups.length,
     queried_shards: queried,
     unavailable_shards: unavailable,
   };
