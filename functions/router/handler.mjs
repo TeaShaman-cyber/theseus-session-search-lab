@@ -58,7 +58,9 @@ export function makeRouterHandler({
     input, selected, searchMode, requestContext, { shape = resultShape } = {},
   ) {
     const grouped = shape === 'grouped_v1';
-    const candidateBudget = grouped ? Math.min(300, input.limit * 3) : null;
+    const candidateBudget = grouped
+      ? (input.candidate_budget ?? Math.min(300, input.limit * 3))
+      : null;
     const outcomes = await Promise.all(selected.map(async (shard) => telemetry.withDispatch(
       requestContext,
       shard,
@@ -211,7 +213,7 @@ export function makeRouterHandler({
       retrieval: {
         requested_mode: 'recall',
         effective_mode: 'recall',
-        candidate_budget: Math.min(300, input.limit * 3),
+        candidate_budget: input.candidate_budget,
         candidate_group_count: result.candidate_group_count ?? 0,
         returned_group_count: result.groups?.length ?? 0,
       },

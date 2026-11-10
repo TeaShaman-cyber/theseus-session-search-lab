@@ -189,7 +189,7 @@ test('enabled grouped router canary fans out grouped shard requests and merges e
     const request = JSON.parse(init.body);
     seen.push(request);
     assert.equal(request.result_shape, 'grouped_v1');
-    assert.equal(request.candidate_budget, 6);
+    assert.equal(request.candidate_budget, 100);
     assert.equal(request.search_mode, 'recall');
     const chatgpt = String(url).includes('a.test');
     const shardId = chatgpt ? 'chatgpt-0001' : 'hermes-0001';
@@ -227,7 +227,7 @@ test('enabled grouped router canary fans out grouped shard requests and merges e
       query: 'needle',
       search_mode: 'recall',
       limit: 2,
-      candidate_budget: 6,
+      candidate_budget: 100,
     }),
   }));
   assert.equal(response.status, 200);
@@ -237,7 +237,7 @@ test('enabled grouped router canary fans out grouped shard requests and merges e
   assert.equal(result.groups[0].text, 'shared');
   assert.equal(result.groups[0].occurrence_count, 2);
   assert.equal(result.groups[1].text, 'chat only');
-  assert.equal(result.retrieval.candidate_budget, 6);
+  assert.equal(result.retrieval.candidate_budget, 100);
   assert.equal(result.retrieval.candidate_group_count, 4);
   assert.equal(result.retrieval.returned_group_count, 2);
   assert.match(result.request_ref, /^[0-9a-f]{32}$/);
