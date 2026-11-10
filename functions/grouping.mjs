@@ -64,9 +64,10 @@ function validateGroup(group) {
   }
 }
 
-export function mergeExactTextGroups(rankedGroups = [], resultLimit = rankedGroups.length) {
+export function mergeExactTextGroups(rankedGroups = [], resultLimit = undefined) {
   if (!Array.isArray(rankedGroups)) throw new Error('GROUPS_INVALID');
-  if (!Number.isInteger(resultLimit) || resultLimit < 1) {
+  const effectiveLimit = resultLimit === undefined ? Math.max(1, rankedGroups.length) : resultLimit;
+  if (!Number.isInteger(effectiveLimit) || effectiveLimit < 1) {
     throw new Error('GROUP_RESULT_LIMIT_INVALID');
   }
 
@@ -91,5 +92,5 @@ export function mergeExactTextGroups(rankedGroups = [], resultLimit = rankedGrou
     group.occurrence_count = group.occurrences.length;
   }
 
-  return merged.slice(0, resultLimit);
+  return merged.slice(0, effectiveLimit);
 }

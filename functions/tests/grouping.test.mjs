@@ -61,6 +61,12 @@ test('JavaScript matches shared exact-text grouping v1 conformance fixture', asy
   );
 });
 
+
+test('router-level exact group merge keeps empty composition safe while rejecting explicit zero limit', () => {
+  assert.deepEqual(mergeExactTextGroups([]), []);
+  assert.throws(() => mergeExactTextGroups([], 0), /GROUP_RESULT_LIMIT_INVALID/);
+});
+
 test('router-level exact group merge preserves cross-shard occurrences and first representative', () => {
   const rankedGroups = [
     {
