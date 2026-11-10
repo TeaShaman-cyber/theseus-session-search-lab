@@ -40,6 +40,30 @@ PL/pgSQL parser. Модельный review после этого фокусир�
 права, планы выполнения и конкретное состояние PostgreSQL подтверждаются
 изолированным smoke/readback, когда они существенны для изменения.
 
+## Не забывать PostHog при исторической инженерной диагностике
+
+Если итог зависит от повторяемости CI/review-сбоев, прошлой регрессии или
+истории latency/error/cost, основной агент перед финальным выводом отдельно
+проверяет подключённый PostHog, **если там наблюдается релевантная поверхность**.
+Это шаг основного агента: доступ Codex-бота, GitHub Actions или другого рантайма
+к ChatGPT/PostHog OAuth не предполагается и не переносится автоматически.
+
+1. Сначала обнаружить текущий PostHog source/surface и прочитать его свежесть;
+   не хардкодить remembered project/source как доказательство текущего состояния.
+2. Ограничить чтение точным repo/head либо service/time window, достаточным для
+   вопроса. Отсутствие данных классифицировать как `NO_SIGNAL`, устаревшие данные
+   как `STALE`, недоступный маршрут как `UNAVAILABLE`, а не как PASS.
+3. Значимый сигнал сверять с авторитетным доменом: GitHub Actions — exact-head
+   CI; Grafana #109 — live availability/latency/error; accepted artifacts/ledger —
+   история корпуса и provenance. PostHog остаётся производным свидетельством.
+4. Не пропускать шаг молча: рядом с выводом оставлять компактный receipt
+   `POSTHOG_EVIDENCE status=VERIFIED|STALE|NO_SIGNAL|UNAVAILABLE scope=<...> freshness=<...> signal=<...>`.
+5. Недоступность PostHog не блокирует обычный авторитетный маршрут и не требует
+   переноса OAuth/API key в CI.
+
+Не отправлять в PostHog ради этого шага raw query/message text, приватный корпус,
+credentials, токены, Drive IDs или другие приватные locator-значения.
+
 ## Research-first и существующие скиллы
 
 См. [короткий маршрут](docs/agents/research-first.md). Он адаптирован из
