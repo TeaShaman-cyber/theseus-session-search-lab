@@ -2,23 +2,32 @@ import { hasValidBearerToken } from '../auth.mjs';
 import { createNoopTelemetry } from '../telemetry.mjs';
 import { buildGroupedSearchCall, buildSearchCall } from './core.mjs';
 
-function buildCanaryAwareSearchCall(input) {
-  const grouping = input?.grouping ?? null;
-  const hasCandidateBudget = Object.prototype.hasOwnProperty.call(input ?? {}, 'candidate_budget');
-  if (grouping === null) {
-    if (hasCandidateBudget) throw new Error('CANDIDATE_BUDGET_REQUIRES_GROUPING');
-    return buildSearchCall(input);
+function buildDefaultSearchCall(input = {}) {
+  // Missing result_shape is the rolling-upgrade compatibility contract for older routers.
+  // Current routers always send grouped_v1 explicitly.
+  const resultShape = input.result_shape ?? 'flat_v1';
+  if (resultShape === 'flat_v1') {
+    if (Object.prototype.hasOwnProperty.call(input, 'candidate_budget')) {
+      throw new Error('CANDIDATE_BUDGET_REQUIRES_GROUPED_RESULT');
+    }
+    if (input.grouping != null) throw new Error('GROUPING_CONTROL_INVALID');
+    const { result_shape: _shape, ...flatInput } = input;
+    return buildSearchCall(flatInput);
   }
-  if (grouping !== 'exact_text_v1') throw new Error('GROUPING_OUT_OF_BOUNDS');
-  return buildGroupedSearchCall(input);
+  if (resultShape !== 'grouped_v1') throw new Error('RESULT_SHAPE_OUT_OF_BOUNDS');
+  if (input.grouping != null && input.grouping !== 'exact_text_v1') {
+    throw new Error('GROUPING_OUT_OF_BOUNDS');
+  }
+  const { result_shape: _shape, grouping: _grouping, ...groupedInput } = input;
+  return buildGroupedSearchCall(groupedInput);
 }
+
 
 function isClientValidationError(message) {
   return message.endsWith('_OUT_OF_BOUNDS')
     || message === 'TIME_BOUNDS_INVERTED'
-    || message === 'GROUPED_SEARCH_RECALL_ONLY'
-    || message === 'GENERATION_REQUIRED_FOR_GROUPED_SEARCH'
-    || message === 'CANDIDATE_BUDGET_REQUIRES_GROUPING';
+    || message === 'CANDIDATE_BUDGET_REQUIRES_GROUPED_RESULT'
+    || message === 'GROUPING_CONTROL_INVALID';
 }
 
 function json(value, status = 200) {
@@ -57,7 +66,7 @@ export function makeShardHandler(executeSearch, { telemetry = createNoopTelemetr
         }
         try {
           const input = await request.json();
-          const call = buildCanaryAwareSearchCall(input);
+          const call = buildDefaultSearchCall(input);
           const pinned = Object.prototype.hasOwnProperty.call(input, 'generation_id');
           const result = await executeSearch(call);
           if (pinned && result?.generation_id !== input.generation_id) {

@@ -43,7 +43,8 @@ for marker in (
     "auto",
     "requested_mode",
     "effective_mode",
-    "strict_hit_count",
+    "strict_group_count",
+    "occurrences[]",
     "stable qualified tool identity",
 ):
     if marker not in skill:
@@ -58,6 +59,8 @@ for marker in (
     "search_mode",
     "auto",
     "retrieval",
+    "strict_group_count",
+    "result groups",
     "TheseusSessionSearch.session_feedback",
     "two intentional consumer tools",
     "PATCH /v1/workers/{id}",

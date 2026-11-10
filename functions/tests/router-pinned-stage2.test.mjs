@@ -7,10 +7,39 @@ const A = 'a'.repeat(64);
 const B = 'b'.repeat(64);
 const RTOKEN = 'synthetic-router-token';
 const STOKEN = 'synthetic-shard-token';
+
 const catalog = (generation_id, shard_id = 's1') => [{
   shard_id, provider: 'synthetic', generation_id, state: 'READY',
   url: 'https://' + shard_id + '.test/search',
 }];
+
+function groupedBody(generationId, {
+  text = null,
+  sessionId = 's',
+  messageId = 'm',
+  shardId,
+  provider,
+  witness = 'router_pinned_v1',
+  omitWitness = false,
+} = {}) {
+  const groups = text == null ? [] : [{
+    text,
+    representative: { session_id: sessionId, message_id: messageId, ordinal: 1 },
+    occurrence_count: 1,
+    occurrences: [{ session_id: sessionId, message_id: messageId, ordinal: 1 }],
+  }];
+  return {
+    status: groups.length ? 'FOUND' : 'NO_SIGNAL',
+    generation_id: generationId,
+    ...(omitWitness ? {} : { generation_binding: witness }),
+    ...(shardId ? { shard_id: shardId } : {}),
+    ...(provider ? { provider } : {}),
+    grouping: 'exact_text_v1',
+    candidate_count: groups.length,
+    returned_group_count: groups.length,
+    groups,
+  };
+}
 
 async function ask(router, input = { query: 'synthetic' }, path = '/search') {
   const response = await router.fetch(new Request('https://router.test' + path, {
@@ -27,16 +56,16 @@ async function ask(router, input = { query: 'synthetic' }, path = '/search') {
   return path === '/mcp' ? result.result.structuredContent : result;
 }
 
-const routerFor = (c, fetchImpl) => makeRouterHandler({
-  catalog: c, fetchImpl, authToken: RTOKEN, shardAuthToken: STOKEN,
+const routerFor = (c, fetchImpl, options = {}) => makeRouterHandler({
+  catalog: c, fetchImpl, authToken: RTOKEN, shardAuthToken: STOKEN, ...options,
 });
 
-test('router dispatch pins per-shard catalog generation and preserves bounded request arguments', async () => {
+test('router pins generation and sends grouped default with bounded candidate budget', async () => {
   const seen = [];
   const r = routerFor(catalog(A), async (_url, init) => {
-    const payload = JSON.parse(init.body); seen.push(payload);
-    return Response.json({ status: 'NO_SIGNAL', generation_id: A,
-      generation_binding: 'router_pinned_v1', hits: [] });
+    const payload = JSON.parse(init.body);
+    seen.push(payload);
+    return Response.json(groupedBody(A));
   });
   const result = await ask(r, {
     query: ' needle ', search_mode: 'recall', limit: 5, scopes: ['trace'],
@@ -44,93 +73,90 @@ test('router dispatch pins per-shard catalog generation and preserves bounded re
   });
   assert.equal(result.status, 'NO_SIGNAL');
   assert.deepEqual(seen, [{
-    query: 'needle', scopes: ['trace'], limit: 5, search_mode: 'recall',
-    session_id: 's', from_time: 2, to_time: 6, generation_id: A,
+    query: 'needle', generation_id: A, scopes: ['trace'], limit: 5,
+    search_mode: 'recall', session_id: 's', from_time: 2, to_time: 6,
+    result_shape: 'grouped_v1', candidate_budget: 15,
   }]);
 });
 
-test('legacy ACTIVE-reading shard with matching generation is still rejected for missing witness', async () => {
-  const oldShard = async () => Response.json({
-    status: 'FOUND', generation_id: A,
-    hits: [{ session_id: 's', message_id: 'm', text: 'old hit' }],
-  });
+test('missing pinning witness stays PARTIAL with no groups', async () => {
+  const oldShard = async () => Response.json(groupedBody(A, {
+    text: 'old hit', omitWitness: true,
+  }));
   const result = await ask(routerFor(catalog(A), oldShard));
   assert.equal(result.status, 'PARTIAL');
-  assert.deepEqual(result.hits, []);
+  assert.deepEqual(result.groups, []);
   assert.deepEqual(result.unavailable_shards, [
     { shard_id: 's1', reason: 'PINNING_NOT_CONFIRMED' },
   ]);
 });
 
-test('wrong/empty witness rejects a legacy shard even if generation matches', async () => {
+test('wrong pinning witness is rejected even when generation matches', async () => {
   for (const witness of [null, '', 'legacy_active_v1', false, 1]) {
-    const result = await ask(routerFor(catalog(A), async () => Response.json({
-      status: 'FOUND', generation_id: A, generation_binding: witness,
-      hits: [{ session_id: 's', message_id: 'm', text: 'wrong witness' }],
-    })));
+    const result = await ask(routerFor(catalog(A), async () => Response.json(
+      groupedBody(A, { text: 'wrong witness', witness }),
+    )));
     assert.equal(result.status, 'PARTIAL');
-    assert.deepEqual(result.hits, []);
+    assert.deepEqual(result.groups, []);
   }
 });
 
-test('real transitional shard accepts pinned A even while legacy ACTIVE would be B', async () => {
+test('real shard executes exact grouped generation and router preserves provenance', async () => {
   const seen = [];
   const shard = makeShardHandler(async (sql) => {
     seen.push(sql);
-    return { status: 'FOUND', shard_id: 's1', generation_id: sql.values[0],
-      hits: [{ session_id: 's', message_id: 'm', text: 'pinned' }] };
+    return groupedBody(sql.values[0], { text: 'pinned', omitWitness: true });
   }, { authToken: STOKEN });
   const r = routerFor(catalog(A), (url, init) => shard.fetch(
-    new Request(url, { method: 'POST', headers: init.headers, body: init.body })));
+    new Request(url, { method: 'POST', headers: init.headers, body: init.body }),
+  ));
   const result = await ask(r);
   assert.equal(result.status, 'FOUND');
   assert.equal(seen.length, 1);
-  assert.match(seen[0].text, /search_generation_v2/);
+  assert.match(seen[0].text, /search_generation_grouped_v3/);
   assert.equal(seen[0].values[0], A);
-  assert.equal(result.hits[0].generation_id, A);
-  assert.equal(result.hits[0].shard_id, 's1');
-  assert.equal(result.hits[0].provider, 'synthetic');
+  assert.equal(result.groups[0].representative.generation_id, A);
+  assert.equal(result.groups[0].representative.shard_id, 's1');
+  assert.equal(result.groups[0].representative.provider, 'synthetic');
 });
 
-test('router preserves healthy hits and PARTIAL when only one shard lacks witness', async () => {
+test('router preserves healthy groups and PARTIAL when one shard lacks witness', async () => {
   const r = routerFor([...catalog(A, 's1'), ...catalog(B, 's2')], async (url) => {
     const legacy = url.includes('s2');
-    return Response.json({
-      status: 'FOUND', generation_id: legacy ? B : A,
-      ...(legacy ? {} : { generation_binding: 'router_pinned_v1' }),
-      hits: [{ session_id: 's', message_id: 'm', ordinal: 1, text: 'hit' }],
-    });
+    return Response.json(groupedBody(legacy ? B : A, {
+      text: 'hit',
+      witness: 'router_pinned_v1', omitWitness: legacy,
+    }));
   });
   const result = await ask(r);
   assert.equal(result.status, 'PARTIAL');
-  assert.deepEqual(result.hits.map(x => x.shard_id), ['s1']);
+  assert.deepEqual(result.groups.map((x) => x.representative.shard_id), ['s1']);
   assert.deepEqual(result.unavailable_shards, [
     { shard_id: 's2', reason: 'PINNING_NOT_CONFIRMED' },
   ]);
 });
 
-test('router rejects contradictory shard identity and provider even with correct witness', async () => {
+test('router rejects contradictory shard identity and provider with correct witness', async () => {
   for (const [payload, reason] of [
     [{ shard_id: 'other-shard' }, 'SHARD_ID_MISMATCH'],
     [{ provider: 'other-provider' }, 'PROVIDER_MISMATCH'],
   ]) {
     const r = routerFor(catalog(A), async () => Response.json({
-      status: 'FOUND', generation_id: A, generation_binding: 'router_pinned_v1',
+      ...groupedBody(A, { text: 'wrong origin' }),
       ...payload,
-      hits: [{ session_id: 's', message_id: 'm', text: 'wrong origin' }],
     }));
     const result = await ask(r);
     assert.equal(result.status, 'PARTIAL');
-    assert.deepEqual(result.hits, []);
+    assert.deepEqual(result.groups, []);
     assert.deepEqual(result.unavailable_shards, [{ shard_id: 's1', reason }]);
   }
 });
 
-test('auto recall is never triggered to hide a strict PARTIAL missing binding', async () => {
+test('auto recall never hides strict PARTIAL missing binding', async () => {
   const modes = [];
   const r = routerFor(catalog(A), async (_, init) => {
     modes.push(JSON.parse(init.body).search_mode);
-    return Response.json({ status: 'NO_SIGNAL', generation_id: A, hits: [] });
+    return Response.json(groupedBody(A, { omitWitness: true }));
   });
   const result = await ask(r, { query: 'no-signal', search_mode: 'auto' });
   assert.equal(result.status, 'PARTIAL');
@@ -138,29 +164,30 @@ test('auto recall is never triggered to hide a strict PARTIAL missing binding', 
   assert.equal(result.retrieval.effective_mode, 'strict');
 });
 
-test('auto recall uses same generation and requires binding on both phases', async () => {
+test('auto recall uses same generation on strict and recall grouped phases', async () => {
   const seen = [];
   const r = routerFor(catalog(A), async (_, init) => {
     const req = JSON.parse(init.body);
-    seen.push([req.search_mode, req.generation_id]);
-    return Response.json({ status: req.search_mode === 'strict' ? 'NO_SIGNAL' : 'FOUND',
-      generation_id: A, generation_binding: 'router_pinned_v1',
-      hits: req.search_mode === 'strict' ? [] : [{ session_id: 's', message_id: 'm', text: 'ok' }],
-    });
+    seen.push([req.search_mode, req.generation_id, req.result_shape]);
+    return Response.json(groupedBody(A, {
+      text: req.search_mode === 'strict' ? null : 'ok',
+    }));
   });
   const result = await ask(r, { query: 'need recall', search_mode: 'auto' }, '/mcp');
   assert.equal(result.status, 'FOUND');
   assert.equal(result.retrieval.effective_mode, 'recall');
-  assert.deepEqual(seen, [['strict', A], ['recall', A]]);
+  assert.deepEqual(seen, [
+    ['strict', A, 'grouped_v1'],
+    ['recall', A, 'grouped_v1'],
+  ]);
 });
 
-test('catalog-only data rollback B to A does not require changing ACTIVE', async () => {
+test('catalog-only data rollback B to A keeps exact grouped generation pinning', async () => {
   const calls = [];
-  const shard = makeShardHandler(async sql => {
-    const generation_id = sql.values[0];
-    calls.push(generation_id);
-    return { status: 'FOUND', shard_id: 's1', generation_id,
-      hits: [{ session_id: generation_id, message_id: 'm', text: 'ok' }] };
+  const shard = makeShardHandler(async (sql) => {
+    const generationId = sql.values[0];
+    calls.push(generationId);
+    return groupedBody(generationId, { text: 'ok', omitWitness: true });
   }, { authToken: STOKEN });
   const fetchImpl = (url, init) => shard.fetch(new Request(url, {
     method: 'POST', headers: init.headers, body: init.body,
@@ -170,10 +197,10 @@ test('catalog-only data rollback B to A does not require changing ACTIVE', async
   assert.equal(resultB.status, 'FOUND');
   assert.equal(resultA.status, 'FOUND');
   assert.deepEqual(calls, [B, A]);
-  assert.deepEqual(resultA.hits.map(x => x.generation_id), [A]);
+  assert.deepEqual(resultA.groups.map((x) => x.representative.generation_id), [A]);
 });
 
-test('unavailable exact generation stays PARTIAL; never silently replaces with ACTIVE', async () => {
+test('unavailable exact generation stays PARTIAL and never falls back to ACTIVE', async () => {
   const shard = makeShardHandler(async () => { throw Error('generation not READY'); },
     { authToken: STOKEN });
   const fetchImpl = (url, init) => shard.fetch(new Request(url, {
@@ -181,20 +208,17 @@ test('unavailable exact generation stays PARTIAL; never silently replaces with A
   }));
   const result = await ask(routerFor(catalog(A), fetchImpl));
   assert.equal(result.status, 'PARTIAL');
-  assert.deepEqual(result.hits, []);
+  assert.deepEqual(result.groups, []);
   assert.deepEqual(result.unavailable_shards, [
     { shard_id: 's1', reason: 'QUERY_FAILED' },
   ]);
 });
 
-// Version-matrix checks represent old routers by their unchanged HTTP payload,
-// without vendoring a second implementation of the legacy router.
-test('S1: old-router request still works against transitional shard via ACTIVE SQL', async () => {
+test('un-pinned direct shard request without shape remains flat for old-router compatibility', async () => {
   const seen = [];
-  const shard = makeShardHandler(async sql => {
+  const shard = makeShardHandler(async (sql) => {
     seen.push(sql);
-    return { status: 'FOUND', shard_id: 's1', generation_id: A,
-      hits: [{ session_id: 'legacy', message_id: 'm', text: 'old' }] };
+    return { status: 'FOUND', shard_id: 's1', generation_id: A, hits: [{ text: 'old' }] };
   }, { authToken: STOKEN });
   const response = await shard.fetch(new Request('https://s1.test/search', {
     method: 'POST',
@@ -203,40 +227,43 @@ test('S1: old-router request still works against transitional shard via ACTIVE S
   }));
   assert.equal(response.status, 200);
   assert.match(seen[0].text, /session_search\.search_v2\(/);
-  assert.deepEqual((await response.json()).generation_binding, undefined);
+  const result = await response.json();
+  assert.equal(result.generation_binding, undefined);
+  assert.deepEqual(result.hits, [{ text: 'old' }]);
 });
 
-test('S2: pinned router chooses B while transitional shard legacy ACTIVE remains A', async () => {
+test('pinned router and ACTIVE direct request remain independent', async () => {
   const seen = [];
-  const shard = makeShardHandler(async sql => {
+  const shard = makeShardHandler(async (sql) => {
     seen.push(sql);
-    const pinned = sql.text.includes('search_generation_v2');
-    const generation_id = pinned ? sql.values[0] : A;
-    return { status: 'FOUND', shard_id: 's1', generation_id,
-      hits: [{ session_id: generation_id, message_id: 'm', text: 'hit' }] };
+    const pinned = sql.text.includes('search_generation_grouped_v3');
+    if (pinned) {
+      return groupedBody(sql.values[0], { text: 'hit', omitWitness: true });
+    }
+    return { status: 'FOUND', shard_id: 's1', generation_id: A, hits: [{ text: 'hit' }] };
   }, { authToken: STOKEN });
   const fetchImpl = (url, init) => shard.fetch(new Request(url, {
     method: 'POST', headers: init.headers, body: init.body,
   }));
   const pinnedB = await ask(routerFor(catalog(B), fetchImpl));
   assert.equal(pinnedB.status, 'FOUND');
-  assert.deepEqual(pinnedB.hits.map(h => h.generation_id), [B]);
-  assert.match(seen[0].text, /search_generation_v2\(/);
+  assert.deepEqual(pinnedB.groups.map((g) => g.representative.generation_id), [B]);
+  assert.match(seen[0].text, /search_generation_grouped_v3\(/);
 
-  const legacyResponse = await shard.fetch(new Request('https://s1.test/search', {
+  const activeResponse = await shard.fetch(new Request('https://s1.test/search', {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: 'Bearer ' + STOKEN },
     body: JSON.stringify({ query: 'legacy' }),
   }));
-  assert.equal((await legacyResponse.json()).generation_id, A);
+  assert.equal((await activeResponse.json()).generation_id, A);
   assert.match(seen[1].text, /search_v2\(/);
 });
 
-test('S2 interleaving: in-flight catalog A remains pinned as concurrent router B finishes', async () => {
+test('interleaving requests preserve their catalog-pinned generations', async () => {
   let releaseA;
   let signalledA;
-  const startedA = new Promise(resolve => { signalledA = resolve; });
-  const holdA = new Promise(resolve => { releaseA = resolve; });
+  const startedA = new Promise((resolve) => { signalledA = resolve; });
+  const holdA = new Promise((resolve) => { releaseA = resolve; });
   const seen = [];
   const fakeFetch = async (_url, init) => {
     const request = JSON.parse(init.body);
@@ -245,11 +272,7 @@ test('S2 interleaving: in-flight catalog A remains pinned as concurrent router B
       signalledA();
       await holdA;
     }
-    return Response.json({
-      status: 'FOUND', generation_binding: 'router_pinned_v1',
-      generation_id: request.generation_id,
-      hits: [{ session_id: request.generation_id, message_id: 'm', text: 'hit' }],
-    });
+    return Response.json(groupedBody(request.generation_id, { text: 'hit' }));
   };
   const pendingA = ask(routerFor(catalog(A), fakeFetch));
   await startedA;
@@ -259,20 +282,17 @@ test('S2 interleaving: in-flight catalog A remains pinned as concurrent router B
   assert.deepEqual(seen, [A, B]);
   assert.equal(outcomeA.status, 'FOUND');
   assert.equal(outcomeB.status, 'FOUND');
-  assert.deepEqual(outcomeA.hits.map(x => x.generation_id), [A]);
-  assert.deepEqual(outcomeB.hits.map(x => x.generation_id), [B]);
+  assert.deepEqual(outcomeA.groups.map((x) => x.representative.generation_id), [A]);
+  assert.deepEqual(outcomeB.groups.map((x) => x.representative.generation_id), [B]);
 });
 
-test('S4: a pinned-only shard rejects legacy payload, but works through pinned router', async () => {
+test('pinned-only shard can reject legacy payload while current grouped router succeeds', async () => {
   const strictOnlyFetch = async (_url, init) => {
     const request = JSON.parse(init.body);
     if (!Object.hasOwn(request, 'generation_id')) {
       return Response.json({ error: 'GENERATION_OUT_OF_BOUNDS' }, { status: 400 });
     }
-    return Response.json({
-      status: 'NO_SIGNAL', generation_binding: 'router_pinned_v1',
-      generation_id: request.generation_id, hits: [],
-    });
+    return Response.json(groupedBody(request.generation_id));
   };
   const legacy = await strictOnlyFetch('https://s1.test/search', {
     body: JSON.stringify({ query: 'legacy' }),

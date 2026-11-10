@@ -466,9 +466,9 @@ class DeepSeekEndToEndCorpusTest(unittest.TestCase):
             self.assertEqual(result["conversation_count"], 2)
             hits = search_corpus(corpus, "Unitree cerebellum", ["dialogue"], 8)
             self.assertEqual(len(hits), 1)
-            self.assertEqual(hits[0]["session_id"], "conv-alpha")
-            self.assertEqual(hits[0]["session_title"], "Robot notes")
-            self.assertEqual(hits[0]["session_coverage"], "COMPLETE_EXPOSED_CONVERSATION")
+            self.assertEqual(hits[0]["representative"]["session_id"], "conv-alpha")
+            self.assertEqual(hits[0]["representative"]["session_title"], "Robot notes")
+            self.assertEqual(hits[0]["representative"]["session_coverage"], "COMPLETE_EXPOSED_CONVERSATION")
 
 
 class DeepSeekLongChainRegressionTest(unittest.TestCase):

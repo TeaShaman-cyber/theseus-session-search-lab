@@ -12,6 +12,7 @@ ACTIVATION_MARKER = ROOT / "sql" / "neon" / "006_activation_marker_capability.sq
 FTS_GUARD = ROOT / "sql" / "neon" / "007_safe_message_tsvector.sql"
 GROUPED_RETRIEVAL = ROOT / "sql" / "neon" / "009_exact_text_grouped_retrieval.sql"
 GROUPED_RETRIEVAL_BUDGET = ROOT / "sql" / "neon" / "011_exact_text_grouped_candidate_budget.sql"
+GROUPED_RETRIEVAL_DEFAULT = ROOT / "sql" / "neon" / "012_exact_text_grouped_default.sql"
 
 
 class NeonFederatedContractTest(unittest.TestCase):
@@ -51,6 +52,20 @@ class NeonFederatedContractTest(unittest.TestCase):
         self.assertIn("\'candidate_budget\',candidate_budget", text)
         self.assertIn("search mode must be recall for grouped v2", text)
         self.assertNotIn("candidate_limit := LEAST(300, result_limit * 3)", text)
+        self.assertNotIn("activate_generation", text)
+
+    def test_grouped_retrieval_v3_supports_default_strict_and_recall_with_active_wrapper(self):
+        text = GROUPED_RETRIEVAL_DEFAULT.read_text()
+        self.assertIn("CREATE FUNCTION session_search.search_generation_grouped_v3", text)
+        self.assertIn("CREATE FUNCTION session_search.search_grouped_v3", text)
+        self.assertIn("search_mode text DEFAULT 'strict'", text)
+        self.assertIn("search_mode NOT IN ('strict','recall')", text)
+        self.assertIn("plainto_tsquery", text)
+        self.assertIn("to_tsquery", text)
+        self.assertIn("LIMIT candidate_budget", text)
+        self.assertIn("GROUP BY c.text", text)
+        self.assertIn("'grouping','exact_text_v1'", text)
+        self.assertIn("GRANT EXECUTE ON FUNCTION session_search.search_grouped_v3", text)
         self.assertNotIn("activate_generation", text)
 
     def test_query_plane_migration_exposes_generation_scoped_read_only_surface(self):

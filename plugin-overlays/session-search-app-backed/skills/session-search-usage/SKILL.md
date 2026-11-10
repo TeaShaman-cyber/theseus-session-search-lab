@@ -40,13 +40,15 @@ Do not solve a router cutover by adding a second version-suffixed Session Search
 
 In the ChatGPT host, that domain tool may be discovered/executed through the Arcade wrapper surface rather than appearing as a raw top-level tool. Use `Arcade_SelectTools` to discover the exact current tool contract when needed, then execute it through `Arcade_UseTool`.
 
+The normal result shape is grouped by exact text. One body occupies one result slot; `representative` carries the best-ranked occurrence context and `occurrences[]` preserves every matched historical occurrence/provenance, including provider, shard, and generation when present. Do not treat one grouped body as one historical event.
+
 When the current tool contract exposes `search_mode`, use its explicit retrieval policy rather than trying to simulate recall by rewriting the query:
 - `strict` is the default and preserves the bounded lexical AND-style behavior;
 - `recall` broadens lexical candidate retrieval and remains candidate evidence rather than semantic authority;
 - `auto` is bounded policy: run strict first and escalate only after a clean strict `NO_SIGNAL`; it must not hide or retry a `PARTIAL` result;
 - a clean strict+recall miss remains `NO_SIGNAL` / `UNKNOWN_WITHIN_CURRENT_SURFACE`, not proof that history is absent.
 
-For `auto`, inspect the returned `retrieval` receipt. At minimum preserve `requested_mode`, `effective_mode`, `strict_hit_count`, `candidate_count`, and `returned_hit_count`. A claim that auto recall helped is justified only when the receipt shows `requested_mode=auto`, `strict_hit_count=0`, and `effective_mode=recall`.
+For `auto`, inspect the returned `retrieval` receipt. At minimum preserve `requested_mode`, `effective_mode`, `strict_group_count`, `candidate_count`, `candidate_group_count`, and `returned_group_count`. A claim that auto recall helped is justified only when the receipt shows `requested_mode=auto`, `strict_group_count=0`, and `effective_mode=recall`.
 
 Start with the smallest useful query:
 - `query` is required;
@@ -59,13 +61,13 @@ Start with the smallest useful query:
 Do not silently translate `PARTIAL` into `NO_SIGNAL`.
 
 Interpret terminal states as:
-- `FOUND`: all selected READY shards responded and at least one hit exists;
-- `NO_SIGNAL`: all selected READY shards responded and no hit exists;
+- `FOUND`: all selected READY shards responded and at least one exact-text result group exists;
+- `NO_SIGNAL`: all selected READY shards responded and no result group exists;
 - `PARTIAL`: at least one relevant shard failed, was non-READY, or returned a stale generation.
 
 When `PARTIAL`, report the healthy evidence and the unavailable shard(s). Do not claim that missing shards contained no relevant history.
 
-Preserve returned shard and generation provenance when it matters to the answer or diagnosis.
+Preserve returned shard and generation provenance when it matters to the answer or diagnosis. When a group has multiple occurrences, inspect `occurrences[]` rather than reporting only the representative as if the other historical appearances did not exist.
 
 ## App-only feedback (issue #232)
 

@@ -1,5 +1,7 @@
 # Federated Neon serving spike
 
+> Historical #64 architecture/acceptance record. The current default result contract is exact-text grouped output under #264: one body per result slot with all matched occurrence provenance preserved. The terminal FOUND/NO_SIGNAL/PARTIAL semantics below remain, but references to flat hits describe the historical checkpoint.
+
 Issue #64 evaluates a read-only Session Search serving plane whose request path does not depend on MarcoPolo.
 
 ## Authority boundary
@@ -30,8 +32,8 @@ The router selects only shards matching known provider/session/time routing meta
 
 Terminal search states:
 
-- `FOUND` — all selected shards responded and at least one hit exists;
-- `NO_SIGNAL` — all selected shards responded and no hit exists;
+- `FOUND` — all selected shards responded and at least one result exists;
+- `NO_SIGNAL` — all selected shards responded and no result exists;
 - `PARTIAL` — at least one relevant shard is unavailable, non-READY, or returns a generation different from the catalog identity.
 
 A failed shard is never silently omitted.

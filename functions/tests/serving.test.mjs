@@ -281,14 +281,18 @@ test('router retrieval policy defaults to strict and validates explicit modes', 
   );
 });
 
-test('public router contract rejects internal grouped-canary controls', () => {
+test('public router contract rejects internal result-shape controls', () => {
   assert.throws(
     () => validateSearchInput({ query: 'needle', grouping: 'exact_text_v1' }),
-    /GROUPED_SEARCH_NOT_PUBLIC/,
+    /INTERNAL_SEARCH_CONTROL_NOT_PUBLIC/,
   );
   assert.throws(
     () => validateSearchInput({ query: 'needle', candidate_budget: 24 }),
-    /GROUPED_SEARCH_NOT_PUBLIC/,
+    /INTERNAL_SEARCH_CONTROL_NOT_PUBLIC/,
+  );
+  assert.throws(
+    () => validateSearchInput({ query: 'needle', result_shape: 'flat_v1' }),
+    /INTERNAL_SEARCH_CONTROL_NOT_PUBLIC/,
   );
 });
 
@@ -316,31 +320,39 @@ test('shard bounded SQL call carries strict or recall mode through versioned sea
 });
 
 
-test('opt-in grouped shard call separates candidate budget from result limit without changing legacy call', () => {
+test('grouped shard call is the versioned default shape for strict and recall', () => {
   const generation = 'c'.repeat(64);
-  const grouped = buildGroupedSearchCall({
+  const strict = buildGroupedSearchCall({
     generation_id: generation,
     query: 'needle',
     scopes: ['dialogue', 'evidence'],
     limit: 10,
     candidate_budget: 25,
-    search_mode: 'recall',
+    search_mode: 'strict',
   });
   assert.equal(
-    grouped.text,
-    'SELECT session_search.search_generation_grouped_v2($1,$2,$3::text[],$4,$5,$6,$7,$8,$9) AS result',
+    strict.text,
+    'SELECT session_search.search_generation_grouped_v3($1,$2,$3::text[],$4,$5,$6,$7,$8,$9) AS result',
   );
-  assert.deepEqual(grouped.values, [
-    generation, 'needle', ['dialogue', 'evidence'], 10, 25, null, null, null, 'recall',
+  assert.deepEqual(strict.values, [
+    generation, 'needle', ['dialogue', 'evidence'], 10, 25, null, null, null, 'strict',
   ]);
 
-  const parityDefault = buildGroupedSearchCall({
+  const recall = buildGroupedSearchCall({
     generation_id: generation,
     query: 'needle',
     limit: 10,
     search_mode: 'recall',
   });
-  assert.equal(parityDefault.values[4], 30);
+  assert.equal(recall.values[4], 30);
+  assert.equal(recall.values.at(-1), 'recall');
+
+  const active = buildGroupedSearchCall({ query: 'needle', limit: 10, search_mode: 'strict' });
+  assert.equal(
+    active.text,
+    'SELECT session_search.search_grouped_v3($1,$2::text[],$3,$4,$5,$6,$7,$8) AS result',
+  );
+  assert.equal(active.values[3], 30);
 
   const cappedDefault = buildGroupedSearchCall({
     generation_id: generation,
@@ -350,22 +362,15 @@ test('opt-in grouped shard call separates candidate budget from result limit wit
   });
   assert.equal(cappedDefault.values[4], 300);
 
-  const legacy = buildSearchCall({
+  const flatRollback = buildSearchCall({
     generation_id: generation,
     query: 'needle',
     limit: 10,
     search_mode: 'recall',
   });
-  assert.match(legacy.text, /search_generation_v2/);
-  assert.equal(legacy.values.length, 8);
-  assert.throws(
-    () => buildGroupedSearchCall({ query: 'needle', search_mode: 'recall' }),
-    /GENERATION_REQUIRED_FOR_GROUPED_SEARCH/,
-  );
-  assert.throws(
-    () => buildGroupedSearchCall({ generation_id: generation, query: 'needle', search_mode: 'strict' }),
-    /GROUPED_SEARCH_RECALL_ONLY/,
-  );
+  assert.match(flatRollback.text, /search_generation_v2/);
+  assert.equal(flatRollback.values.length, 8);
+
   for (const candidateBudget of [9, 301, 1.5, '30']) {
     assert.throws(
       () => buildGroupedSearchCall({

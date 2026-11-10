@@ -2,8 +2,7 @@
 
 Coordination: issue #252, child of #188.
 
-Status: research/design only. This note does not authorize or perform a production
-serving cutover.
+Status: frozen research/design record from #252. Its original ‘flat default / grouped opt-in’ statements document the pre-#264 state and are intentionally retained as historical reasoning. #264 subsequently accepted exact-text grouping as the normal Session Search result contract; see `docs/exact-text-grouping-contract.md` for the current contract.
 
 ## Question
 

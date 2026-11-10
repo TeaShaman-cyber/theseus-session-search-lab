@@ -151,7 +151,7 @@ class BootstrapContract(unittest.TestCase):
             rows = json.loads(result.stdout)
             self.assertGreaterEqual(len(rows), 1)
             self.assertTrue(any('copper kettle' in r['text'].lower() for r in rows))
-            self.assertTrue(all(r['content_type'] != 'thoughts' for r in rows))
+            self.assertTrue(all(r['representative']['content_type'] != 'thoughts' for r in rows))
 
     def test_partial_capture_is_preserved_as_coverage_metadata(self):
         with tempfile.TemporaryDirectory() as td:

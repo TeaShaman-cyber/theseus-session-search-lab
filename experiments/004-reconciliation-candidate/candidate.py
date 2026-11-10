@@ -14,7 +14,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from session_search.corpus_store import ingest_artifact, verify_corpus
-from session_search.search import query_tokens, search_corpus
+from session_search.search import query_tokens, search_corpus_flat as search_corpus
 
 SCHEMA = "theseus.session-search-reconciliation-comparison.v0"
 BASELINE_PATH = ROOT / "experiments" / "003-authority-retrieval-benchmark" / "baseline.public.json"

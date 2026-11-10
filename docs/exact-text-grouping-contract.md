@@ -1,11 +1,10 @@
 # Exact-text grouped result contract
 
-Status: research contract under issue #188. It is implemented as a pure helper and
-tests, but is **not wired into the Session Search HTTP/MCP serving path**.
+Status: accepted default result contract under #264, based on #188/#258. Exact-text grouping is the normal local, shard, router, and MCP result shape. The old flat event-row shape remains only as an explicit internal rollback/replay seam.
 
 ## Problem
 
-Current search output is event-shaped: one hit contains one session/message occurrence.
+Historical search output was event-shaped: one hit contained one session/message occurrence.
 Real-corpus benchmark #188 showed that exact repeated bodies can consume Top-K slots.
 The optimization must not turn repeated text into one historical event: accepted
 session/message occurrences and branch provenance remain distinct authority.
@@ -68,10 +67,10 @@ duplicates. The accepted real-corpus benchmark kept the current K=10 recall cand
 pool (30 rows), applied the current rerank, grouped exact bodies, and only then selected
 Top-10. Baseline prefix parity was 20/20.
 
-Therefore a future serving implementation must group before the relevant per-shard
-Top-K boundary (and may need a second merge of equal groups across shards). Merely
-grouping `router.hits` after shards have already returned their final `limit` does not
-implement the measured algorithm.
+The default serving implementation therefore groups before the relevant per-shard
+Top-K boundary and merges equal groups again across shards before the global Top-K.
+Grouping only after a flat final Top-K would still be too late and is not the default
+algorithm.
 
 ## Not claimed
 
@@ -80,19 +79,18 @@ implement the measured algorithm.
 - No change to BM25/FTS scoring.
 - No proof that every historical occurrence of the same text is in a query's bounded
   candidate pool; the contract preserves all **candidate occurrences** presented to it.
-- No production/API cutover under this document.
+- Grouping becoming the default result shape is an architectural/presentation decision under #264; it is not a claim that grouping alone improves relevance for every ranker.
 
-Implementation helpers: `functions/grouping.mjs` owns both single-list exact grouping and the pure, still-unwired `mergeExactTextGroups()` cross-shard group merge.
+Implementation helpers: `functions/grouping.mjs` owns both single-list exact grouping and `mergeExactTextGroups()` for the federated cross-shard merge.
 Real-corpus evidence: `receipts/188-exact-grouping-real-corpus.public.json`.
 
 ## Local SQLite reference implementation
 
-`session_search.search.search_corpus_grouped_recall()` is an opt-in local
-reference implementation. It reuses the same internal recall candidate query and
+`session_search.search.search_corpus()` now returns exact-text groups by default for both strict and recall modes. `search_corpus_grouped_recall()` remains a compatibility name for the grouped recall path. It reuses the same internal recall candidate query and
 reranker as `search_corpus(..., recall=True)`, then applies exact-text grouping
 before the final group Top-K. Its internal `candidate_budget` is explicit and
 independent from the final `limit`; omitting it preserves the previous `3 * limit`
-policy. Existing flat `search_corpus()` behavior remains the default and is unchanged.
+policy. The former event-row behavior is available only through the explicit internal `search_corpus_flat()` rollback/replay helper.
 
 Acceptance on the private frozen 20-row gold set:
 - flat ranks from the refactored core matched the previously accepted #188 public
@@ -136,19 +134,9 @@ parity on the federated serverless shards. Cutover remains a separate gated chan
 JavaScript builder always supplies both values; when the canary caller omits an
 explicit budget it preserves the measured parity policy
 `min(300, 3 * result_limit)`. The authenticated shard `/search` handler can select
-this path only with the internal `grouping: exact_text_v1` control; a candidate
-budget without that selector fails closed. The public router validation rejects
-`grouping` and `candidate_budget`, and the MCP schema exposes neither, so public
-router/MCP behaviour remains flat and unchanged.
+the grouped SQL path with an explicit candidate budget. Under #264, the normal shard/router path selects grouped results by default. `grouping`, `candidate_budget`, and `result_shape` remain internal controls and are not exposed in the public MCP input schema.
 
-The router source also contains a disabled-by-default authenticated canary route,
-`POST /internal/grouped-search`, gated by `groupedCanaryEnabled`. When explicitly
-enabled by a caller constructing the router handler, it sends the grouped selector
-and candidate budget to pinned READY shards, ranks each shard's returned groups by
-its existing reciprocal-rank rule, and uses `mergeExactTextGroups()` to merge equal
-text across shards before final group Top-K. The normal `/search` route and MCP tool
-do not use this path. The default production constructor leaves the canary disabled;
-this source path is not evidence of runtime enablement or production cutover.
+The historical authenticated canary route remains disabled by default for diagnostic compatibility. The normal `/search` route and MCP `session_search` tool now use the same grouped merge directly. Production source defaults to `grouped_v1`; `SESSION_SEARCH_RESULT_SHAPE=flat_v1` is an internal rollback switch, not a public search option.
 
 ## Strong-ranker cross-check
 
@@ -164,10 +152,7 @@ post-rank pool used by the exact-grouping experiment:
 
 This materially changes the promotion interpretation. Exact grouping remains a
 valid deterministic presentation/selection primitive, but the stronger BM25
-ranker already suppresses most duplicate-slot pressure. Do not cut over grouping
-as an isolated relevance optimization merely because it helped the weaker
-current local recall stack. Re-evaluate it only as part of a measured serving
-candidate/ranker pipeline or for a separately justified diversity/payload goal.
+ranker already suppresses most duplicate-slot pressure. This cross-check still limits the claim: grouping is not a universal relevance improvement. #264 promotes it because duplicate bodies should not consume separate user-facing result slots while occurrence provenance is preserved, not because the stronger ranker showed a relevance gain.
 
 Public receipt:
 `receipts/188-bm25-exact-grouping-crosscheck.public.json`.

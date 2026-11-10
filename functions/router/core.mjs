@@ -17,8 +17,9 @@ const FEEDBACK_OPERATOR_FIELDS = new Set(['name', 'version']);
 
 function validateSearchInput(input = {}) {
   if (Object.prototype.hasOwnProperty.call(input, 'grouping')
-      || Object.prototype.hasOwnProperty.call(input, 'candidate_budget')) {
-    throw new Error('GROUPED_SEARCH_NOT_PUBLIC');
+      || Object.prototype.hasOwnProperty.call(input, 'candidate_budget')
+      || Object.prototype.hasOwnProperty.call(input, 'result_shape')) {
+    throw new Error('INTERNAL_SEARCH_CONTROL_NOT_PUBLIC');
   }
   const query = typeof input.query === 'string' ? input.query.trim() : '';
   if (!query || query.length > 512) throw new Error('QUERY_OUT_OF_BOUNDS');
@@ -292,12 +293,17 @@ export function mergeGroupedShardOutcomes(selected, outcomes, limit) {
   );
   unavailable.sort((a, b) => a.shard_id.localeCompare(b.shard_id));
 
+  const candidateCount = outcomes.reduce((count, outcome) =>
+    count + (outcome?.ok && Number.isInteger(outcome.body?.candidate_count)
+      ? outcome.body.candidate_count
+      : 0), 0);
   const candidateGroupCount = ranked.length;
   const groups = mergeExactTextGroups(ranked.map((item) => item.group), limit);
   return {
     status: unavailable.length ? 'PARTIAL' : groups.length ? 'FOUND' : 'NO_SIGNAL',
     grouping: 'exact_text_v1',
     groups,
+    candidate_count: candidateCount,
     candidate_group_count: candidateGroupCount,
     returned_group_count: groups.length,
     queried_shards: queried,
@@ -325,7 +331,7 @@ export async function handleMcpRequest(request, searchFn, feedbackFn = null) {
   if (method === 'tools/list') {
     const tools = [{
       name: 'session_search',
-      description: 'Search federated Session Search shards with provenance and explicit partial-failure semantics.',
+      description: 'Search federated Session Search shards. Exact duplicate text is returned once with every historical occurrence/provenance attached; PARTIAL remains explicit.',
       inputSchema: {
         type: 'object',
         additionalProperties: false,

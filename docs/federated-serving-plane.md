@@ -9,9 +9,9 @@ ChatGPT
   -> Arcade Session Search gateway
   -> Neon router Function
       -> Neon shard Function: chatgpt-0001
-          -> bounded session_search.search(...)
+          -> bounded grouped session_search.search(...)
       -> Neon shard Function: hermes-0001
-          -> bounded session_search.search(...)
+          -> bounded grouped session_search.search(...)
 ```
 
 MarcoPolo remains an engineering, ingest, QA, rebuild, and recovery workbench. It is not part of the deployed HTTP/MCP request path.
@@ -20,7 +20,7 @@ MarcoPolo remains an engineering, ingest, QA, rebuild, and recovery workbench. I
 
 The shard Function validates one bounded search request and executes exactly one versioned Postgres function call. It does not accept arbitrary SQL.
 
-The router Function has no shard database credentials. Its catalog contains shard identity, provider, expected generation, state, and HTTPS endpoint. It selects relevant READY shards, performs HTTP fan-out, and merges results deterministically.
+The router Function has no shard database credentials. Its catalog contains shard identity, provider, expected generation, state, and HTTPS endpoint. It selects relevant READY shards, performs HTTP fan-out, and merges results deterministically. The default result is one exact-text group per unique body; every matched occurrence keeps provider/shard/generation provenance. Equal text returned by different shards is merged before the final global limit.
 
 The same federated search implementation serves both:
 - `POST /search`;
@@ -56,11 +56,11 @@ or permission to change the router/catalog:
 
 ## Failure semantics
 
-- `FOUND`: every selected shard responded and at least one hit exists.
-- `NO_SIGNAL`: every selected shard responded and no hit exists.
+- `FOUND`: every selected shard responded and at least one result group exists.
+- `NO_SIGNAL`: every selected shard responded and no result group exists.
 - `PARTIAL`: one or more selected shards failed, were not READY, or returned a generation other than the catalog identity.
 
-A failed shard is never silently omitted.
+A failed shard is never silently omitted. Healthy groups remain available under `PARTIAL`. The old flat `hits[]` shape is retained only behind the internal `flat_v1` rollback setting; it is not a public MCP option.
 
 ## Live synthetic canary  2026-10-24
 

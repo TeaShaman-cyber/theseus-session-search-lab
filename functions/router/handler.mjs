@@ -32,6 +32,7 @@ export function makeRouterHandler({
   authToken,
   shardAuthToken,
   feedbackWriter = null,
+  resultShape = 'grouped_v1',
   groupedCanaryEnabled = false,
 }) {
   if (typeof authToken !== 'string' || authToken.length === 0) {
@@ -46,11 +47,20 @@ export function makeRouterHandler({
   if (feedbackWriter !== null && typeof feedbackWriter !== 'function') {
     throw new Error('FEEDBACK_WRITER_INVALID');
   }
+  if (!['grouped_v1', 'flat_v1'].includes(resultShape)) {
+    throw new Error('RESULT_SHAPE_OUT_OF_BOUNDS');
+  }
   if (typeof groupedCanaryEnabled !== 'boolean') {
     throw new Error('GROUPED_CANARY_FLAG_INVALID');
   }
 
-  async function dispatchSelected(input, selected, searchMode, requestContext, { grouped = false } = {}) {
+  async function dispatchSelected(
+    input, selected, searchMode, requestContext, { shape = resultShape } = {},
+  ) {
+    const grouped = shape === 'grouped_v1';
+    const candidateBudget = grouped
+      ? (input.candidate_budget ?? Math.min(300, input.limit * 3))
+      : null;
     const outcomes = await Promise.all(selected.map(async (shard) => telemetry.withDispatch(
       requestContext,
       shard,
@@ -75,7 +85,8 @@ export function makeRouterHandler({
                 session_id: input.session_id ?? null,
                 from_time: input.from_time ?? null,
                 to_time: input.to_time ?? null,
-                ...(grouped ? { grouping: 'exact_text_v1', candidate_budget: input.candidate_budget } : {}),
+                result_shape: grouped ? 'grouped_v1' : 'flat_v1',
+                ...(grouped ? { candidate_budget: candidateBudget } : {}),
               }),
               signal: controller.signal,
             });
@@ -128,41 +139,74 @@ export function makeRouterHandler({
       return dispatchSelected(input, selected, searchMode, requestContext);
     }
 
-    function withReceipt(result, effectiveMode, strictHitCount) {
-      const candidateCount = result.candidate_count ?? result.hits?.length ?? 0;
-      const { candidate_count: _candidateCount, ...publicResult } = result;
+    function resultCount(result) {
+      return resultShape === 'grouped_v1'
+        ? result.groups?.length ?? 0
+        : result.hits?.length ?? 0;
+    }
+
+    function withReceipt(result, effectiveMode, strictResultCount) {
+      if (resultShape === 'flat_v1') {
+        const candidateCount = result.candidate_count ?? result.hits?.length ?? 0;
+        const { candidate_count: _candidateCount, ...publicResult } = result;
+        return {
+          ...publicResult,
+          request_ref: requestRef,
+          retrieval: {
+            requested_mode: input.search_mode,
+            effective_mode: effectiveMode,
+            strict_hit_count: strictResultCount,
+            candidate_count: candidateCount,
+            returned_hit_count: publicResult.hits?.length ?? 0,
+          },
+        };
+      }
+
+      const candidateCount = result.candidate_count ?? 0;
+      const candidateGroupCount = result.candidate_group_count ?? result.groups?.length ?? 0;
+      const {
+        candidate_count: _candidateCount,
+        candidate_group_count: _candidateGroupCount,
+        returned_group_count: _returnedGroupCount,
+        ...publicResult
+      } = result;
       return {
         ...publicResult,
         request_ref: requestRef,
         retrieval: {
           requested_mode: input.search_mode,
           effective_mode: effectiveMode,
-          strict_hit_count: strictHitCount,
+          strict_group_count: strictResultCount,
           candidate_count: candidateCount,
-          returned_hit_count: publicResult.hits?.length ?? 0,
+          candidate_group_count: candidateGroupCount,
+          returned_group_count: publicResult.groups?.length ?? 0,
         },
       };
     }
 
     if (input.search_mode !== 'auto') {
       const result = await dispatch(input.search_mode);
-      return withReceipt(result, input.search_mode, input.search_mode === 'strict' ? result.hits.length : null);
+      return withReceipt(
+        result,
+        input.search_mode,
+        input.search_mode === 'strict' ? resultCount(result) : null,
+      );
     }
 
     const strictResult = await dispatch('strict');
-    const strictHitCount = strictResult.hits.length;
+    const strictResultCount = resultCount(strictResult);
     if (strictResult.status !== 'NO_SIGNAL') {
-      return withReceipt(strictResult, 'strict', strictHitCount);
+      return withReceipt(strictResult, 'strict', strictResultCount);
     }
 
     const recallResult = await dispatch('recall');
-    return withReceipt(recallResult, 'recall', strictHitCount);
+    return withReceipt(recallResult, 'recall', strictResultCount);
   }
 
   async function searchFederatedGroupedCanary(rawInput, requestContext, requestRef) {
     const input = validateGroupedCanaryInput(rawInput);
     const selected = selectShards(catalog, input);
-    const result = await dispatchSelected(input, selected, 'recall', requestContext, { grouped: true });
+    const result = await dispatchSelected(input, selected, 'recall', requestContext, { shape: 'grouped_v1' });
     return {
       ...result,
       request_ref: requestRef,
@@ -194,6 +238,7 @@ export function makeRouterHandler({
             service: 'session-search-router',
             shard_count: catalog.length,
             ready_shards: catalog.filter((item) => !item.state || item.state === 'READY').length,
+            result_shape: resultShape,
           });
         }
 

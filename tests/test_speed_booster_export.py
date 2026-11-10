@@ -500,7 +500,7 @@ class SpeedBoosterExportAdapterTest(unittest.TestCase):
             self.assertEqual(result["artifact_count"], 1)
             hits = search_corpus(corpus, "knowledge bridge anchor", ["dialogue"], 8)
             self.assertEqual(len(hits), 1)
-            self.assertEqual(hits[0]["session_coverage"], "PARTIAL_SESSION_SLICE")
+            self.assertEqual(hits[0]["representative"]["session_coverage"], "PARTIAL_SESSION_SLICE")
 
     def test_same_title_and_first_timestamp_with_different_first_message_content_do_not_merge(self):
         from session_search.speed_booster_export import materialize_export

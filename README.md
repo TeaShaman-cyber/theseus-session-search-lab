@@ -129,6 +129,8 @@ Search all accepted sessions together:
 python3 -m session_search.search "previous decision"
 ```
 
+Search results are grouped by **exact message text** by default. If the same body appears in several sessions, branches, providers, or shards, it occupies one result slot and carries every matched historical occurrence in `occurrences[]`. The first/best-ranked occurrence is kept as `representative`; no historical occurrence is deleted. The final result limit is applied after grouping.
+
 For continuity reconstruction where exact wording may differ, opt into broader lexical recall:
 
 ```bash
@@ -172,7 +174,7 @@ For continuity reconstruction, use a bounded Sonar-style escalation before class
 
 Repeated retrieval of the same fragment is not independent evidence. This escalation is a retrieval discipline around Session Search, not a claim that the FTS projection is semantic memory, and it should remain bounded rather than turning every lookup into a full federated-memory traversal.
 
-Each corpus search hit carries session identity, title, coverage state, message time, role, search class, and score so the assistant can distinguish relevance from evidence completeness. Restrict a query when needed:
+Each corpus search result carries the exact text once, a representative ranked occurrence, and all matched occurrence provenance (session identity, title, coverage state, message time, role, and search class) so the assistant can distinguish relevance from evidence completeness. Restrict a query when needed:
 
 ```bash
 python3 -m session_search.search "previous decision" --session <stable-session-id>
