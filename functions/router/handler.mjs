@@ -1,4 +1,5 @@
 import { hasValidBearerToken } from '../auth.mjs';
+import { makeSessionBrowser } from './session-browse.mjs';
 import { createNoopTelemetry } from '../telemetry.mjs';
 import {
   handleMcpRequest,
@@ -130,6 +131,10 @@ export function makeRouterHandler({
       ? mergeGroupedShardOutcomes(selected, outcomes, input.limit)
       : mergeShardOutcomes(selected, outcomes, input.limit);
   }
+
+  const browseSession = makeSessionBrowser({
+    catalog, fetchImpl, shardAuthToken, shardTimeoutMs, telemetry,
+  });
 
   async function searchFederated(rawInput, requestContext, requestRef) {
     const input = validateSearchInput(rawInput);
@@ -296,6 +301,7 @@ export function makeRouterHandler({
             message,
             (input) => searchFederated(input, observation.context, observation.requestRef),
             feedbackWriter,
+            (input) => browseSession(input, observation.context),
           );
           if (result === null) return new Response(null, { status: 202 });
           const searchResult = result?.result?.structuredContent;

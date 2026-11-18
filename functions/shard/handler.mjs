@@ -1,6 +1,6 @@
 import { hasValidBearerToken } from '../auth.mjs';
 import { createNoopTelemetry } from '../telemetry.mjs';
-import { buildGroupedSearchCall, buildSearchCall } from './core.mjs';
+import { buildGroupedSearchCall, buildSearchCall, buildSessionBrowseCall } from './core.mjs';
 
 function buildDefaultSearchCall(input = {}) {
   // Missing result_shape is the rolling-upgrade compatibility contract for older routers.
@@ -40,6 +40,7 @@ function json(value, status = 200) {
 function routeFor(request, url) {
   if (request.method === 'GET' && url.pathname === '/health') return 'health';
   if (request.method === 'POST' && url.pathname === '/search') return 'search';
+  if (request.method === 'POST' && url.pathname === '/session-read') return 'session_browse';
   return 'not_found';
 }
 
@@ -56,7 +57,7 @@ export function makeShardHandler(executeSearch, { telemetry = createNoopTelemetr
           observation.setResult({ resultStatus: 'OK' });
           return json({ status: 'OK', service: 'session-search-shard' });
         }
-        if (request.method !== 'POST' || url.pathname !== '/search') {
+        if (request.method !== 'POST' || !['/search', '/session-read'].includes(url.pathname)) {
           observation.setErrorClass('not_found');
           return json({ error: 'NOT_FOUND' }, 404);
         }
@@ -66,11 +67,15 @@ export function makeShardHandler(executeSearch, { telemetry = createNoopTelemetr
         }
         try {
           const input = await request.json();
-          const call = buildDefaultSearchCall(input);
-          const pinned = Object.prototype.hasOwnProperty.call(input, 'generation_id');
+          const browse = url.pathname === '/session-read';
+          const call = browse ? buildSessionBrowseCall(input) : buildDefaultSearchCall(input);
+          const pinned = browse || Object.prototype.hasOwnProperty.call(input, 'generation_id');
           const result = await executeSearch(call);
           if (pinned && result?.generation_id !== input.generation_id) {
             throw new Error('PINNED_GENERATION_MISMATCH');
+          }
+          if (browse && (result?.status !== 'OK' || result.session_id !== input.session_id)) {
+            throw new Error('PINNED_SESSION_MISMATCH');
           }
           observation.setResult({
             resultStatus: result?.status,
