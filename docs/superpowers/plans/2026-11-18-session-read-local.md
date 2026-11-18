@@ -43,5 +43,8 @@
   deliberately forge a valid token. Cloud generation/authority binding must be
   verified separately before exposing any remote reader.
 - Reject malformed cursors, cross-session/corpus continuation, SQLite integer
-  overflow and mid-read projection changes. Local projection_stamp is a
-  best-effort file-change detector, not a stable snapshot of accepted evidence.
+  overflow and mid-read projection changes. Also test an atomic DB replacement
+  *during connect*: capture projection_stamp before opening SQLite and compare
+  it after opening and again after the read; never return old database content
+  under a cursor stamped from the replacement. This is a best-effort file-change
+  detector, not a stable snapshot of accepted evidence.

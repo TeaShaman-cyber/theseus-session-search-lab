@@ -101,10 +101,14 @@ def read_session(
     if decoded is not None and decoded["s"] != session_id:
         raise ValueError("CURSOR_SESSION_MISMATCH")
 
+    # Take a file-generation witness BEFORE opening the SQLite connection:
+    # the publisher can atomically replace this pathname during connect().
+    revision = _projection_stamp(db)
     connection = sqlite3.connect(f"file:{quote(str(db.resolve()))}?mode=ro", uri=True)
     connection.row_factory = sqlite3.Row
     try:
-        revision = _projection_stamp(db)
+        if _projection_stamp(db) != revision:
+            raise ValueError("PROJECTION_CHANGED_DURING_READ")
         if decoded is not None and decoded["rev"] != revision:
             raise ValueError("STALE_CURSOR")
         session = connection.execute(

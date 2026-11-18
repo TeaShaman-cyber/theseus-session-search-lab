@@ -1,6 +1,8 @@
 """Agent-facing paginated read of an accepted SQLite conversation."""
 import base64
 import json
+import os
+import shutil
 import pathlib
 import sqlite3
 import tempfile
@@ -198,6 +200,27 @@ class SessionReadTests(unittest.TestCase):
 
         first = session_read._projection_stamp(CorpusPaths.from_root(self.corpus).db)
         with patch.object(session_read, "_projection_stamp", side_effect=[first, "changed"]):
+            with self.assertRaisesRegex(ValueError, "PROJECTION_CHANGED_DURING_READ"):
+                read_session(self.corpus, "session-a", limit=1)
+
+    def test_replaced_database_during_connection_open_fails_closed(self):
+        from session_search import session_read
+
+        db = CorpusPaths.from_root(self.corpus).db
+        replacement = db.with_name("replacement.sqlite")
+        shutil.copyfile(db, replacement)
+        with sqlite3.connect(replacement) as conn:
+            conn.execute("UPDATE messages SET text='NEW' WHERE message_id='m1'")
+        original_connect = sqlite3.connect
+
+        def connect_then_replace(*args, **kwargs):
+            # Connection points at old DB inode; filesystem path changes
+            # before read_session can issue its first SELECT.
+            connection = original_connect(*args, **kwargs)
+            os.replace(replacement, db)
+            return connection
+
+        with patch.object(session_read.sqlite3, "connect", side_effect=connect_then_replace):
             with self.assertRaisesRegex(ValueError, "PROJECTION_CHANGED_DURING_READ"):
                 read_session(self.corpus, "session-a", limit=1)
 
