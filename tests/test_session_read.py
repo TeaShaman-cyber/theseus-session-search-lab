@@ -80,15 +80,39 @@ class SessionReadTests(unittest.TestCase):
             tracemalloc.stop()
         message = result["messages"][0]
         self.assertEqual(message["text"], "x" * 32)
-        self.assertEqual(message["text_total_chars"], 2_000_000)
+        self.assertEqual(message["text_total_bytes"], 2_000_000)
         self.assertFalse(message["complete_message"])
         self.assertLess(peak, 500_000, f"Python allocated {peak:,} bytes for 32 characters")
+
+    def test_nul_and_multibyte_characters_survive_each_page(self):
+        original = "é\x00🍵after"
+        capture = _write_capture(
+            self.root / "nul.zip",
+            "session-nul",
+            [_message("nul1", original, 5.0)],
+            complete=True,
+        )
+        ingest_artifact(capture, self.corpus)
+        segments = []
+        cursor = None
+        for _ in range(len(original) + 2):
+            page = read_session(self.corpus, "session-nul", limit=1, max_chars=2, cursor=cursor)
+            item = page["messages"][0]
+            segments.append(item["text"])
+            cursor = page["next_cursor"]
+            if not page["has_more"]:
+                break
+        else:
+            self.fail("reader did not reach end of NUL-containing message")
+        self.assertEqual("".join(segments), original)
+        self.assertEqual(item["text_total_bytes"], len(original.encode("utf-8")))
+        self.assertTrue(item["complete_message"])
 
     def test_oversized_message_yields_explicit_continuation(self):
         first = read_session(self.corpus, "session-a", limit=1, max_chars=3)
         self.assertEqual(first["messages"][0]["text"], "aga")
         self.assertEqual(first["messages"][0]["text_offset"], 0)
-        self.assertEqual(first["messages"][0]["text_total_chars"], 5)
+        self.assertEqual(first["messages"][0]["text_total_bytes"], 5)
         self.assertFalse(first["messages"][0]["complete_message"])
         second = read_session(self.corpus, "session-a", cursor=first["next_cursor"],
                               limit=1, max_chars=3)

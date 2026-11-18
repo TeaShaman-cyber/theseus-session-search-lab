@@ -24,8 +24,11 @@ def _projection_stamp(path: pathlib.Path) -> str:
     return hashlib.sha256(json.dumps(parts).encode("ascii")).hexdigest()
 
 
-def _cursor_encode(session_id: str, revision: str, ordinal: int, offset: int) -> str:
-    data = {"v": 1, "s": session_id, "rev": revision, "o": ordinal, "offset": offset}
+def _cursor_encode(session_id: str, revision: str, ordinal: int, offset: int, byte_offset: int) -> str:
+    data = {
+        "v": 2, "s": session_id, "rev": revision,
+        "o": ordinal, "offset": offset, "byte_offset": byte_offset,
+    }
     return base64.urlsafe_b64encode(
         json.dumps(data, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     ).decode("ascii").rstrip("=")
@@ -39,14 +42,27 @@ def _cursor_decode(token: str) -> dict:
     except (ValueError, UnicodeDecodeError, TypeError) as exc:
         raise ValueError("CURSOR_INVALID") from exc
     if (
-        not isinstance(data, dict) or set(data) != {"v", "s", "rev", "o", "offset"}
-        or type(data["v"]) is not int or data["v"] != 1
+        not isinstance(data, dict) or set(data) != {"v", "s", "rev", "o", "offset", "byte_offset"}
+        or type(data["v"]) is not int or data["v"] != 2
         or not isinstance(data["s"], str) or not isinstance(data["rev"], str)
         or type(data["o"]) is not int or data["o"] < 0
         or type(data["offset"]) is not int or data["offset"] < 0
+        or type(data["byte_offset"]) is not int or data["byte_offset"] < 0
+        or (data["offset"] == 0) != (data["byte_offset"] == 0)
     ):
         raise ValueError("CURSOR_INVALID")
     return data
+
+
+
+def _decode_bounded_utf8(chunk: bytes) -> str:
+    try:
+        return chunk.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        # A byte-limited read may end inside a valid UTF-8 codepoint.
+        if exc.reason != "unexpected end of data" or exc.end != len(chunk):
+            raise ValueError("PROJECTION_INVALID_UTF8") from exc
+        return chunk[:exc.start].decode("utf-8")
 
 
 def read_session(
@@ -92,26 +108,33 @@ def read_session(
 
         ordinal = decoded["o"] if decoded is not None else start_ordinal
         offset = decoded["offset"] if decoded is not None else 0
+        byte_offset = decoded["byte_offset"] if decoded is not None else 0
         messages: list[dict] = []
         remaining = max_chars
         for _ in range(limit):
-            # SQLite slices before handing text to Python: at most the
-            # remaining character budget is materialized per message.
+            # SQLite text length/substr stop at embedded NUL characters.
+            # Read a bounded UTF-8 BLOB slice instead; four bytes suffice
+            # for every Unicode codepoint in the remaining character budget.
             row = connection.execute(
                 """SELECT ordinal, message_id, role, content_type, search_class,
-                          create_time, length(text) AS text_total_chars,
-                          substr(text, CASE WHEN ordinal=? THEN ?+1 ELSE 1 END, ?) AS text
+                          create_time, length(CAST(text AS BLOB)) AS text_total_bytes,
+                          substr(CAST(text AS BLOB),
+                                 CASE WHEN ordinal=? THEN ?+1 ELSE 1 END, ?) AS text_bytes
                    FROM messages WHERE session_id=? AND ordinal>=?
                    ORDER BY ordinal, row_id LIMIT 1""",
-                (ordinal, offset, remaining, session_id, ordinal),
+                (ordinal, byte_offset, remaining * 4, session_id, ordinal),
             ).fetchone()
             if row is None:
                 break
             start = offset if row["ordinal"] == ordinal else 0
-            if start >= row["text_total_chars"] and start != 0:
+            start_byte = byte_offset if row["ordinal"] == ordinal else 0
+            if start_byte >= row["text_total_bytes"] and start_byte != 0:
                 raise ValueError("CURSOR_INVALID")
-            segment = row["text"]
-            complete = start + len(segment) >= row["text_total_chars"]
+            segment = _decode_bounded_utf8(row["text_bytes"])[:remaining]
+            used_bytes = len(segment.encode("utf-8"))
+            if not used_bytes and start_byte < row["text_total_bytes"]:
+                raise ValueError("PROJECTION_INVALID_UTF8")
+            complete = start_byte + used_bytes >= row["text_total_bytes"]
             messages.append({
                 "ordinal": row["ordinal"],
                 "message_id": row["message_id"],
@@ -121,12 +144,13 @@ def read_session(
                 "create_time": row["create_time"],
                 "text": segment,
                 "text_offset": start,
-                "text_total_chars": row["text_total_chars"],
+                "text_total_bytes": row["text_total_bytes"],
                 "complete_message": complete,
             })
             remaining -= len(segment)
             ordinal = row["ordinal"] + (1 if complete else 0)
             offset = 0 if complete else start + len(segment)
+            byte_offset = 0 if complete else start_byte + used_bytes
             if not complete or remaining == 0:
                 break
 
@@ -144,7 +168,7 @@ def read_session(
             "projection_stamp": revision,
             "messages": messages,
             "has_more": has_more,
-            "next_cursor": _cursor_encode(session_id, revision, ordinal, offset) if has_more else None,
+            "next_cursor": _cursor_encode(session_id, revision, ordinal, offset, byte_offset) if has_more else None,
         }
     finally:
         connection.close()

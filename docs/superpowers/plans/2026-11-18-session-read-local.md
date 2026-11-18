@@ -12,7 +12,7 @@
 ## Constraints
 - Read-only, no accepted-artifact or projection mutation.
 - Preserve role, search_class, ordinal, message identity, coverage and all repeated occurrences.
-- Bound both number of returned segments and total returned text; split oversized messages with explicit offsets.
+- Bound both number of returned segments and total returned text; split oversized messages with explicit character offsets and a byte-based cursor so embedded NUL and multibyte UTF-8 survive. Return total byte length, not SQLite's NUL-truncating character length.
 - A stale cursor fails closed. Projection fingerprint is a local best-effort check, not cryptographic proof or cross-process transaction pinning.
 - No changes to search or cloud serving. No production deployment in this slice.
 
