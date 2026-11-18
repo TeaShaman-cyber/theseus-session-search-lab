@@ -2,6 +2,7 @@
 import pathlib
 import sqlite3
 import tempfile
+import tracemalloc
 import unittest
 
 from session_search.corpus_store import CorpusPaths, ingest_artifact
@@ -60,6 +61,28 @@ class SessionReadTests(unittest.TestCase):
             conn.execute("UPDATE messages SET text='changed' WHERE message_id='m3'")
         with self.assertRaisesRegex(ValueError, "STALE_CURSOR"):
             read_session(self.corpus, "session-a", cursor=first["next_cursor"])
+
+    def test_char_budget_also_bounds_python_materialization(self):
+        huge_text = "x" * 2_000_000
+        capture = _write_capture(
+            self.root / "huge.zip",
+            "session-huge",
+            [_message("h1", huge_text, 4.0, role="assistant")],
+            complete=True,
+        )
+        ingest_artifact(capture, self.corpus)
+        # Exclude fixture construction/ingest from the measured read allocation.
+        tracemalloc.start()
+        try:
+            result = read_session(self.corpus, "session-huge", limit=1, max_chars=32)
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        message = result["messages"][0]
+        self.assertEqual(message["text"], "x" * 32)
+        self.assertEqual(message["text_total_chars"], 2_000_000)
+        self.assertFalse(message["complete_message"])
+        self.assertLess(peak, 500_000, f"Python allocated {peak:,} bytes for 32 characters")
 
     def test_oversized_message_yields_explicit_continuation(self):
         first = read_session(self.corpus, "session-a", limit=1, max_chars=3)

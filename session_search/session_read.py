@@ -92,21 +92,26 @@ def read_session(
 
         ordinal = decoded["o"] if decoded is not None else start_ordinal
         offset = decoded["offset"] if decoded is not None else 0
-        rows = connection.execute(
-            """SELECT ordinal, message_id, role, content_type, search_class, create_time, text
-               FROM messages WHERE session_id=? AND ordinal>=?
-               ORDER BY ordinal, row_id LIMIT ?""",
-            (session_id, ordinal, limit),
-        ).fetchall()
         messages: list[dict] = []
         remaining = max_chars
-        for row in rows:
-            full_text = row["text"]
+        for _ in range(limit):
+            # SQLite slices before handing text to Python: at most the
+            # remaining character budget is materialized per message.
+            row = connection.execute(
+                """SELECT ordinal, message_id, role, content_type, search_class,
+                          create_time, length(text) AS text_total_chars,
+                          substr(text, CASE WHEN ordinal=? THEN ?+1 ELSE 1 END, ?) AS text
+                   FROM messages WHERE session_id=? AND ordinal>=?
+                   ORDER BY ordinal, row_id LIMIT 1""",
+                (ordinal, offset, remaining, session_id, ordinal),
+            ).fetchone()
+            if row is None:
+                break
             start = offset if row["ordinal"] == ordinal else 0
-            if start >= len(full_text) and start != 0:
+            if start >= row["text_total_chars"] and start != 0:
                 raise ValueError("CURSOR_INVALID")
-            segment = full_text[start:start + remaining]
-            complete = start + len(segment) >= len(full_text)
+            segment = row["text"]
+            complete = start + len(segment) >= row["text_total_chars"]
             messages.append({
                 "ordinal": row["ordinal"],
                 "message_id": row["message_id"],
@@ -116,7 +121,7 @@ def read_session(
                 "create_time": row["create_time"],
                 "text": segment,
                 "text_offset": start,
-                "text_total_chars": len(full_text),
+                "text_total_chars": row["text_total_chars"],
                 "complete_message": complete,
             })
             remaining -= len(segment)
