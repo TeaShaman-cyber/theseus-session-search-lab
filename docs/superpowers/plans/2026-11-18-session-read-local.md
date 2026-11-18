@@ -38,10 +38,10 @@
   caller can retry a page safely. The test walker rejects repeated/nonadvancing
   continuations and checks that terminal indexed coverage is still labeled
   PARTIAL_SESSION_SLICE when the accepted artifact is partial.
-- Version-3 cursor includes a BLAKE2s checksum to detect accidental token edits.
-  **The checksum is not authentication**: local callers with source access can
-  deliberately forge a valid token. Cloud generation/authority binding must be
-  verified separately before exposing any remote reader.
+- Version-2 cursor contains only session, projection revision and the next
+  ordinal/character/byte position. Reject malformed shapes and stale projections;
+  do not add an integrity-check or authentication layer without a real need.
+  Cloud generation binding is a separate consistency contract.
 - Reject malformed cursors, cross-session/corpus continuation, SQLite integer
   overflow and mid-read projection changes. Also test an atomic DB replacement
   *during connect*: capture projection_stamp before opening SQLite and compare

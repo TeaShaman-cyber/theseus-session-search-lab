@@ -24,18 +24,11 @@ def _projection_stamp(path: pathlib.Path) -> str:
     return hashlib.sha256(json.dumps(parts).encode("ascii")).hexdigest()
 
 
-def _cursor_checksum(data: dict) -> str:
-    """Detect accidental cursor corruption; not an authentication MAC."""
-    payload = json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    return hashlib.blake2s(payload.encode("utf-8"), digest_size=12).hexdigest()
-
-
 def _cursor_encode(session_id: str, revision: str, ordinal: int, offset: int, byte_offset: int) -> str:
     data = {
-        "v": 3, "s": session_id, "rev": revision,
+        "v": 2, "s": session_id, "rev": revision,
         "o": ordinal, "offset": offset, "byte_offset": byte_offset,
     }
-    data["sum"] = _cursor_checksum(data)
     return base64.urlsafe_b64encode(
         json.dumps(data, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     ).decode("ascii").rstrip("=")
@@ -49,15 +42,13 @@ def _cursor_decode(token: str) -> dict:
     except (ValueError, UnicodeDecodeError, TypeError) as exc:
         raise ValueError("CURSOR_INVALID") from exc
     if (
-        not isinstance(data, dict) or set(data) != {"v", "s", "rev", "o", "offset", "byte_offset", "sum"}
-        or type(data["v"]) is not int or data["v"] != 3
+        not isinstance(data, dict) or set(data) != {"v", "s", "rev", "o", "offset", "byte_offset"}
+        or type(data["v"]) is not int or data["v"] != 2
         or not isinstance(data["s"], str) or not isinstance(data["rev"], str)
         or type(data["o"]) is not int or not 0 <= data["o"] < (1 << 63)
         or type(data["offset"]) is not int or not 0 <= data["offset"] < (1 << 63)
         or type(data["byte_offset"]) is not int or not 0 <= data["byte_offset"] < (1 << 63)
         or (data["offset"] == 0) != (data["byte_offset"] == 0)
-        or not isinstance(data["sum"], str)
-        or data["sum"] != _cursor_checksum({key: value for key, value in data.items() if key != "sum"})
     ):
         raise ValueError("CURSOR_INVALID")
     return data

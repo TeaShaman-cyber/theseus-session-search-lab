@@ -165,17 +165,19 @@ class SessionReadTests(unittest.TestCase):
                 # End of indexed messages is NOT proof of full original history.
                 self.assertEqual(page["session_coverage"], "PARTIAL_SESSION_SLICE")
 
-    def test_well_formed_cursor_position_edit_fails_closed(self):
-        page = read_session(self.corpus, "session-a", limit=1)
-        token = page["next_cursor"]
+    def test_cursor_has_only_page_position_and_corpus_revision(self):
+        first = read_session(self.corpus, "session-a", limit=1)
+        token = first["next_cursor"]
         self.assertIsNotNone(token)
         payload = json.loads(base64.urlsafe_b64decode(token + "=" * (-len(token) % 4)))
-        payload["o"] = 2  # Valid-looking position, would silently skip m2.
-        edited = base64.urlsafe_b64encode(
-            json.dumps(payload, separators=(",", ":")).encode()
-        ).decode().rstrip("=")
-        with self.assertRaisesRegex(ValueError, "CURSOR_INVALID"):
-            read_session(self.corpus, "session-a", cursor=edited)
+        self.assertEqual(
+            set(payload),
+            {"v", "s", "rev", "o", "offset", "byte_offset"},
+        )
+        self.assertEqual(payload["v"], 2)
+        # An opaque transport token is not a source of permissions.
+        second = read_session(self.corpus, "session-a", cursor=token)
+        self.assertEqual(second["messages"][0]["message_id"], "m2")
 
     def test_malformed_cursor_and_cross_corpus_rejected(self):
         first = read_session(self.corpus, "session-a", limit=1)
