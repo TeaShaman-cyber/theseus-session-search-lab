@@ -24,11 +24,18 @@ def _projection_stamp(path: pathlib.Path) -> str:
     return hashlib.sha256(json.dumps(parts).encode("ascii")).hexdigest()
 
 
+def _cursor_checksum(data: dict) -> str:
+    """Detect accidental cursor corruption; not an authentication MAC."""
+    payload = json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.blake2s(payload.encode("utf-8"), digest_size=12).hexdigest()
+
+
 def _cursor_encode(session_id: str, revision: str, ordinal: int, offset: int, byte_offset: int) -> str:
     data = {
-        "v": 2, "s": session_id, "rev": revision,
+        "v": 3, "s": session_id, "rev": revision,
         "o": ordinal, "offset": offset, "byte_offset": byte_offset,
     }
+    data["sum"] = _cursor_checksum(data)
     return base64.urlsafe_b64encode(
         json.dumps(data, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     ).decode("ascii").rstrip("=")
@@ -42,17 +49,18 @@ def _cursor_decode(token: str) -> dict:
     except (ValueError, UnicodeDecodeError, TypeError) as exc:
         raise ValueError("CURSOR_INVALID") from exc
     if (
-        not isinstance(data, dict) or set(data) != {"v", "s", "rev", "o", "offset", "byte_offset"}
-        or type(data["v"]) is not int or data["v"] != 2
+        not isinstance(data, dict) or set(data) != {"v", "s", "rev", "o", "offset", "byte_offset", "sum"}
+        or type(data["v"]) is not int or data["v"] != 3
         or not isinstance(data["s"], str) or not isinstance(data["rev"], str)
-        or type(data["o"]) is not int or data["o"] < 0
-        or type(data["offset"]) is not int or data["offset"] < 0
-        or type(data["byte_offset"]) is not int or data["byte_offset"] < 0
+        or type(data["o"]) is not int or not 0 <= data["o"] < (1 << 63)
+        or type(data["offset"]) is not int or not 0 <= data["offset"] < (1 << 63)
+        or type(data["byte_offset"]) is not int or not 0 <= data["byte_offset"] < (1 << 63)
         or (data["offset"] == 0) != (data["byte_offset"] == 0)
+        or not isinstance(data["sum"], str)
+        or data["sum"] != _cursor_checksum({key: value for key, value in data.items() if key != "sum"})
     ):
         raise ValueError("CURSOR_INVALID")
     return data
-
 
 
 def _decode_bounded_utf8(chunk: bytes) -> str:
@@ -81,7 +89,7 @@ def read_session(
         raise ValueError("LIMIT_OUT_OF_BOUNDS")
     if type(max_chars) is not int or not 1 <= max_chars <= 100000:
         raise ValueError("CHAR_BUDGET_OUT_OF_BOUNDS")
-    if type(start_ordinal) is not int or start_ordinal < 0:
+    if type(start_ordinal) is not int or not 0 <= start_ordinal < (1 << 63):
         raise ValueError("ORDINAL_OUT_OF_BOUNDS")
     if cursor is not None and start_ordinal != 0:
         raise ValueError("CURSOR_AND_START_CONFLICT")
@@ -130,7 +138,12 @@ def read_session(
             start_byte = byte_offset if row["ordinal"] == ordinal else 0
             if start_byte >= row["text_total_bytes"] and start_byte != 0:
                 raise ValueError("CURSOR_INVALID")
-            segment = _decode_bounded_utf8(row["text_bytes"])[:remaining]
+            text_bytes = row["text_bytes"]
+            if text_bytes is None and row["text_total_bytes"] == 0:
+                text_bytes = b""
+            if not isinstance(text_bytes, bytes):
+                raise ValueError("PROJECTION_INVALID_UTF8")
+            segment = _decode_bounded_utf8(text_bytes)[:remaining]
             used_bytes = len(segment.encode("utf-8"))
             if not used_bytes and start_byte < row["text_total_bytes"]:
                 raise ValueError("PROJECTION_INVALID_UTF8")

@@ -27,3 +27,21 @@
 - Empty or nonexistent session.
 - Long single message larger than response budget.
 - Same body in two distinct message identities.
+
+
+## Local cursor conformance checkpoint — 2026-11-18
+
+- Run deterministic 40+ message fixture with duplicate text, empty messages, UTF-8
+  multibyte and embedded NUL content; page under three independent message/char
+  budgets and reconstruct exact events with bounded, advancing continuation.
+- Cursor replay is intentionally idempotent (read-only), not a remote ACK; a
+  caller can retry a page safely. The test walker rejects repeated/nonadvancing
+  continuations and checks that terminal indexed coverage is still labeled
+  PARTIAL_SESSION_SLICE when the accepted artifact is partial.
+- Version-3 cursor includes a BLAKE2s checksum to detect accidental token edits.
+  **The checksum is not authentication**: local callers with source access can
+  deliberately forge a valid token. Cloud generation/authority binding must be
+  verified separately before exposing any remote reader.
+- Reject malformed cursors, cross-session/corpus continuation, SQLite integer
+  overflow and mid-read projection changes. Local projection_stamp is a
+  best-effort file-change detector, not a stable snapshot of accepted evidence.
