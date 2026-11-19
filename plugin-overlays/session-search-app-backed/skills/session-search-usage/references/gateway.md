@@ -14,15 +14,16 @@ Canonical remote MCP behind Arcade is the independently deployed Session Search 
 ## Stable server and tool identity
 
 As last verified on 2026-11-19, the existing **private** production Gateway
-exposes **four** consumer tools: `TheseusSessionSearch.session_search`,
+exposes **five** consumer tools: `TheseusSessionSearch.session_search`,
 `TheseusSessionSearch.session_browse`,
-`TheseusSessionSearch.session_feedback` and
-`TheseusSessionSearch.session_feedback_get`. Earlier three-tool and two-tool
-checkpoints are retained below as dated historical evidence.
+`TheseusSessionSearch.session_feedback`,
+`TheseusSessionSearch.session_feedback_get`, and
+`TheseusSessionSearch.session_coverage`. Earlier four-tool, three-tool and
+two-tool checkpoints are retained below as dated historical evidence.
 The search identity stays stable. Before issue #232 the gateway allowed one
 read-only consumer tool, so older one-tool acceptance receipts remain historical. `TheseusSessionSearch.session_search`. The gateway is an allowlist of Arcade-discovered tools; it is not a transparent proxy that automatically substitutes a newly registered sibling server/tool. Preserve both the canonical remote-server ID `theseus-session-search` and the stable qualified tool identity across router deployments.
 
-Git source `c3f03696182e195d39af3a01d5ba5569b7ac09f7` (PR #277) adds a fifth router MCP capability, `session_coverage`, but **source availability is not gateway exposure**. A fresh 2026-11-19 App-backed `Arcade_SelectTools` read after that merge still returned the four tools above and did **not** return `TheseusSessionSearch.session_coverage`. Treat the coverage tool as `SOURCE_MERGED / HOST_NOT_LIVE` until a separately authorized router deployment, worker discovery refresh, Gateway allowlist change and fresh ChatGPT-host execution prove otherwise.
+Git source `c3f03696182e195d39af3a01d5ba5569b7ac09f7` (PR #277) added the fifth router MCP capability, `session_coverage`. On 2026-11-19 the existing production router was rolled forward in place, Arcade worker discovery was refreshed, and the existing Gateway was changed add-only to five tools. Fresh ChatGPT App discovery then exposed `TheseusSessionSearch.session_coverage`, and a real host call returned `status=OBSERVED`. A later config-only router deployment populated finite observed message bounds for all four active catalog generations; a broad preflight returned `catalog_bounds_complete=true`, while a ChatGPT window for 2026-11-17 through 2026-11-19 returned `OUTSIDE_OBSERVED_INDEX_RANGE` with zero selected shards. `source_currentness` deliberately remained `UNKNOWN_WITHOUT_SOURCE_WATERMARK`. These are dated serving observations, not proof of complete upstream ChatGPT history.
 
 A verified router candidate may be registered separately for diagnostics, but do not add a second Session Search tool identity to the production gateway. Production cutover changes the URI/configuration of the existing Arcade worker, then refreshes its discovered tools, so `Arcade_SelectTools` and `Arcade_UseTool` continue to address the same qualified tool.
 
