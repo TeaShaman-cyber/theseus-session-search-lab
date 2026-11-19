@@ -349,3 +349,43 @@ test('telemetry flush budget cannot consume the shard dispatch deadline', async 
     await telemetry.shutdown();
   }
 });
+
+test('MCP feedback span carries a safe join to search traces without leaking identifiers into metrics', async () => {
+  const { telemetry, spanExporter, metricExporter } = runtime();
+  const baseline = 'a'.repeat(32);
+  const resultRef = 'b'.repeat(32);
+  const feedbackRef = 'c'.repeat(32);
+  try {
+    const handler = makeRouterHandler({
+      catalog: [], telemetry,
+      feedbackWriter: async () => ({ status: 'RECORDED', feedback_ref: feedbackRef }),
+      feedbackReader: async () => ({ status: 'FOUND', feedback_ref: feedbackRef,
+        feedback: { baseline_request_ref: baseline, result_request_ref: resultRef } }),
+    });
+    const request = new Request('https://router.test/mcp', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 88, method: 'tools/call', params: {
+        name: 'session_feedback', arguments: {
+          baseline_request_ref: baseline, result_request_ref: resultRef,
+          failure_class: 'low_relevance', operator: { name: 'test_agent', version: 'v1' },
+          outcome: 'unknown', notes: 'SENSITIVE_NOTE_NEVER_EXPORT',
+        },
+      } }),
+    });
+    const response = await handler.fetch(request);
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).result.structuredContent.feedback_ref, feedbackRef);
+    const span = spanExporter.getFinishedSpans().find(x => x.name === 'session_search.mcp');
+    assert.equal(span.attributes['session_search.feedback_ref'], feedbackRef);
+    assert.equal(span.attributes['session_search.feedback_baseline_request_ref'], baseline);
+    assert.equal(span.attributes['session_search.feedback_result_request_ref'], resultRef);
+    const metrics = JSON.stringify(metricExporter.getMetrics());
+    for (const val of [baseline, resultRef, feedbackRef, 'SENSITIVE_NOTE_NEVER_EXPORT']) {
+      assert(!metrics.includes(val), 'identifier/notes leaked to metrics');
+    }
+    const spans = JSON.stringify(spanExporter.getFinishedSpans().map(x => x.attributes));
+    assert(!spans.includes('SENSITIVE_NOTE_NEVER_EXPORT'));
+  } finally {
+    await telemetry.shutdown();
+  }
+});

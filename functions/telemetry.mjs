@@ -18,6 +18,7 @@ const ROUTES = new Set(['health', 'search', 'mcp', 'grouped_search_canary', 'not
 const RESULT_STATUSES = new Set(['OK', 'FOUND', 'NO_SIGNAL', 'PARTIAL', 'READY', 'BUILDING', 'ACTIVATED', 'ERROR', 'UNKNOWN']);
 const SAFE_ID = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const GENERATION_ID = /^[0-9a-f]{64}$/;
+const CORRELATION_REF = /^[0-9a-f]{32}$/;
 const DEFAULT_FLUSH_TIMEOUT_MS = 250;
 
 function newRequestRef() {
@@ -131,6 +132,18 @@ function spanResultAttributes({ resultStatus, provider, shardId, generationId, q
   return attributes;
 }
 
+function feedbackSpanAttributes({ feedbackRef, baselineRequestRef, resultRequestRef } = {}) {
+  const attributes = {};
+  if (typeof feedbackRef === 'string' && CORRELATION_REF.test(feedbackRef)) attributes['session_search.feedback_ref'] = feedbackRef;
+  if (typeof baselineRequestRef === 'string' && CORRELATION_REF.test(baselineRequestRef)) {
+    attributes['session_search.feedback_baseline_request_ref'] = baselineRequestRef;
+  }
+  if (typeof resultRequestRef === 'string' && CORRELATION_REF.test(resultRequestRef)) {
+    attributes['session_search.feedback_result_request_ref'] = resultRequestRef;
+  }
+  return attributes;
+}
+
 export function createNoopTelemetry() {
   return {
     enabled: false,
@@ -140,6 +153,7 @@ export function createNoopTelemetry() {
         requestRef: newRequestRef(),
         setResult() {},
         setErrorClass() {},
+        setFeedbackCorrelation() {},
       });
     },
     async withDispatch(_parentContext, _shard, baseHeaders, fn) {
@@ -229,6 +243,9 @@ export function createTelemetryRuntime({
       requestRef,
       setErrorClass(value) {
         state.errorClass = safeErrorClass(value);
+      },
+      setFeedbackCorrelation(value) {
+        span.setAttributes(feedbackSpanAttributes(value));
       },
       setResult(value = {}) {
         Object.assign(state, value);
