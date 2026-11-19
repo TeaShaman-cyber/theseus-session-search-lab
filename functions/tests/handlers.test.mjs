@@ -254,6 +254,91 @@ test('searched bounded time window can be relevant but never claims upstream com
   assert.equal(calls, 2);
 });
 
+test('coverage preflight is authenticated and does zero lexical shard requests', async () => {
+  const catalog = [
+    { shard_id: 'chatgpt-0001', provider: 'chatgpt', generation_id: 'a'.repeat(64), state: 'READY', time_min: 100, time_max: 200, url: 'https://a.test/search' },
+    { shard_id: 'deepseek-0001', provider: 'deepseek', generation_id: 'b'.repeat(64), state: 'READY', time_min: 300, time_max: 400, url: 'https://b.test/search' },
+  ];
+  let dispatched = 0;
+  const handler = makeRouterHandlerImpl({ catalog, authToken: ROUTER_TOKEN, shardAuthToken: SHARD_TOKEN,
+    fetchImpl: async () => { dispatched += 1; throw Error('No shard dispatch in preflight'); } });
+  const data = { provider: 'chatgpt', from_time: 250, to_time: 290 };
+  const send = async (token, body) => handler.fetch(new Request('https://router.test/coverage', {
+    method: 'POST', headers: { 'authorization': 'Bearer ' + token, 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  }));
+  const denied = await send('wrong-token', data);
+  assert.equal(denied.status, 401);
+  const response = await send(ROUTER_TOKEN, data);
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.status, 'OBSERVED');
+  assert.match(result.request_ref, /^[0-9a-f]{32}$/);
+  assert.ok(!Number.isNaN(Date.parse(result.observed_at)));
+  assert.equal(result.coverage.window_fit, 'OUTSIDE_OBSERVED_INDEX_RANGE');
+  assert.equal(result.coverage.source_currentness, 'UNKNOWN_WITHOUT_SOURCE_WATERMARK');
+  assert.equal(result.coverage.catalog_observed_max_time, 200);
+  assert.deepEqual(result.catalog_generations, [{
+    shard_id: 'chatgpt-0001', provider: 'chatgpt', generation_id: 'a'.repeat(64),
+    state: 'READY', time_min: 100, time_max: 200,
+  }]);
+  assert.equal(JSON.stringify(result).includes('https://'), false);
+  assert.equal(dispatched, 0);
+  const rejected = await send(ROUTER_TOKEN, { ...data, admin: true });
+  assert.equal(rejected.status, 400);
+  assert.equal((await rejected.json()).error, 'COVERAGE_FIELDS_INVALID');
+  assert.equal((await send(ROUTER_TOKEN, { provider: 'chatgpt' })).status, 400);
+});
+
+test('coverage preflight caps provenance rows but evaluates the full catalog', async () => {
+  const catalog = Array.from({ length: 34 }, (_, index) => ({
+    shard_id: `chatgpt-${String(index).padStart(4, '0')}`,
+    provider: 'chatgpt', generation_id: 'a'.repeat(64), state: 'READY',
+    time_min: 100, time_max: 200, url: `https://shard-${index}.test/search`,
+  }));
+  const handler = makeRouterHandler({ catalog, fetchImpl: async () => { throw Error('unreachable'); } });
+  const response = await handler.fetch(new Request('https://router.test/coverage', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ provider: 'chatgpt', from_time: 300 }),
+  }));
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.coverage.eligible_shard_count, 34);
+  assert.equal(result.coverage.window_fit, 'OUTSIDE_OBSERVED_INDEX_RANGE');
+  assert.equal(result.catalog_generations.length, 32);
+  assert.equal(result.catalog_generations_truncated, true);
+  assert.equal(result.catalog_generations[0].shard_id, 'chatgpt-0000');
+  assert.equal(result.catalog_generations.at(-1).shard_id, 'chatgpt-0031');
+});
+
+test('MCP coverage tool is discoverable and read-only with clean unknown-provider behavior', async () => {
+  const catalog = [{ shard_id: 'chatgpt-0001', provider: 'chatgpt', generation_id: 'a'.repeat(64),
+    state: 'READY', time_min: 100, time_max: 200, url: 'https://a.test/search' }];
+  let dispatched = 0;
+  const handler = makeRouterHandler({ catalog, fetchImpl: async () => { dispatched += 1; throw Error('unexpected'); } });
+  const invoke = async (method, params) => handler.fetch(new Request('https://router.test/mcp', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 47, method, params }),
+  }));
+  const tools = (await (await invoke('tools/list')).json()).result.tools;
+  const coverageTool = tools.find((tool) => tool.name === 'session_coverage');
+  assert.ok(coverageTool, 'session_coverage must be a standalone discoverable tool');
+  assert.deepEqual(coverageTool.inputSchema.required, []);
+  const reply = (await (await invoke('tools/call', { name: 'session_coverage',
+    arguments: { provider: 'chatgpt', from_time: 250, to_time: 270 } })).json()).result;
+  assert.equal(reply.isError, false);
+  assert.equal(reply.structuredContent.coverage.window_fit, 'OUTSIDE_OBSERVED_INDEX_RANGE');
+  const unknown = (await (await invoke('tools/call', { name: 'session_coverage',
+    arguments: { provider: 'claude', from_time: 250 } })).json()).result;
+  assert.equal(unknown.isError, false);
+  assert.equal(unknown.structuredContent.coverage.window_fit, 'UNKNOWN_COVERAGE');
+  assert.equal(unknown.structuredContent.coverage.eligible_shard_count, 0);
+  const invalid = (await (await invoke('tools/call', { name: 'session_coverage',
+    arguments: { provider: 'chatgpt', from_time: 250, to_time: 200 } })).json()).result;
+  assert.equal(invalid.isError, true);
+  assert.equal(dispatched, 0);
+});
+
 test('grouped router canary is disabled by default', async () => {
   const handler = makeRouterHandler({ catalog: [] });
   const response = await handler.fetch(new Request('https://router.test/internal/grouped-search', {

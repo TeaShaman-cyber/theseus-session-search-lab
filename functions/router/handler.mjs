@@ -7,6 +7,7 @@ import {
   mergeShardOutcomes,
   selectShards,
   summarizeTimeWindowCoverage,
+  validateCoverageInput,
   validateGroupedCanaryInput,
   validateSearchInput,
 } from './core.mjs';
@@ -21,6 +22,7 @@ function json(value, status = 200) {
 function routeFor(request, url) {
   if (request.method === 'GET' && url.pathname === '/health') return 'health';
   if (request.method === 'POST' && url.pathname === '/search') return 'search';
+  if (request.method === 'POST' && url.pathname === '/coverage') return 'coverage';
   if (request.method === 'POST' && url.pathname === '/mcp') return 'mcp';
   if (request.method === 'POST' && url.pathname === '/internal/grouped-search') return 'grouped_search_canary';
   return 'not_found';
@@ -235,12 +237,33 @@ export function makeRouterHandler({
     };
   }
 
+  function observedCoverage(rawInput, requestRef) {
+    const input = validateCoverageInput(rawInput);
+    const selected = selectShards(catalog, input);
+    const eligible = selectShards(catalog, { ...input, from_time: null, to_time: null });
+    return {
+      status: 'OBSERVED',
+      request_ref: requestRef,
+      observed_at: new Date().toISOString(),
+      coverage: summarizeTimeWindowCoverage(catalog, input, selected),
+      catalog_generations_truncated: eligible.length > 32,
+      catalog_generations: eligible.slice(0, 32).map((shard) => ({
+        shard_id: shard.shard_id,
+        provider: shard.provider,
+        generation_id: shard.generation_id,
+        state: shard.state ?? 'UNKNOWN',
+        time_min: Number.isFinite(shard.time_min) ? shard.time_min : null,
+        time_max: Number.isFinite(shard.time_max) ? shard.time_max : null,
+      })),
+    };
+  }
+
   return {
     async fetch(request) {
       const url = new URL(request.url);
       const groupedCanaryRoute = request.method === 'POST' && url.pathname === '/internal/grouped-search';
       const protectedRoute = request.method === 'POST'
-        && (url.pathname === '/search' || url.pathname === '/mcp'
+        && (url.pathname === '/search' || url.pathname === '/mcp' || url.pathname === '/coverage'
           || (groupedCanaryRoute && groupedCanaryEnabled));
       if (protectedRoute && !hasValidBearerToken(request, authToken)) {
         return json({ error: 'UNAUTHORIZED' }, 401);
@@ -272,6 +295,21 @@ export function makeRouterHandler({
               resultStatus: result.status,
               queriedShards: result.queried_shards?.length ?? 0,
               unavailableShards: result.unavailable_shards?.length ?? 0,
+            });
+            return json(result);
+          } catch (error) {
+            observation.setErrorClass('validation');
+            return json({ error: String(error?.message ?? error) }, 400);
+          }
+        }
+
+        if (request.method === 'POST' && url.pathname === '/coverage') {
+          try {
+            const result = observedCoverage(await request.json(), observation.requestRef);
+            observation.setResult({
+              resultStatus: result.coverage.window_fit,
+              queriedShards: 0,
+              unavailableShards: 0,
             });
             return json(result);
           } catch (error) {
@@ -313,6 +351,7 @@ export function makeRouterHandler({
             feedbackWriter,
             (input) => browseSession(input, observation.context),
             feedbackReader,
+            (input) => observedCoverage(input, observation.requestRef),
           );
           if (result === null) return new Response(null, { status: 202 });
           const toolName = message?.method === 'tools/call' ? message?.params?.name : null;

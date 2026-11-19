@@ -69,6 +69,16 @@ For `POST /search` requests with `from_time` and/or `to_time`, the router derive
 
 This is an *after-query transparency improvement*, not a cheap agent preflight endpoint or guaranteed ChatGPT pre-response hook. A preventive freshness check, upstream watermark and App/Arcade discovery remain tracked by [#275](https://github.com/TeaShaman-cyber/theseus-session-search-lab/issues/275), linked to ingestion [#3](https://github.com/TeaShaman-cyber/theseus-session-search-lab/issues/3).
 
+## Coverage preflight API and MCP proposal (source contract; host not verified)
+
+A time-window preflight can run **without fetching conversation text or dispatching shard searches**. The router adds a protected `POST /coverage` JSON endpoint and a conditional MCP `session_coverage` tool, both using the existing router bearer authentication and the **existing** catalog. They do not require a new Neon table, upstream API or source-ingestion privilege.
+
+Request is an object with optional `provider` and `session_id` and **at least one** numeric epoch-seconds bound `from_time` or `to_time`. Unknown input fields, missing time bounds, invalid types and inverted ranges fail validation. Intended agent usage for questions about recent ChatGPT conversation history: obtain a time-bounded `session_coverage` receipt **before** lexical `session_search` and treat `OUTSIDE_OBSERVED_INDEX_RANGE` as a reason not to waste a lexical query for that scoped window, unless the user is also asking about older evidence.
+
+A response has `status: OBSERVED`, `request_ref`, `observed_at` (the server's response time, **not** the last source refresh), the same additive `coverage` summary used for time-scoped search, and `catalog_generations[]` (first 32 entries; `catalog_generations_truncated` signals remaining entries, while summary counts include all eligible shards; bounded metadata: shard/provider/generation/state/observed time bounds; no endpoint URLs, credentials, source text or conversation IDs). Missing bounds or provider/shard data always cause `UNKNOWN_COVERAGE`; `source_currentness` stays `UNKNOWN_WITHOUT_SOURCE_WATERMARK` even after a green `/health` or successful preflight. This endpoint does not certify completeness of original ChatGPT account history.
+
+**Host gate:** Arcade's production gateway is a tool allowlist. Exposing the tool in the Neon router's `tools/list` does **not** install `TheseusSessionSearch.session_coverage` in the Gateway or ChatGPT. An App-facing allowlist change, authenticated current target readback and host-level discovery are separate, permission-bearing changes. A source PR or Git merge must not be described as a usable preflight in the ChatGPT host until that verification is performed. Existing four App tools and identities are preserved.
+
 ## Failure semantics
 
 - `FOUND`: every selected shard responded and at least one result group exists.
