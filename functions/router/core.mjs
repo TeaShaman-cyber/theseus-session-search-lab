@@ -15,6 +15,7 @@ const FEEDBACK_FIELDS = new Set([
 ]);
 const FEEDBACK_OPERATOR_FIELDS = new Set(['name', 'version']);
 const FEEDBACK_READ_FIELDS = new Set(['feedback_ref']);
+const COVERAGE_FIELDS = new Set(['provider', 'session_id', 'from_time', 'to_time']);
 
 function validateSearchInput(input = {}) {
   if (Object.prototype.hasOwnProperty.call(input, 'grouping')
@@ -141,6 +142,30 @@ function validateFeedbackInput(input = {}) {
     outcome: input.outcome,
     notes,
   };
+}
+
+export function validateCoverageInput(input = {}) {
+  assertExactFields(input, COVERAGE_FIELDS, 'COVERAGE_FIELDS_INVALID');
+  const provider = input.provider ?? null;
+  const sessionId = input.session_id ?? null;
+  if (provider !== null && (typeof provider !== 'string' || !provider || provider.length > 64)) {
+    throw new Error('COVERAGE_PROVIDER_INVALID');
+  }
+  if (sessionId !== null && (typeof sessionId !== 'string' || !sessionId || sessionId.length > 512)) {
+    throw new Error('COVERAGE_SESSION_INVALID');
+  }
+  const fromTime = input.from_time ?? null;
+  const toTime = input.to_time ?? null;
+  if (fromTime === null && toTime === null) throw new Error('COVERAGE_TIME_REQUIRED');
+  for (const value of [fromTime, toTime]) {
+    if (value !== null && (typeof value !== 'number' || !Number.isFinite(value))) {
+      throw new Error('COVERAGE_TIME_INVALID');
+    }
+  }
+  if (fromTime !== null && toTime !== null && fromTime > toTime) {
+    throw new Error('COVERAGE_TIME_INVERTED');
+  }
+  return { provider, session_id: sessionId, from_time: fromTime, to_time: toTime };
 }
 
 export function validateFeedbackReadInput(input = {}) {
@@ -349,7 +374,7 @@ export function mergeGroupedShardOutcomes(selected, outcomes, limit) {
   };
 }
 
-export async function handleMcpRequest(request, searchFn, feedbackFn = null, browseFn = null, feedbackReadFn = null) {
+export async function handleMcpRequest(request, searchFn, feedbackFn = null, browseFn = null, feedbackReadFn = null, coverageFn = null) {
   const id = request?.id ?? null;
   const method = request?.method;
 
@@ -386,6 +411,22 @@ export async function handleMcpRequest(request, searchFn, feedbackFn = null, bro
         },
       },
     }];
+    if (typeof coverageFn === 'function') {
+      tools.push({
+        name: 'session_coverage',
+        description: 'Preflight observed indexed time range BEFORE searching for recent conversations. For a requested provider and from_time/to_time, report whether the observed shard catalog intersects the window; never treat indexed bounds as proof that original conversation history is complete or current. No transcript or model query is performed.',
+        inputSchema: {
+          type: 'object', additionalProperties: false, required: [],
+          anyOf: [{ required: ['from_time'] }, { required: ['to_time'] }],
+          properties: {
+            provider: { type: 'string', minLength: 1, maxLength: 64 },
+            session_id: { type: 'string', minLength: 1, maxLength: 512 },
+            from_time: { type: 'number' },
+            to_time: { type: 'number' },
+          },
+        },
+      });
+    }
     if (typeof browseFn === 'function') {
       tools.push({
         name: 'session_browse',
@@ -454,6 +495,22 @@ export async function handleMcpRequest(request, searchFn, feedbackFn = null, bro
   }
   if (method === 'tools/call') {
     const toolName = request?.params?.name;
+    if (toolName === 'session_coverage' && typeof coverageFn === 'function') {
+      try {
+        const input = validateCoverageInput(request.params.arguments ?? {});
+        const result = await coverageFn(input);
+        return { jsonrpc: '2.0', id, result: {
+          content: [{ type: 'text', text: JSON.stringify(result) }],
+          structuredContent: result,
+          isError: false,
+        } };
+      } catch (error) {
+        return { jsonrpc: '2.0', id, result: {
+          content: [{ type: 'text', text: String(error?.message ?? error) }],
+          isError: true,
+        } };
+      }
+    }
     if (toolName === 'session_browse' && typeof browseFn === 'function') {
       try {
         const result = await browseFn(request.params.arguments ?? {});
