@@ -13,8 +13,11 @@ Canonical remote MCP behind Arcade is the independently deployed Session Search 
 
 ## Stable server and tool identity
 
-The production gateway now exposes **two intentional consumer tools** (issue #232):
-TheseusSessionSearch.session_search and TheseusSessionSearch.session_feedback.
+The production gateway exposes three verified consumer tools as of
+2026-11-19: `TheseusSessionSearch.session_search`,
+`TheseusSessionSearch.session_browse` and
+`TheseusSessionSearch.session_feedback`. The earlier two-tool state from
+issue #232 is retained as dated historical evidence below.
 The search identity stays stable. Before issue #232 the gateway allowed one
 read-only consumer tool, so older one-tool acceptance receipts remain historical. `TheseusSessionSearch.session_search`. The gateway is an allowlist of Arcade-discovered tools; it is not a transparent proxy that automatically substitutes a newly registered sibling server/tool. Preserve both the canonical remote-server ID `theseus-session-search` and the stable qualified tool identity across router deployments.
 
@@ -35,6 +38,23 @@ The Arcade gateway itself exposes the Session Search domain capability. The Chat
 The invariant is that the existing App-backed host can discover and execute `TheseusSessionSearch.session_search` through the Arcade surface while preserving web/mobile compatibility.
 
 For retrieval-policy capable deployments, fresh discovery must expose `search_mode` with `strict`, `recall`, and `auto` (default `strict`). The stable `session_search` tool returns exact-text result groups by default, preserving all matched occurrences/provenance under each group. `auto` must return a `retrieval` receipt that distinguishes requested from effective mode; a strict grouped miss may escalate to recall, while `PARTIAL` must remain visible and must not be hidden by retry.
+
+## Verified hint / browse checkpoint — November 19 2026
+
+The existing `ssrouter2` Neon Function reached active deployment #12 from
+merged main `5d5f1a2b81214084c1acb2fffdbcf11529989b03`. The existing
+Arcade `Session Search` Gateway still exposes three tools. A fresh ChatGPT
+App-backed `Arcade_SelectTools` read returned `session_search` with the
+**optional**, separately ranked translated-query advisory and exposed both
+`session_browse` and `session_feedback`. A bounded `session_search` call returned
+`FOUND`, `exact_text_v1`, a `request_ref`, and no unavailable shards. No new
+App binding, server identity, database store or automatic translator was added.
+
+There was a temporary divergence between deployed router metadata and the
+ChatGPT discovery description. Arcade catalog and host discovery later showed
+the new description, but the exact cache refresh trigger was **not proven**.
+Recheck *both* Arcade metadata and host discovery rather than assuming immediate
+hot reload after every Neon deployment. This is a dated checkpoint.
 
 ## Historical issue232 gateway checkpoint, November 8 2026
 

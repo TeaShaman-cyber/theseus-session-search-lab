@@ -15,6 +15,27 @@ ChatGPT web/mobile
 
 The ChatGPT App binding itself is private host state and is deliberately not stored in this repository.
 
+## Public source and installed App checkpoint — 2026-11-19
+
+The source overlay contains two complementary agent skills:
+
+- `skills/session-search-usage/SKILL.md` — bounded retrieval, grouped evidence and feedback boundary;
+- `skills/session-browse-usage/SKILL.md` — pinned, read-only conversation paging and coverage.
+
+The browse skill was copied exactly from the existing private App plugin release
+**v1.0.5** into this public source. The existing `session-search-usage` and
+gateway reference in Git already contain newer grouped-result and feedback
+guidance than v1.0.5; **do not overwrite them blindly with older installed
+copies**. Therefore this overlay is the reviewed desired source, not a claim
+that every file currently matches installed App bytes. A future App skill
+update needs a guarded release and independent host readback.
+
+At this checkpoint, the existing Arcade Gateway / ChatGPT host discovered
+`session_search`, `session_browse` and `session_feedback`. Neon router
+`ssrouter2` deployment #12 has the agent-facing conditional translated-query
+hint in `session_search` metadata. These are dated observations, not durable
+claims about a future serving generation or automatic client hot reload.
+
 ## Stable consumer-tool identity
 
 The production Arcade gateway is an allowlist of discovered tool definitions, not a transparent pass-through for every tool exposed by every registered remote server. Session Search therefore keeps one stable qualified tool identity across router deployments:
