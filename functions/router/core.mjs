@@ -331,7 +331,7 @@ export async function handleMcpRequest(request, searchFn, feedbackFn = null, bro
   if (method === 'tools/list') {
     const tools = [{
       name: 'session_search',
-      description: 'Search federated Session Search shards. Exact duplicate text is returned once with every historical occurrence/provenance attached; PARTIAL remains explicit.',
+      description: 'Search federated Session Search shards. Exact duplicate text is returned once with every historical occurrence/provenance attached; PARTIAL remains explicit. If results are insufficient and a language mismatch is plausible, optionally try a separate translated-query search; keep original results and ranks. After comparing outcomes, optionally record honest session_feedback when available (use unknown if unresolved).',
       inputSchema: {
         type: 'object',
         additionalProperties: false,

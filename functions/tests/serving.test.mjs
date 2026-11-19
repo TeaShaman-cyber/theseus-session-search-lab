@@ -240,6 +240,22 @@ test('session_feedback fails closed on unknown or invalid fields', async () => {
   assert.equal(calls, 0);
 });
 
+test('MCP agent search description offers optional translation and feedback', async () => {
+  const listed = await handleMcpRequest(
+    { jsonrpc: '2.0', id: 51, method: 'tools/list', params: {} },
+    async () => ({}),
+  );
+  const tool = listed.result.tools[0];
+  assert.equal(tool.name, 'session_search');
+  assert.match(tool.description, /language mismatch/i);
+  assert.match(tool.description, /separate translated-query search/i);
+  assert.match(tool.description, /keep original results/i);
+  assert.match(tool.description, /session_feedback when available/i);
+  assert.deepEqual(tool.inputSchema.properties.search_mode.enum, ['strict', 'recall', 'auto']);
+  assert.equal(tool.inputSchema.properties.search_mode.default, 'strict');
+  assert.deepEqual(listed.result.tools.map((item) => item.name), ['session_search']);
+});
+
 test('MCP exposes one bounded session_search tool', async () => {
   const initialize = await handleMcpRequest({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } }, async () => ({}));
   assert.equal(initialize.result.serverInfo.name, 'theseus-session-search');
