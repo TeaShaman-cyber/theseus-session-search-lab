@@ -6,6 +6,7 @@ import {
   mergeGroupedShardOutcomes,
   mergeShardOutcomes,
   selectShards,
+  summarizeTimeWindowCoverage,
   validateGroupedCanaryInput,
   validateSearchInput,
 } from './core.mjs';
@@ -143,6 +144,7 @@ export function makeRouterHandler({
   async function searchFederated(rawInput, requestContext, requestRef) {
     const input = validateSearchInput(rawInput);
     const selected = selectShards(catalog, input);
+    const coverage = summarizeTimeWindowCoverage(catalog, input, selected);
 
     async function dispatch(searchMode) {
       return dispatchSelected(input, selected, searchMode, requestContext);
@@ -161,6 +163,7 @@ export function makeRouterHandler({
         return {
           ...publicResult,
           request_ref: requestRef,
+          ...(coverage ? { coverage } : {}),
           retrieval: {
             requested_mode: input.search_mode,
             effective_mode: effectiveMode,
@@ -182,6 +185,7 @@ export function makeRouterHandler({
       return {
         ...publicResult,
         request_ref: requestRef,
+        ...(coverage ? { coverage } : {}),
         retrieval: {
           requested_mode: input.search_mode,
           effective_mode: effectiveMode,
@@ -215,10 +219,12 @@ export function makeRouterHandler({
   async function searchFederatedGroupedCanary(rawInput, requestContext, requestRef) {
     const input = validateGroupedCanaryInput(rawInput);
     const selected = selectShards(catalog, input);
+    const coverage = summarizeTimeWindowCoverage(catalog, input, selected);
     const result = await dispatchSelected(input, selected, 'recall', requestContext, { shape: 'grouped_v1' });
     return {
       ...result,
       request_ref: requestRef,
+      ...(coverage ? { coverage } : {}),
       retrieval: {
         requested_mode: 'recall',
         effective_mode: 'recall',

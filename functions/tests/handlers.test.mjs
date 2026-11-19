@@ -168,6 +168,92 @@ test('router HTTP adapter defaults to exact-text groups across shards', async ()
 });
 
 
+test('time-scoped query outside catalog bounds returns explicit coverage without false absence', async () => {
+  const catalog = [
+    { shard_id: 'chatgpt-0001', provider: 'chatgpt', generation_id: 'a'.repeat(64), state: 'READY', time_min: 100, time_max: 200, url: 'https://a.test/search' },
+    { shard_id: 'hermes-0001', provider: 'hermes', generation_id: 'b'.repeat(64), state: 'READY', time_min: 1000, time_max: 2000, url: 'https://b.test/search' },
+  ];
+  let calls = 0;
+  const handler = makeRouterHandler({ catalog, fetchImpl: async () => { calls += 1; throw Error('unexpected network call'); } });
+  const response = await handler.fetch(new Request('https://router.test/search', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ query: 'the latest discussion', provider: 'chatgpt', from_time: 300, to_time: 400 }),
+  }));
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.status, 'NO_SIGNAL'); // preserve legacy result contract
+  assert.deepEqual(result.queried_shards, []);
+  assert.equal(calls, 0);
+  assert.deepEqual(result.coverage, {
+    window_fit: 'OUTSIDE_OBSERVED_INDEX_RANGE',
+    source_currentness: 'UNKNOWN_WITHOUT_SOURCE_WATERMARK',
+    eligible_shard_count: 1,
+    selected_shard_count: 0,
+    catalog_observed_max_time: 200,
+    catalog_bounds_complete: true,
+  });
+});
+
+test('time-scoped searched miss differs from unobserved provider and unknown catalog bounds', async () => {
+  const catalog = [
+    { shard_id: 'chatgpt-0001', provider: 'chatgpt', generation_id: 'a'.repeat(64), state: 'READY', time_min: 100, time_max: 500, url: 'https://a.test/search' },
+    { shard_id: 'chatgpt-0002', provider: 'chatgpt', generation_id: 'b'.repeat(64), state: 'READY', url: 'https://b.test/search' },
+  ];
+  const handler = makeRouterHandler({ catalog, fetchImpl: async (url) => Response.json(groupedPayload({
+    generationId: String(url).includes('a.test') ? 'a'.repeat(64) : 'b'.repeat(64),
+  })) });
+  const read = async (provider) => {
+    const response = await handler.fetch(new Request('https://router.test/search', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ query: 'missing', provider, from_time: 300, to_time: 400 }),
+    }));
+    return await response.json();
+  };
+  const realMiss = await read('chatgpt');
+  assert.equal(realMiss.status, 'NO_SIGNAL');
+  assert.deepEqual(realMiss.queried_shards, ['chatgpt-0001', 'chatgpt-0002']);
+  assert.equal(realMiss.coverage.window_fit, 'UNKNOWN_COVERAGE'); // second shard lacks time bounds
+  assert.equal(realMiss.coverage.catalog_bounds_complete, false);
+  assert.equal(realMiss.coverage.source_currentness, 'UNKNOWN_WITHOUT_SOURCE_WATERMARK');
+  const wrongProvider = await read('claude');
+  assert.deepEqual(wrongProvider.queried_shards, []);
+  assert.equal(wrongProvider.coverage.window_fit, 'UNKNOWN_COVERAGE');
+  assert.equal(wrongProvider.coverage.eligible_shard_count, 0);
+  assert.equal(wrongProvider.coverage.catalog_observed_max_time, null);
+});
+
+test('searched bounded time window can be relevant but never claims upstream completeness', async () => {
+  const catalog = [
+    { shard_id: 'chatgpt-0001', provider: 'chatgpt', generation_id: 'a'.repeat(64), state: 'READY', time_min: 100, time_max: 500, url: 'https://a.test/search' },
+  ];
+  let calls = 0;
+  const handler = makeRouterHandler({ catalog, fetchImpl: async () => {
+    calls += 1;
+    return Response.json(groupedPayload({ generationId: 'a'.repeat(64) }));
+  } });
+  const search = async (body) => {
+    const response = await handler.fetch(new Request('https://router.test/search', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    }));
+    assert.equal(response.status, 200);
+    return await response.json();
+  };
+  const result = await search({ query: 'missing', provider: 'chatgpt', from_time: 300, to_time: 400 });
+  assert.equal(result.status, 'NO_SIGNAL');
+  assert.deepEqual(result.queried_shards, ['chatgpt-0001']);
+  assert.deepEqual(result.coverage, {
+    window_fit: 'OBSERVED_POSSIBLE',
+    source_currentness: 'UNKNOWN_WITHOUT_SOURCE_WATERMARK',
+    eligible_shard_count: 1,
+    selected_shard_count: 1,
+    catalog_observed_max_time: 500,
+    catalog_bounds_complete: true,
+  });
+  const unscoped = await search({ query: 'missing', provider: 'chatgpt' });
+  assert.equal(Object.hasOwn(unscoped, 'coverage'), false); // additive only for time-scoped searches
+  assert.equal(calls, 2);
+});
+
 test('grouped router canary is disabled by default', async () => {
   const handler = makeRouterHandler({ catalog: [] });
   const response = await handler.fetch(new Request('https://router.test/internal/grouped-search', {
