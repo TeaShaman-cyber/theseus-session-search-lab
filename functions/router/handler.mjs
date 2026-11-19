@@ -33,6 +33,7 @@ export function makeRouterHandler({
   authToken,
   shardAuthToken,
   feedbackWriter = null,
+  feedbackReader = null,
   resultShape = 'grouped_v1',
   groupedCanaryEnabled = false,
 }) {
@@ -47,6 +48,9 @@ export function makeRouterHandler({
   }
   if (feedbackWriter !== null && typeof feedbackWriter !== 'function') {
     throw new Error('FEEDBACK_WRITER_INVALID');
+  }
+  if (feedbackReader !== null && typeof feedbackReader !== 'function') {
+    throw new Error('FEEDBACK_READER_INVALID');
   }
   if (!['grouped_v1', 'flat_v1'].includes(resultShape)) {
     throw new Error('RESULT_SHAPE_OUT_OF_BOUNDS');
@@ -302,8 +306,28 @@ export function makeRouterHandler({
             (input) => searchFederated(input, observation.context, observation.requestRef),
             feedbackWriter,
             (input) => browseSession(input, observation.context),
+            feedbackReader,
           );
           if (result === null) return new Response(null, { status: 202 });
+          const toolName = message?.method === 'tools/call' ? message?.params?.name : null;
+          const toolResult = result?.result?.structuredContent;
+          if (result?.result?.isError === false &&
+              toolName === 'session_feedback' &&
+              ['RECORDED', 'UNCHANGED'].includes(toolResult?.status)) {
+            observation.setFeedbackCorrelation({
+              feedbackRef: toolResult.feedback_ref,
+              baselineRequestRef: message?.params?.arguments?.baseline_request_ref,
+              resultRequestRef: message?.params?.arguments?.result_request_ref,
+            });
+          }
+          if (result?.result?.isError === false &&
+              toolName === 'session_feedback_get' && toolResult?.status === 'FOUND') {
+            observation.setFeedbackCorrelation({
+              feedbackRef: toolResult.feedback_ref,
+              baselineRequestRef: toolResult.feedback?.baseline_request_ref,
+              resultRequestRef: toolResult.feedback?.result_request_ref,
+            });
+          }
           const searchResult = result?.result?.structuredContent;
           if (searchResult?.status) {
             observation.setResult({

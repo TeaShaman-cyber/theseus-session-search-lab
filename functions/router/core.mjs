@@ -14,6 +14,7 @@ const FEEDBACK_FIELDS = new Set([
   'notes',
 ]);
 const FEEDBACK_OPERATOR_FIELDS = new Set(['name', 'version']);
+const FEEDBACK_READ_FIELDS = new Set(['feedback_ref']);
 
 function validateSearchInput(input = {}) {
   if (Object.prototype.hasOwnProperty.call(input, 'grouping')
@@ -140,6 +141,11 @@ function validateFeedbackInput(input = {}) {
     outcome: input.outcome,
     notes,
   };
+}
+
+export function validateFeedbackReadInput(input = {}) {
+  assertExactFields(input, FEEDBACK_READ_FIELDS, 'FEEDBACK_READ_FIELDS_INVALID');
+  return { feedback_ref: requireFeedbackRef(input.feedback_ref, 'FEEDBACK_REF_INVALID') };
 }
 
 export function selectShards(catalog, input = {}) {
@@ -311,7 +317,7 @@ export function mergeGroupedShardOutcomes(selected, outcomes, limit) {
   };
 }
 
-export async function handleMcpRequest(request, searchFn, feedbackFn = null, browseFn = null) {
+export async function handleMcpRequest(request, searchFn, feedbackFn = null, browseFn = null, feedbackReadFn = null) {
   const id = request?.id ?? null;
   const method = request?.method;
 
@@ -397,6 +403,17 @@ export async function handleMcpRequest(request, searchFn, feedbackFn = null, bro
         },
       });
     }
+    if (typeof feedbackReadFn === 'function') {
+      tools.push({
+        name: 'session_feedback_get',
+        description: 'Read verified feedback by exact feedback_ref. Returns a bounded record without private notes; no listing or search policy changes.',
+        inputSchema: {
+          type: 'object', additionalProperties: false,
+          required: ['feedback_ref'],
+          properties: { feedback_ref: { type: 'string', pattern: '^[0-9a-f]{32}$' } },
+        },
+      });
+    }
     return {
       jsonrpc: '2.0',
       id,
@@ -448,6 +465,21 @@ export async function handleMcpRequest(request, searchFn, feedbackFn = null, bro
             isError: true,
           },
         };
+      }
+    }
+    if (toolName === 'session_feedback_get' && typeof feedbackReadFn === 'function') {
+      try {
+        const input = validateFeedbackReadInput(request.params.arguments ?? {});
+        const result = await feedbackReadFn(input);
+        return { jsonrpc: '2.0', id, result: {
+          content: [{ type: 'text', text: JSON.stringify(result) }],
+          structuredContent: result, isError: false,
+        } };
+      } catch (error) {
+        return { jsonrpc: '2.0', id, result: {
+          content: [{ type: 'text', text: String(error?.message ?? error) }],
+          isError: true,
+        } };
       }
     }
     if (toolName !== 'session_search') {
