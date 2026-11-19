@@ -22,6 +22,8 @@ checkpoints are retained below as dated historical evidence.
 The search identity stays stable. Before issue #232 the gateway allowed one
 read-only consumer tool, so older one-tool acceptance receipts remain historical. `TheseusSessionSearch.session_search`. The gateway is an allowlist of Arcade-discovered tools; it is not a transparent proxy that automatically substitutes a newly registered sibling server/tool. Preserve both the canonical remote-server ID `theseus-session-search` and the stable qualified tool identity across router deployments.
 
+Git source `c3f03696182e195d39af3a01d5ba5569b7ac09f7` (PR #277) adds a fifth router MCP capability, `session_coverage`, but **source availability is not gateway exposure**. A fresh 2026-11-19 App-backed `Arcade_SelectTools` read after that merge still returned the four tools above and did **not** return `TheseusSessionSearch.session_coverage`. Treat the coverage tool as `SOURCE_MERGED / HOST_NOT_LIVE` until a separately authorized router deployment, worker discovery refresh, Gateway allowlist change and fresh ChatGPT-host execution prove otherwise.
+
 A verified router candidate may be registered separately for diagnostics, but do not add a second Session Search tool identity to the production gateway. Production cutover changes the URI/configuration of the existing Arcade worker, then refreshes its discovered tools, so `Arcade_SelectTools` and `Arcade_UseTool` continue to address the same qualified tool.
 
 The current Arcade REST API documents the supported in-place operations:
@@ -39,6 +41,8 @@ The Arcade gateway itself exposes the Session Search domain capability. The Chat
 The invariant is that the existing App-backed host can discover and execute `TheseusSessionSearch.session_search` through the Arcade surface while preserving web/mobile compatibility.
 
 For retrieval-policy capable deployments, fresh discovery must expose `search_mode` with `strict`, `recall`, and `auto` (default `strict`). The stable `session_search` tool returns exact-text result groups by default, preserving all matched occurrences/provenance under each group. `auto` must return a `retrieval` receipt that distinguishes requested from effective mode; a strict grouped miss may escalate to recall, while `PARTIAL` must remain visible and must not be hidden by retry.
+
+After an **authorized** coverage rollout, acceptance changes from four to five intentional consumer tools by adding only `TheseusSessionSearch.session_coverage`. The prior four identities must remain present. Fresh host discovery must then execute a bounded coverage preflight and observe `status=OBSERVED`, a valid `coverage.window_fit`, and `source_currentness=UNKNOWN_WITHOUT_SOURCE_WATERMARK`. The preflight must remain metadata-only; it does not certify raw ChatGPT account completeness or source freshness.
 
 ## Verified private feedback readback checkpoint — November 19 2026
 
@@ -105,12 +109,14 @@ Gateway/control-plane existence is not host acceptance.
 
 A fresh host acceptance must:
 1. use the existing App-backed Session Search plugin identity;
-2. discover the current Session Search domain tool;
-3. execute a bounded live probe;
-4. receive a terminal `FOUND`, `NO_SIGNAL`, or `PARTIAL` result with explicit `queried_shards` and `unavailable_shards`;
-5. preserve returned shard/generation provenance;
-6. require no unavailable shards before declaring the serving path healthy;
-7. for an `auto` acceptance probe, require a `retrieval` receipt with `requested_mode`, `effective_mode`, `strict_group_count`, and `returned_group_count` consistent with the observed bounded policy.
+2. discover the current Session Search domain tools rather than infer them from Git or router source;
+3. after a coverage rollout, verify that `TheseusSessionSearch.session_coverage` is added while the previous four tools remain;
+4. execute a bounded coverage probe and preserve `UNKNOWN_WITHOUT_SOURCE_WATERMARK` source-currentness semantics;
+5. execute a bounded live search probe;
+6. receive a terminal `FOUND`, `NO_SIGNAL`, or `PARTIAL` search result with explicit `queried_shards` and `unavailable_shards`;
+7. preserve returned shard/generation provenance;
+8. require no unavailable shards before declaring the serving path healthy;
+9. for an `auto` acceptance probe, require a `retrieval` receipt with `requested_mode`, `effective_mode`, `strict_group_count`, and `returned_group_count` consistent with the observed bounded policy.
 
 The **live shard catalog** is runtime evidence and may evolve. Compare observed provenance with current deployment/project evidence when shard topology matters.
 

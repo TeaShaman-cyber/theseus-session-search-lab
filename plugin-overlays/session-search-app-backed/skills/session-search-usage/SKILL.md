@@ -58,6 +58,20 @@ Start with the smallest useful query:
 - use `scopes` deliberately: `dialogue`, `evidence`, or `trace`;
 - keep `limit` bounded and expand only when the first retrieval is insufficient.
 
+## Time-window coverage preflight
+
+When current host discovery exposes `TheseusSessionSearch.session_coverage` and the user's request is materially time-scoped, prefer that cheap read-only preflight **before** `session_search`. It reads the router's current shard catalog and performs no lexical shard dispatch.
+
+Pass only the needed `provider`, `session_id`, `from_time`, and/or `to_time`; at least one time bound is required. Interpret the receipt conservatively:
+
+- `OUTSIDE_OBSERVED_INDEX_RANGE`: the requested window does not intersect any eligible shard's complete observed indexed bounds. Skip a lexical search for that exact window unless the user also wants older analogous material.
+- `OBSERVED_POSSIBLE`: the indexed catalog overlaps the requested window. This says only that a search may be worthwhile; it does not prove complete upstream history.
+- `UNKNOWN_COVERAGE`: provider/session coverage or catalog bounds are insufficient. Preserve uncertainty instead of asserting absence.
+
+Keep `source_currentness=UNKNOWN_WITHOUT_SOURCE_WATERMARK` unless a separately verified authoritative upstream watermark exists. `observed_at` is the router response time, **not** the source-history freshness time. Bounded generation metadata describes the serving catalog observed for that preflight, not raw-history authority.
+
+If `session_coverage` is absent from fresh Arcade/host discovery, do not invent or assume it from Git source. Fall back to a time-scoped `session_search` only when that search is still useful, inspect its additive `coverage` receipt, and state that preventive preflight is unavailable on the current surface.
+
 Do not silently translate `PARTIAL` into `NO_SIGNAL`.
 
 Interpret terminal states as:
@@ -178,13 +192,14 @@ After updating the existing App-backed plugin:
 
 1. start a fresh ChatGPT conversation on the intended host surface;
 2. select the existing Session Search App-backed plugin; do not create a replacement identity;
-3. use `Arcade_SelectTools` to confirm the Session Search domain capability resolves to `TheseusSessionSearch.session_search`;
-4. use `Arcade_UseTool` to run a bounded safe strict control probe;
-5. confirm the current tool schema exposes `search_mode` = `strict|recall|auto` with default `strict`;
-6. run a bounded `search_mode=auto` probe that is known to strict-miss and require a `retrieval` receipt showing bounded strict-to-recall escalation;
-7. require a contract-valid terminal status and explicit `queried_shards` / `unavailable_shards`;
-8. require `unavailable_shards=[]` before calling the serving path healthy;
-9. if the result is `PARTIAL`, classify the host path as executable but serving as DEGRADED and do not escalate it through auto;
-10. compare observed provenance with the current live shard catalog/deployment evidence instead of historical #64 shard names.
+3. use `Arcade_SelectTools` to confirm the existing four Session Search tools remain discoverable and, **only after the separately authorized coverage rollout**, that `TheseusSessionSearch.session_coverage` is also present;
+4. after that rollout, use `Arcade_UseTool` to run a bounded `session_coverage` probe for a known time window; require `status=OBSERVED`, a valid `window_fit`, `source_currentness=UNKNOWN_WITHOUT_SOURCE_WATERMARK`, and no transcript content in the receipt;
+5. use `Arcade_UseTool` to run a bounded safe `session_search` strict control probe;
+6. confirm the current search schema exposes `search_mode` = `strict|recall|auto` with default `strict`;
+7. run a bounded `search_mode=auto` probe that is known to strict-miss and require a `retrieval` receipt showing bounded strict-to-recall escalation;
+8. require a contract-valid terminal search status and explicit `queried_shards` / `unavailable_shards`;
+9. require `unavailable_shards=[]` before calling the serving path healthy;
+10. if the search result is `PARTIAL`, classify the host path as executable but serving as DEGRADED and do not escalate it through auto;
+11. compare observed provenance with the current live shard catalog/deployment evidence instead of historical #64 shard names.
 
 Do not infer host success from Arcade control-plane state alone. Do not infer corpus absence merely because a provider/shard family is not present in the current live catalog.
