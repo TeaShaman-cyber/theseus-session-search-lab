@@ -89,3 +89,38 @@ export function buildGroupedSearchCall(input = {}) {
     ],
   };
 }
+
+// The browse path is explicitly generation pinned. Never fall back to ACTIVE.
+export function buildSessionBrowseCall(input = {}) {
+  if (typeof input.generation_id !== 'string' || !/^[0-9a-f]{64}$/.test(input.generation_id)) {
+    throw new Error('GENERATION_OUT_OF_BOUNDS');
+  }
+  if (typeof input.session_id !== 'string' || !input.session_id || input.session_id.length > 512) {
+    throw new Error('SESSION_OUT_OF_BOUNDS');
+  }
+  const ordinal = input.ordinal ?? 0;
+  const messageId = input.message_id ?? null;
+  const offset = input.offset ?? 0;
+  const limit = input.limit ?? 20;
+  const maxChars = input.max_chars ?? 16000;
+  if (!Number.isSafeInteger(ordinal) || ordinal < 0 || ordinal > 2147483647) {
+    throw new Error('ORDINAL_OUT_OF_BOUNDS');
+  }
+  if (messageId != null && (typeof messageId !== 'string' || !messageId || messageId.length > 512)) {
+    throw new Error('MESSAGE_OUT_OF_BOUNDS');
+  }
+  if (!Number.isSafeInteger(offset) || offset < 0 || offset > 2147483647
+      || (offset > 0 && messageId === null)) {
+    throw new Error('OFFSET_OUT_OF_BOUNDS');
+  }
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+    throw new Error('LIMIT_OUT_OF_BOUNDS');
+  }
+  if (!Number.isInteger(maxChars) || maxChars < 1 || maxChars > 100000) {
+    throw new Error('CHAR_BUDGET_OUT_OF_BOUNDS');
+  }
+  return {
+    text: 'SELECT session_search.read_generation_session_v1($1,$2,$3,$4,$5,$6,$7) AS result',
+    values: [input.generation_id, input.session_id, ordinal, messageId, offset, limit, maxChars],
+  };
+}

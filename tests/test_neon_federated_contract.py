@@ -13,9 +13,27 @@ FTS_GUARD = ROOT / "sql" / "neon" / "007_safe_message_tsvector.sql"
 GROUPED_RETRIEVAL = ROOT / "sql" / "neon" / "009_exact_text_grouped_retrieval.sql"
 GROUPED_RETRIEVAL_BUDGET = ROOT / "sql" / "neon" / "011_exact_text_grouped_candidate_budget.sql"
 GROUPED_RETRIEVAL_DEFAULT = ROOT / "sql" / "neon" / "012_exact_text_grouped_default.sql"
+SESSION_BROWSE = ROOT / "sql" / "neon" / "013_pinned_session_browse.sql"
 
 
 class NeonFederatedContractTest(unittest.TestCase):
+    def test_session_browse_sql_is_generation_pinned_read_only_and_bounded(self):
+        text = SESSION_BROWSE.read_text()
+        self.assertIn("CREATE FUNCTION session_search.read_generation_session_v1", text)
+        self.assertIn("target_generation_id text", text)
+        self.assertIn("gen.projection_schema_version", text)
+        self.assertIn("AND state = 'READY'", text)
+        self.assertIn("ORDER BY m.ordinal, m.message_id COLLATE \"C\"", text)
+        self.assertIn("LIMIT result_limit", text)
+        self.assertIn("substring(m.text FROM start_at + 1 FOR remaining)", text)
+        self.assertIn("'session_coverage'", text)
+        self.assertIn("'has_more'", text)
+        self.assertIn("'next_position'", text)
+        self.assertIn("TO session_search_reader", text)
+        self.assertNotIn("activate_generation(", text)
+        self.assertNotIn("UPDATE session_search.", text)
+        self.assertNotIn("DELETE FROM session_search.", text)
+
     def test_retrieval_policy_migration_adds_versioned_strict_and_recall_query_plane(self):
         text = RETRIEVAL_POLICY.read_text()
         self.assertIn("CREATE FUNCTION session_search.search_generation_v2", text)

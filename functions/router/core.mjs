@@ -311,7 +311,7 @@ export function mergeGroupedShardOutcomes(selected, outcomes, limit) {
   };
 }
 
-export async function handleMcpRequest(request, searchFn, feedbackFn = null) {
+export async function handleMcpRequest(request, searchFn, feedbackFn = null, browseFn = null) {
   const id = request?.id ?? null;
   const method = request?.method;
 
@@ -348,6 +348,25 @@ export async function handleMcpRequest(request, searchFn, feedbackFn = null) {
         },
       },
     }];
+    if (typeof browseFn === 'function') {
+      tools.push({
+        name: 'session_browse',
+        description: 'Read a selected session/branch in bounded ordered pages, pinned to the exact shard and generation. Does not imply the original exported history is complete.',
+        inputSchema: {
+          type: 'object', additionalProperties: false,
+          required: ['session_id', 'shard_id', 'generation_id'],
+          properties: {
+            session_id: { type: 'string', minLength: 1, maxLength: 512 },
+            shard_id: { type: 'string', minLength: 1 },
+            generation_id: { type: 'string', pattern: '^[0-9a-f]{64}$' },
+            limit: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+            max_chars: { type: 'integer', minimum: 1, maximum: 100000, default: 16000 },
+            start_ordinal: { type: 'integer', minimum: 0 },
+            cursor: { type: 'string' },
+          },
+        },
+      });
+    }
     if (typeof feedbackFn === 'function') {
       tools.push({
         name: 'session_feedback',
@@ -386,6 +405,24 @@ export async function handleMcpRequest(request, searchFn, feedbackFn = null) {
   }
   if (method === 'tools/call') {
     const toolName = request?.params?.name;
+    if (toolName === 'session_browse' && typeof browseFn === 'function') {
+      try {
+        const result = await browseFn(request.params.arguments ?? {});
+        return {
+          jsonrpc: '2.0', id,
+          result: {
+            content: [{ type: 'text', text: JSON.stringify(result) }],
+            structuredContent: result,
+            isError: false,
+          },
+        };
+      } catch (error) {
+        return { jsonrpc: '2.0', id, result: {
+          content: [{ type: 'text', text: String(error?.message ?? error) }],
+          isError: true,
+        } };
+      }
+    }
     if (toolName === 'session_feedback') {
       if (typeof feedbackFn !== 'function') {
         return { jsonrpc: '2.0', id, error: { code: -32602, message: 'unknown tool' } };
