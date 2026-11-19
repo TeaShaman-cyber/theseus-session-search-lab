@@ -5,6 +5,33 @@ not accepted corpus authority. Keep two feedback stores independent and review
 them manually. No automated server-to-Neon synchronization, scheduler or
 new JWT/auth service is needed.
 
+## Private App readback checkpoint — 2026-11-19 (issue #272)
+
+This project currently uses **one private App-backed Session Search consumer**,
+not a public multi-tenant product. The existing `ssrouter2` deployment **#13**
+and Arcade Gateway were independently verified with four tools:
+`session_search`, `session_browse`, `session_feedback` and
+`session_feedback_get`. A ChatGPT App-hosted exact-ref `session_feedback_get`
+returned `FOUND` on three genuine records written in earlier chats. Database
+and returned metadata matched; the read span was correlated to the original
+search trace in Grafana Tempo using `feedback_ref` and `request_ref`.
+
+At that checkpoint `session_feedback_get` intentionally returned
+`notes_present` but **not** the stored `notes` text. Under the follow-up in
+#272, the **Git source candidate** additionally returns the original nullable
+`notes` (validated 1–4000 chars when present) for an exact 32-hex feedback ref
+on the **same private authenticated App route**. Other feedback fields,
+`notes_present`, immutable stored records, idempotent writes and existing
+permissions remain unchanged. No list/export endpoint or ranking adaptation is
+added. Never copy private notes, raw queries or source text into telemetry,
+metric labels, logs or public issue receipts.
+
+Source QA and a committed change are not evidence of production rollout. For
+each subsequent promotion, verify the active Neon deployment, the unchanged
+four-tool Gateway, current host discovery, a real read of a preexisting
+record and installed App skill/source parity. Preserve the existing private
+`.app.json` binding and historical dated checkpoints below.
+
 ## Stores and failure boundary
 
 **Server-side agent:** existing private local feedback inbox, stored near the

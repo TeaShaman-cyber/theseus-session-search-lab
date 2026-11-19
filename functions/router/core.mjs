@@ -406,7 +406,7 @@ export async function handleMcpRequest(request, searchFn, feedbackFn = null, bro
     if (typeof feedbackReadFn === 'function') {
       tools.push({
         name: 'session_feedback_get',
-        description: 'Read verified feedback by exact feedback_ref. Returns a bounded record without private notes; no listing or search policy changes.',
+        description: 'Read verified feedback by exact feedback_ref in the existing private authenticated Session Search App, including bounded notes (max 4000 characters). No listing or search policy changes.',
         inputSchema: {
           type: 'object', additionalProperties: false,
           required: ['feedback_ref'],

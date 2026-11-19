@@ -18,7 +18,7 @@ ChatGPT web/mobile
   -> current live shard catalog
 ```
 
-Session Search exposes read-only retrieval and, when available in live host discovery, one append-only feedback tool scoped to a separate database. Ingest, rebuild, generation activation, corpus mutation, and recovery remain outside the consumer plugin.
+Session Search exposes read-only retrieval, exact-reference feedback readback and an append-only feedback writer scoped to a separate database, when each tool is available in current host discovery. Ingest, rebuild, generation activation, corpus mutation, and recovery remain outside the consumer plugin.
 
 ## Web/mobile compatibility invariant
 
@@ -78,12 +78,14 @@ never infer that a partial indexed slice covers the full original history.
 
 ## App-only feedback (issue #232)
 
-The canonical remote MCP server also supports the bounded append-only
-TheseusSessionSearch.session_feedback. A verified 2026-11-19 ChatGPT App host
-discovery exposed all three tools: session_search, session_browse and
-session_feedback. Tool presence is still runtime-scoped: discover the current
-schema before invoking any tool, and do not claim an accepted feedback write
-until an actual operation and independent Neon record readback succeed.
+The canonical remote MCP server supports the bounded append-only
+`TheseusSessionSearch.session_feedback`. A later verified **2026-11-19**
+ChatGPT App host checkpoint exposed all **four** tools: `session_search`,
+`session_browse`, `session_feedback` and `session_feedback_get`, following
+existing Neon router deployment #13 and an additive Arcade Gateway change.
+Tool presence remains runtime-scoped: discover the current schema before
+invoking any tool, and do not claim an accepted feedback write until actual
+operation and independent Neon record readback succeed.
 
 When feedback is discoverable, use only baseline_request_ref,
 optional result_request_ref, failure_class, operator name/version,
@@ -92,6 +94,19 @@ App feedback writes exclusively to feedback_issue232, and a
 separate server agent stores local feedback independently.
 There is no automatic synchronization, scheduled transfer or
 automatic ranking-policy promotion. See docs/feedback-sync.md.
+
+For readback, call `TheseusSessionSearch.session_feedback_get` with an **exact**
+recorded 32-hex lowercase `feedback_ref` from the writing agent or an earlier
+private chat. A `FOUND` response carries `received_at`, baseline/result
+`request_ref`, failure class, operator, outcome and `notes_present`. The
+issue #272 updated **Git source contract** also returns the original nullable
+`notes`, bounded to 4000 characters, through the same authenticated private
+App. Never treat a missing record (`NOT_FOUND`), tool error or old deployed
+`notes_present`-only response as successful full diagnostic readback. Never
+publish private notes in public issues or include them in tracing/metrics.
+Use the `request_ref` to correlate feedback with the originating search span
+(`session_search.request_ref`) in Tempo; a trace match is retention-scoped and
+must be independently observed when needed.
 
 When only the search tool is selected after a gateway change,
 classify APP_TOOL_REPROBE_REQUIRED and use a fresh existing

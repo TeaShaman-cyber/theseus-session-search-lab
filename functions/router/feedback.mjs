@@ -120,7 +120,8 @@ export function makeFeedbackReader(query) {
       if (feedbackReference(canonicalFeedback(feedback)) !== feedbackRef) {
         throw new Error('FEEDBACK_READBACK_INCOMPLETE');
       }
-      // Notes are never exposed through the cross-chat read route.
+      // Existing private authenticated App may read the stored note on an exact ref.
+      // Do not copy notes to telemetry, metrics, logs, or public issue receipts.
       return {
         status: 'FOUND', feedback_ref: feedbackRef, received_at: record.received_at,
         feedback: {
@@ -130,6 +131,7 @@ export function makeFeedbackReader(query) {
           operator: feedback.operator,
           outcome: feedback.outcome,
           notes_present: feedback.notes !== null,
+          notes: feedback.notes,
         },
       };
     } catch (error) {
