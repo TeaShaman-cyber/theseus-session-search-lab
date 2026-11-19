@@ -7,8 +7,9 @@ README = OVERLAY / "README.md"
 SKILL = OVERLAY / "skills" / "session-search-usage" / "SKILL.md"
 GATEWAY = OVERLAY / "skills" / "session-search-usage" / "references" / "gateway.md"
 SERVING = ROOT / "docs" / "federated-serving-plane.md"
+BROWSE = OVERLAY / "skills" / "session-browse-usage" / "SKILL.md"
 
-for path in (README, SKILL, GATEWAY, SERVING):
+for path in (README, SKILL, GATEWAY, SERVING, BROWSE):
     if not path.is_file():
         raise SystemExit(f"SESSION_SEARCH_APP_OVERLAY_FAIL missing {path.relative_to(ROOT)}")
 
@@ -16,6 +17,7 @@ readme = README.read_text(encoding="utf-8")
 skill = SKILL.read_text(encoding="utf-8")
 gateway = GATEWAY.read_text(encoding="utf-8")
 serving = SERVING.read_text(encoding="utf-8")
+browse = BROWSE.read_text(encoding="utf-8")
 
 for marker in (
     "App-backed",
@@ -70,6 +72,19 @@ for marker in (
     if marker not in gateway:
         raise SystemExit(f"SESSION_SEARCH_APP_OVERLAY_FAIL gateway marker: {marker}")
 
+
+for marker in (
+    "TheseusSessionSearch.session_browse",
+    "next_cursor",
+    "PARTIAL_SESSION_SLICE",
+    "coverage_complete",
+    "Arcade_SelectTools",
+):
+    if marker not in browse:
+        raise SystemExit(f"SESSION_SEARCH_APP_OVERLAY_FAIL BROWSE marker: {marker}")
+
+if "still selects only session_search when asked for feedback" in skill:
+    raise SystemExit("SESSION_SEARCH_APP_OVERLAY_FAIL stale current feedback discovery assertion")
 
 legacy_current_smoke = "require `FOUND` with both `chatgpt-0001` and `hermes-0001` provenance"
 if legacy_current_smoke in skill:

@@ -69,16 +69,21 @@ When `PARTIAL`, report the healthy evidence and the unavailable shard(s). Do not
 
 Preserve returned shard and generation provenance when it matters to the answer or diagnosis. When a group has multiple occurrences, inspect `occurrences[]` rather than reporting only the representative as if the other historical appearances did not exist.
 
+## Read an identified conversation
+
+When the task requires more than matched snippets, use the companion
+`session-browse-usage` skill. Carry an actual `session_id`, `shard_id` and
+`generation_id` from an observed search occurrence into `session_browse`;
+never infer that a partial indexed slice covers the full original history.
+
 ## App-only feedback (issue #232)
 
 The canonical remote MCP server also supports the bounded append-only
-TheseusSessionSearch.session_feedback. The existing Arcade Session Search
-gateway lists both this and TheseusSessionSearch.session_search after
-the November 8 update. The existing ChatGPT host in this conversation,
-however, still selects only session_search when asked for feedback.
-Do not invoke a tool absent from current App discovery, and do not
-claim an accepted App feedback write until an actual operation and
-independent Neon record readback succeed.
+TheseusSessionSearch.session_feedback. A verified 2026-11-19 ChatGPT App host
+discovery exposed all three tools: session_search, session_browse and
+session_feedback. Tool presence is still runtime-scoped: discover the current
+schema before invoking any tool, and do not claim an accepted feedback write
+until an actual operation and independent Neon record readback succeed.
 
 When feedback is discoverable, use only baseline_request_ref,
 optional result_request_ref, failure_class, operator name/version,
