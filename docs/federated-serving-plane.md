@@ -57,6 +57,18 @@ The original #166 migration candidate required:
   new router. No catalog change, live deployment, or source promotion is
   implied by these changes.
 
+## Time-scoped search coverage (source contract candidate; not yet deployed)
+
+For `POST /search` requests with `from_time` and/or `to_time`, the router derives an **additive** `coverage` receipt from its existing in-memory shard catalog. The same search code serves `POST /mcp`; a source change or PR merge is not proof that the hosted App exposes the new fields.
+
+- `window_fit`: `OUTSIDE_OBSERVED_INDEX_RANGE` only if a provider/session-filtered catalog contains eligible shards with complete, consistent numeric time bounds but the requested window excludes all of them. `OBSERVED_POSSIBLE` means some shard's *observed indexed range* intersects the query; this is **not** a guarantee that every original user conversation in that window was captured. `UNKNOWN_COVERAGE` means the provider has no eligible catalog shards, some shard bounds are unknown or invalid, or the range cannot be established.
+- `source_currentness` is currently always `UNKNOWN_WITHOUT_SOURCE_WATERMARK`. Observed shard `time_max`, a healthy `/health`, and a READY generation cannot prove that original ChatGPT/provider history is current.
+- `eligible_shard_count` excludes only provider/session scopes, whereas `selected_shard_count` also applies time filtering. `catalog_observed_max_time` is the maximum finite catalog `time_max` of eligible shards (or null), and `catalog_bounds_complete` tells whether *all* eligible shards have usable min/max bounds.
+- A zero-selected-shard query preserves existing `status: NO_SIGNAL` for backward compatibility but **must not** be treated as a fully searched miss; inspect `coverage.window_fit` and `queried_shards`. A queried clean miss may still return `NO_SIGNAL` with unknown source currentness, and `PARTIAL` still denotes unavailable shards.
+- Non-time-scoped queries retain the previous response shape (no `coverage` property).
+
+This is an *after-query transparency improvement*, not a cheap agent preflight endpoint or guaranteed ChatGPT pre-response hook. A preventive freshness check, upstream watermark and App/Arcade discovery remain tracked by [#275](https://github.com/TeaShaman-cyber/theseus-session-search-lab/issues/275), linked to ingestion [#3](https://github.com/TeaShaman-cyber/theseus-session-search-lab/issues/3).
+
 ## Failure semantics
 
 - `FOUND`: every selected shard responded and at least one result group exists.

@@ -163,6 +163,38 @@ export function selectShards(catalog, input = {}) {
     .sort((a, b) => a.shard_id.localeCompare(b.shard_id));
 }
 
+// Observed catalog time bounds are not an upstream source freshness guarantee.
+// Keep this additive to the existing FOUND / NO_SIGNAL / PARTIAL search contract.
+export function summarizeTimeWindowCoverage(catalog, input, selected) {
+  if (input.from_time == null && input.to_time == null) return null;
+
+  const eligible = selectShards(catalog, {
+    ...input,
+    from_time: null,
+    to_time: null,
+  });
+  const catalogBoundsComplete = eligible.length > 0 && eligible.every((shard) =>
+    Number.isFinite(shard.time_min) && Number.isFinite(shard.time_max)
+    && shard.time_min <= shard.time_max);
+  const knownMaxTimes = eligible
+    .map((shard) => shard.time_max)
+    .filter((time) => Number.isFinite(time));
+  const observedMax = knownMaxTimes.length ? Math.max(...knownMaxTimes) : null;
+
+  return {
+    window_fit: eligible.length === 0 || !catalogBoundsComplete
+      ? 'UNKNOWN_COVERAGE'
+      : selected.length === 0
+        ? 'OUTSIDE_OBSERVED_INDEX_RANGE'
+        : 'OBSERVED_POSSIBLE',
+    source_currentness: 'UNKNOWN_WITHOUT_SOURCE_WATERMARK',
+    eligible_shard_count: eligible.length,
+    selected_shard_count: selected.length,
+    catalog_observed_max_time: observedMax,
+    catalog_bounds_complete: catalogBoundsComplete,
+  };
+}
+
 export function mergeShardOutcomes(selected, outcomes, limit) {
   const queried = [];
   const unavailable = [];
