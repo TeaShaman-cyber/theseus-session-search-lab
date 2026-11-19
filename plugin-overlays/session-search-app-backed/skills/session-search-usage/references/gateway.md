@@ -13,11 +13,12 @@ Canonical remote MCP behind Arcade is the independently deployed Session Search 
 
 ## Stable server and tool identity
 
-The production gateway exposes three verified consumer tools as of
-2026-11-19: `TheseusSessionSearch.session_search`,
-`TheseusSessionSearch.session_browse` and
-`TheseusSessionSearch.session_feedback`. The earlier two-tool state from
-issue #232 is retained as dated historical evidence below.
+As last verified on 2026-11-19, the existing **private** production Gateway
+exposes **four** consumer tools: `TheseusSessionSearch.session_search`,
+`TheseusSessionSearch.session_browse`,
+`TheseusSessionSearch.session_feedback` and
+`TheseusSessionSearch.session_feedback_get`. Earlier three-tool and two-tool
+checkpoints are retained below as dated historical evidence.
 The search identity stays stable. Before issue #232 the gateway allowed one
 read-only consumer tool, so older one-tool acceptance receipts remain historical. `TheseusSessionSearch.session_search`. The gateway is an allowlist of Arcade-discovered tools; it is not a transparent proxy that automatically substitutes a newly registered sibling server/tool. Preserve both the canonical remote-server ID `theseus-session-search` and the stable qualified tool identity across router deployments.
 
@@ -38,6 +39,23 @@ The Arcade gateway itself exposes the Session Search domain capability. The Chat
 The invariant is that the existing App-backed host can discover and execute `TheseusSessionSearch.session_search` through the Arcade surface while preserving web/mobile compatibility.
 
 For retrieval-policy capable deployments, fresh discovery must expose `search_mode` with `strict`, `recall`, and `auto` (default `strict`). The stable `session_search` tool returns exact-text result groups by default, preserving all matched occurrences/provenance under each group. `auto` must return a `retrieval` receipt that distinguishes requested from effective mode; a strict grouped miss may escalate to recall, while `PARTIAL` must remain visible and must not be hidden by retry.
+
+## Verified private feedback readback checkpoint — November 19 2026
+
+From canonical Git `2f2d4777995915b927e0d725502b2b8243773ea2`, native Neon
+`ssrouter2` deployment #13 completed while preserving all eight environment
+key names and existing authenticated routes. The existing Arcade Gateway
+received **only** `session_feedback_get` as its fourth tool; all previous
+three tools remained. Fresh App-host `Arcade_SelectTools` discovered the new
+tool. A real `session_feedback_get(feedback_ref)` returned `FOUND` for
+preexisting cross-chat feedback; independent Neon metadata matched and Grafana
+Tempo linked its read span to the originating search span via stored refs.
+The original live response returned `notes_present` but excluded private
+`notes` text. Issue #272's subsequent Git source change allows nullable
+bounded `notes` on this exact-ref private read path. **Do not claim that notes
+are live until a post-deployment host readback proves them**. The original
+#13 checkpoint is historical; check current deployment before every rollout.
+The App identity, OAuth, feedback store and corpus routing are unchanged.
 
 ## Verified hint / browse checkpoint — November 19 2026
 

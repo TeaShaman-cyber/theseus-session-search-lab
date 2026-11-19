@@ -17,7 +17,7 @@ ChatGPT web/mobile -> existing App-backed Session Search plugin
   -> session_search.read_generation_session_v1(...)
 ```
 
-On ChatGPT, use `Arcade_SelectTools` to discover the **exact** named tool and its current input schema before invoking `Arcade_UseTool`. Do not invent a raw top-level tool or call an undiscovered tool. The same App/Gateway also retains `TheseusSessionSearch.session_search` and `TheseusSessionSearch.session_feedback`. The existing OAuth App binding is the intended web/mobile route; do not add or replace a packaged `mcp.json`/`.mcp.json` or direct shard connection.
+On ChatGPT, use `Arcade_SelectTools` to discover the **exact** named tool and its current input schema before invoking `Arcade_UseTool`. Do not invent a raw top-level tool or call an undiscovered tool. The same App/Gateway also retains `TheseusSessionSearch.session_search` and `TheseusSessionSearch.session_feedback`. The existing private App additionally exposes the exact-reference read-only `TheseusSessionSearch.session_feedback_get` tool for stored feedback; this is not a substitute for `session_browse` conversation pagination. The existing OAuth App binding is the intended web/mobile route; do not add or replace a packaged `mcp.json`/`.mcp.json` or direct shard connection.
 
 If the gateway lists three tools but this host still discovers only the earlier two, report **STALE / REPROBE_REQUIRED at the host/tool-discovery boundary**; a refreshed conversation or reconnection may be necessary. A gateway control-plane update, a successful SQL call, or a healthy router does **not** prove that the new tool is invocable from this ChatGPT session. Do not re-register or rename a working server to bypass caching.
 

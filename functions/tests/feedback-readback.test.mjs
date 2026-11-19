@@ -30,7 +30,7 @@ function fakeSql() {
   };
 }
 
-test('agent reads back an immutable feedback record by exact ref without disclosing notes', async () => {
+test('agent reads back an immutable feedback record by exact ref including private notes', async () => {
   const sql = fakeSql();
   const writer = makeFeedbackWriter(sql.query.bind(sql), { now: () => '2026-11-19T16:00:00Z' });
   const reader = makeFeedbackReader(sql.query.bind(sql));
@@ -42,13 +42,28 @@ test('agent reads back an immutable feedback record by exact ref without disclos
     feedback: {
       baseline_request_ref: 'a'.repeat(32), result_request_ref: 'b'.repeat(32),
       failure_class: 'low_relevance', operator: { name: 'chatgpt', version: 'gpt_6' },
-      outcome: 'unknown', notes_present: true,
+      outcome: 'unknown', notes_present: true, notes: feedback.notes,
     },
   });
-  assert(!JSON.stringify(result).includes(feedback.notes));
+  assert.equal(result.feedback.notes, feedback.notes);
   assert.equal((await writer(feedback)).status, 'UNCHANGED');
   assert.deepEqual(await reader({ feedback_ref: write.feedback_ref }), result);
   assert.equal(sql.rows.size, 1);
+});
+
+test('readback preserves nullable notes and bounded notes from an existing record', async () => {
+  const sql = fakeSql();
+  const writer = makeFeedbackWriter(sql.query.bind(sql));
+  const reader = makeFeedbackReader(sql.query.bind(sql));
+  const nullRef = (await writer({ ...feedback, notes: null })).feedback_ref;
+  const nullResult = await reader({ feedback_ref: nullRef });
+  assert.equal(nullResult.feedback.notes, null);
+  assert.equal(nullResult.feedback.notes_present, false);
+  const note = 'A'.repeat(4000);
+  const maxRef = (await writer({ ...feedback, notes: note })).feedback_ref;
+  const maxResult = await reader({ feedback_ref: maxRef });
+  assert.equal(maxResult.feedback.notes, note);
+  assert.equal(maxResult.feedback.notes.length, 4000);
 });
 
 test('feedback readback detects altered payload even when feedback_ref is unchanged', async () => {
