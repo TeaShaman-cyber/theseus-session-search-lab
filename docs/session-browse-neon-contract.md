@@ -25,7 +25,9 @@ authoritative. This branch is not a deployed host or Arcade acceptance.
    scheme. Caller can repeat the same read-only cursor after a failed request.
    Router checks ordering and bounds in each returned page.
    has_more=false means the accepted projection is exhausted, not that the
-   entire original platform history was recovered.
+   entire original platform history was recovered. coverage_complete is true
+   only when this is the final page AND the stored coverage state is exactly
+   COMPLETE_EXPOSED_CONVERSATION. Partial source slices remain explicit.
 
 ## Verified scope and rollout boundary
 

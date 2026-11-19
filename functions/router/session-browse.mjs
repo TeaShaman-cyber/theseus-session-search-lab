@@ -215,7 +215,7 @@ export function makeSessionBrowser({ catalog, fetchImpl, shardAuthToken, shardTi
             return {
               ...body,
               next_cursor: body.has_more ? encodeCursor(input, body.next_position) : null,
-              coverage_complete: !body.has_more && body.session_coverage === 'COMPLETE',
+              coverage_complete: !body.has_more && body.session_coverage === 'COMPLETE_EXPOSED_CONVERSATION',
               queried_shards: [shard.shard_id],
               unavailable_shards: [],
             };

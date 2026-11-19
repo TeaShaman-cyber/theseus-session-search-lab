@@ -296,3 +296,38 @@ test('a shard cannot skip a tail by returning another message after an incomplet
   assert.equal(result.status, 'BLOCKED');
   assert.equal(result.unavailable_shards[0].reason, 'BROWSE_PAYLOAD_INVALID');
 });
+
+test('canonical complete exposed conversation marks coverage only at final page', async () => {
+  let calls = 0;
+  const shard = makeShardHandler(async (sql) => {
+    calls += 1;
+    const start = sql.values[3] === null ? 0 : 1;
+    const messages = [
+      { ordinal: 0, message_id: 'one', role: 'user', search_class: 'dialogue',
+        text: 'first', text_offset: 0, text_total_chars: 5, complete_message: true },
+      { ordinal: 1, message_id: 'two', role: 'assistant', search_class: 'dialogue',
+        text: 'second', text_offset: 0, text_total_chars: 6, complete_message: true },
+    ];
+    return {
+      ...page({ messages: [messages[start]], has_more: start === 0,
+        next_position: start === 0 ? { ordinal: 0, message_id: 'one', offset: 0 } : null }),
+      session_coverage: 'COMPLETE_EXPOSED_CONVERSATION',
+    };
+  }, { authToken: 'shard' });
+  const router = makeRouterHandler({
+    catalog: catalog(), ...auth,
+    fetchImpl: (_url, init) => shard.fetch(new Request('https://shard.test/session-read', init)),
+  });
+  const first = (await toolCall(router, browseInput({ max_chars: 10, limit: 1 }))).structuredContent;
+  assert.equal(first.status, 'OK');
+  assert.equal(first.coverage_complete, false);
+  assert.equal(first.has_more, true);
+  const last = (await toolCall(router, browseInput({
+    max_chars: 10, limit: 1, cursor: first.next_cursor,
+  }))).structuredContent;
+  assert.equal(last.status, 'OK');
+  assert.equal(last.has_more, false);
+  assert.equal(last.session_coverage, 'COMPLETE_EXPOSED_CONVERSATION');
+  assert.equal(last.coverage_complete, true);
+  assert.equal(calls, 2);
+});
