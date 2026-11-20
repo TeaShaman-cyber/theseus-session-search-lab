@@ -1,0 +1,90 @@
+name: Risk-based Codex review
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+jobs:
+  classify:
+    runs-on: ubuntu-24.04
+    outputs:
+      required: ${{ steps.classify.outputs.required }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - id: classify
+        name: Classify protected review boundary
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --no-renames --name-only "$BASE_SHA...$HEAD_SHA" > changed.txt
+
+          # Once this classifier exists on the base branch, a PR cannot weaken
+          # its own gate by editing the classifier in the same head. The fallback
+          # is only for the bootstrap PR that introduces the classifier.
+          if git cat-file -e "$BASE_SHA:scripts/review_gate_required.py" 2>/dev/null; then
+            git show "$BASE_SHA:scripts/review_gate_required.py" > /tmp/review_gate_required.py
+          else
+            cp scripts/review_gate_required.py /tmp/review_gate_required.py
+          fi
+
+          python3 /tmp/review_gate_required.py < changed.txt > decision.json
+          cat decision.json
+          required=$(python3 -c 'import json; print(str(json.load(open("decision.json"))["required"]).lower())')
+          echo "required=$required" >> "$GITHUB_OUTPUT"
+
+  review-gate:
+    needs: classify
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Low-risk change — no blocking outside review
+        if: needs.classify.outputs.required != 'true'
+        run: |
+          echo 'PASS: protected review boundary not touched.'
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        if: needs.classify.outputs.required == 'true'
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+
+      - name: Wait for exact-head Codex review
+        if: needs.classify.outputs.required == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          result=$(./tools/pr/codex-review-wait.sh "$PR_NUMBER" "$EXPECTED_HEAD" 600 10)
+          rc=$?
+          set -e
+          printf '%s\n' "$result"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::Codex review did not reach a terminal exact-head state (rc=$rc)."
+            exit "$rc"
+          fi
+          status=$(printf '%s\n' "$result" | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"])')
+          case "$status" in
+            CLEAN) echo 'PASS: exact-head Codex review completed clean.' ;;
+            FINDINGS)
+              echo '::error::Exact-head Codex review has unresolved findings.'
+              exit 1
+              ;;
+            *)
+              echo "::error::Unexpected terminal Codex status: $status"
+              exit 2
+              ;;
+          esac

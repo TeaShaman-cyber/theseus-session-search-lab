@@ -53,6 +53,24 @@ For PRs that change verification, authority, permission, promotion, canonical-so
 
 Use `tools/pr/codex-review-status.sh <pr-number>` for a one-shot exact-head advisory state as `PENDING`, `FINDINGS`, `CLEAN`, or `STALE`. Both status and wait helpers report evidence only and deliberately do not enforce merge eligibility.
 
+### Risk-based workflow gate
+
+`.github/workflows/review-gate.yml` turns the protected-boundary part of this policy into a repository check without making Codex universal merge authority. `scripts/review_gate_required.py` classifies the changed paths. Verification, review machinery, GitHub workflows, serving auth/router boundaries, corpus authority/reconciliation, and promotion/materialization paths require the exact-head Codex wait; ordinary product, test, and documentation changes do not by default. The classifier is intentionally conservative and path-based rather than pretending to infer semantic risk from a diff.
+
+For protected changes, the workflow runs the existing `codex-review-wait.sh` against the PR head and accepts only terminal `CLEAN`. Exact-head `FINDINGS`, timeout, `PENDING`, `STALE`, an older-head receipt, or an unexpected state fail the workflow. The review job checks out the base branch before invoking the helper so a PR cannot weaken the trusted review parser/wait logic that judges that same PR.
+
+### PostHog longitudinal review readback
+
+After exact-head Codex review and before the final readiness conclusion for a relevant Session Search PR, the main agent should separately read PostHog project `649512`, GitHub warehouse source prefix `sessionsearch`. Confirm source sync/freshness, then inspect comparable workflow/job failures and durations over a bounded recent window (normally 14 days). When review timing is relevant, also inspect whether comparable PRs merged before Codex reached its final review state. Significant suspicions must be corroborated against current GitHub Actions and the exact PR head before they are treated as actionable.
+
+Record the result next to the review conclusion in this compact form:
+
+```text
+POSTHOG_CI_HISTORY: repo=theseus-session-search-lab head=<40-char-sha> status=VERIFIED|STALE|NO_SIGNAL|UNAVAILABLE sync=<UTC|UNKNOWN> signal=<brief finding> evidence=<query/link|NONE>
+```
+
+PostHog is derived longitudinal evidence and **not a merge authority**. `NO_SIGNAL` means no relevant evidence was observed, not that no problem exists. `STALE` or `UNAVAILABLE` must remain visible but do not become an implicit PASS or a new hard merge dependency. Do not move ChatGPT/PostHog OAuth into GitHub Actions merely to automate this readback.
+
 ## Adding QA
 
 Prefer extending an existing layer before adding another checker:
