@@ -56,9 +56,9 @@ Fresh live results from both projects were then passed through the repository `s
 
 Neon automatically exposes provider-managed `cloud_admin -> neondb_owner` administration membership for created roles. That managed edge is distinct from the application reader capability and must not be used as evidence that an end-user serving credential is least privilege.
 
-## Historical #64 — still unverified at that checkpoint
+## Historical #64 — unverified at that checkpoint (later resolved)
 
-This checkpoint does **not** prove the final ChatGPT request path. Pending work under #64:
+This checkpoint did **not** prove the final ChatGPT request path. The pending items below describe the state at that historical checkpoint; they are not current blockers. Later verified serving/runtime state is recorded in [Independent Session Search serving plane](federated-serving-plane.md). Pending work under #64 was:
 
 - deploy/verify the independent serving endpoint/router;
 - connect it through Arcade as a compact ChatGPT plugin surface;

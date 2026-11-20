@@ -34,9 +34,12 @@ The lab studies portable, verifiable historical session retrieval for assistants
 
 ## Operational observability
 
-**First read-only stop for live router/shard diagnostics:** [Grafana observability runbook](grafana/README.md) (issue #109), before reconstructing Neon projects from history. Grafana Mimir + Tempo can show shard dispatches, service version, environment, and observed generation; compare these with the current Neon READY/ACTIVE pointers and Arcade registration. Telemetry does **not** prove endpoint URLs or replace live configuration readback.
+**First read-only stop for live router/shard diagnostics:** [Grafana observability runbook](grafana/README.md) (issue #109), before reconstructing Neon projects from history. Grafana Mimir + Tempo carry the OpenTelemetry runtime traces and metrics used for request/shard behavior, service version, environment, and observed generation. Compare them with current Neon READY/ACTIVE state and Arcade registration; telemetry does **not** prove endpoint URLs or replace live configuration readback.
+
+The production router also emits a deliberately narrow PostHog semantic-event lane for completed/partial search outcomes, coverage classifications, and feedback submissions. It is optional, personless (`process_person_profile=false`), strict-allowlist, and failure-isolated from request success. Separately, the PostHog GitHub Data Warehouse source `sessionsearch` provides delayed longitudinal PR/CI/issue history. These three surfaces answer different questions: OTel describes runtime mechanics, semantic events describe bounded service outcomes, and the warehouse describes development history. None replaces accepted-artifact/corpus authority, GitHub exact-head authority, or live runtime readback.
 
 - [Nine-panel Grafana dashboard-as-code](grafana/README.md) — the saved dashboard uses the historical `candidate` filter; an empty panel is not proof of missing live signals. Inspect current environment labels first.
+- [Current federated serving plane](docs/federated-serving-plane.md) — request path, live coverage/currentness semantics, App tool surface, and observability boundaries.
 
 ## Neon resource housekeeping
 
@@ -203,6 +206,8 @@ python3 -m session_search.corpus status --json
 ```
 
 `status` reports the latest accepted artifact time, latest observed message time, coverage-state counts, source-adapter counts, and projection verification state. Without an external authoritative source watermark it reports `currentness=UNKNOWN_WITHOUT_SOURCE_WATERMARK`. Session coverage, corpus freshness, and live-provider completeness are separate claims.
+
+That local corpus status is distinct from the deployed router's live preflight. For a time-scoped question, the App-backed `session_coverage` tool can inspect the current router catalog **without fetching transcript text or dispatching lexical shard searches**. Its `window_fit` reports whether the observed indexed ranges intersect the requested window; `source_currentness` is upgraded only when every eligible shard is bound to the same provider-reported export watermark. `VERIFIED_TO_PROVIDER_REPORTED_WATERMARK` remains bounded provider evidence, not a claim that original account history is source-complete; open/newer windows report `STALE_AFTER_PROVIDER_REPORTED_WATERMARK`, and missing/mismatched bindings fail closed to `UNKNOWN_WITHOUT_SOURCE_WATERMARK`.
 
 Rebuild the disposable SQLite/FTS projection only from accepted-ledger artifacts:
 

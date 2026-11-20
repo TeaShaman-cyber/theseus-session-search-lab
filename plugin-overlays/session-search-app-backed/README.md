@@ -15,23 +15,26 @@ ChatGPT web/mobile
 
 The ChatGPT App binding itself is private host state and is deliberately not stored in this repository.
 
-## Current source contract and runtime evidence — issue #272
+## Current source contract and dated runtime evidence — issues #272 and #275
 
 As verified on **2026-11-19 after Neon deployment #13**, the existing
 private App-backed Arcade Gateway and ChatGPT host exposed four concrete tools:
 `session_search`, `session_browse`, `session_feedback` and
-`session_feedback_get`. The new read-only feedback method accepts an exact
-`feedback_ref` on the same authenticated private App, returning metadata and
-its original nullable, bounded `notes` when the updated router source is
-promoted. The original production readback before this follow-up showed
-`notes_present` only; keep that result separate from the new source contract.
+`session_feedback_get`. Later coverage rollout under #275 added
+`session_coverage` as the fifth tool through the same stable App/Gateway
+identity; fresh host discovery executed a real read-only `OBSERVED` preflight.
+The feedback read-only method accepts an exact `feedback_ref` on the same
+authenticated private App, returning metadata and its original nullable, bounded
+`notes` when the updated router source is promoted. The original production
+readback before that follow-up showed `notes_present` only; keep dated runtime
+receipts separate from the current source contract.
 
 Source and installed plugin are distinct: installed App v1.0.6 was observed
 before this change with older instructions for only three tools. Update the
 **existing** plugin through a guarded release with current skills and check
 installed files byte-for-byte; an already-open chat may still cache the old
 skill text. This repo's `scripts/verify_session_search_app_overlay.py` guards
-the four-tool guidance and nullable notes readback contract on every canonical
+the current five-tool guidance and nullable notes readback contract on every canonical
 QA run; actual runtime state is checked separately, never inferred from Git.
 
 ## Public source and installed App checkpoint — 2026-11-19

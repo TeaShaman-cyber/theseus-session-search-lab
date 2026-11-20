@@ -70,7 +70,10 @@ for marker in (
     "strict_group_count",
     "result groups",
     "TheseusSessionSearch.session_feedback",
-    "two intentional consumer tools",
+    "TheseusSessionSearch.session_feedback_get",
+    "TheseusSessionSearch.session_browse",
+    "TheseusSessionSearch.session_coverage",
+    "exposes **five** consumer tools",
     "PATCH /v1/workers/{id}",
     "POST /v1/workers/{id}/tools/refresh",
     "stable qualified tool identity",
@@ -130,7 +133,11 @@ for forbidden in ("mcp.json", ".mcp.json", ".app.json"):
         )
 
 for marker in (
-    "two intentional consumer tools",
+    "TheseusSessionSearch.session_search",
+    "TheseusSessionSearch.session_browse",
+    "TheseusSessionSearch.session_coverage",
+    "TheseusSessionSearch.session_feedback",
+    "TheseusSessionSearch.session_feedback_get",
     "stable qualified tool identity",
     "PATCH /v1/workers/{id}",
     "POST /v1/workers/{id}/tools/refresh",

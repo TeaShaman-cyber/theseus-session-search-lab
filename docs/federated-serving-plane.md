@@ -57,9 +57,9 @@ The original #166 migration candidate required:
   new router. No catalog change, live deployment, or source promotion is
   implied by these changes.
 
-## Time-scoped search coverage (source contract candidate; not yet deployed)
+## Time-scoped search coverage
 
-For `POST /search` requests with `from_time` and/or `to_time`, the router derives an **additive** `coverage` receipt from its existing in-memory shard catalog. The same search code serves `POST /mcp`; a source change or PR merge is not proof that the hosted App exposes the new fields.
+For `POST /search` requests with `from_time` and/or `to_time`, the deployed router derives an **additive** `coverage` receipt from its existing in-memory shard catalog. The same semantics are exposed through the MCP search path. Source code remains distinct from runtime evidence: when currentness matters, verify the active deployment/App surface rather than assuming a merge is deployed.
 
 - `window_fit`: `OUTSIDE_OBSERVED_INDEX_RANGE` only if a provider/session-filtered catalog contains eligible shards with complete, consistent numeric time bounds but the requested window excludes all of them. `OBSERVED_POSSIBLE` means some shard's *observed indexed range* intersects the query; this is **not** a guarantee that every original user conversation in that window was captured. `UNKNOWN_COVERAGE` means the provider has no eligible catalog shards, some shard bounds are unknown or invalid, or the range cannot be established.
 - `source_currentness` defaults to `UNKNOWN_WITHOUT_SOURCE_WATERMARK`. A provider-scoped catalog may opt into a bounded source watermark only when every eligible shard carries the same `source_watermark` binding: finite `observed_through`, `status=PROVIDER_REPORTED_NO_KNOWN_GAPS`, `basis=provider_export_manifest`, and one lowercase 64-hex `accepted_set_sha256`. Missing, malformed, mixed-provider, or mismatched bindings fail closed to `UNKNOWN_WITHOUT_SOURCE_WATERMARK`.
@@ -70,9 +70,9 @@ For `POST /search` requests with `from_time` and/or `to_time`, the router derive
 - A zero-selected-shard query preserves existing `status: NO_SIGNAL` for backward compatibility but **must not** be treated as a fully searched miss; inspect `coverage.window_fit` and `queried_shards`. A queried clean miss may still return `NO_SIGNAL` with unknown source currentness, and `PARTIAL` still denotes unavailable shards.
 - Non-time-scoped queries retain the previous response shape (no `coverage` property).
 
-This is an *after-query transparency improvement*, not a cheap agent preflight endpoint or guaranteed ChatGPT pre-response hook. A preventive freshness check, upstream watermark and App/Arcade discovery remain tracked by [#275](https://github.com/TeaShaman-cyber/theseus-session-search-lab/issues/275), linked to ingestion [#3](https://github.com/TeaShaman-cyber/theseus-session-search-lab/issues/3).
+The additive `coverage` on a search response remains an *after-query transparency improvement*. For a preventive check before lexical retrieval, use the separate `session_coverage` preflight below. Provider-watermark acquisition remains a distinct ingestion/currentness concern tracked through [#275](https://github.com/TeaShaman-cyber/theseus-session-search-lab/issues/275) and refresh work under [#3](https://github.com/TeaShaman-cyber/theseus-session-search-lab/issues/3).
 
-## Coverage preflight API and MCP proposal (source contract; host not verified)
+## Coverage preflight API and MCP
 
 A time-window preflight can run **without fetching conversation text or dispatching shard searches**. The router adds a protected `POST /coverage` JSON endpoint and a conditional MCP `session_coverage` tool, both using the existing router bearer authentication and the **existing** catalog. They do not require a new Neon table, upstream API or source-ingestion privilege.
 
@@ -80,7 +80,7 @@ Request is an object with optional `provider` and `session_id` and **at least on
 
 A response has `status: OBSERVED`, `request_ref`, `observed_at` (the server's response time, **not** the last source refresh), the same additive `coverage` summary used for time-scoped search, and `catalog_generations[]` (first 32 entries; `catalog_generations_truncated` signals remaining entries, while summary counts include all eligible shards; bounded metadata: shard/provider/generation/state/observed time bounds; no endpoint URLs, credentials, source text or conversation IDs). Missing bounds or provider/shard data always cause `UNKNOWN_COVERAGE`. `source_currentness` stays `UNKNOWN_WITHOUT_SOURCE_WATERMARK` unless the provider-scoped eligible catalog is bound to one verified provider-export watermark as described above; a green `/health`, READY state, recent `time_max`, or successful preflight is never enough by itself. Even with a verified binding, `PROVIDER_REPORTED_NO_KNOWN_GAPS` remains provider-reported evidence rather than a certification that the original ChatGPT account history is complete.
 
-**Host gate:** Arcade's production gateway is a tool allowlist. Exposing the tool in the Neon router's `tools/list` does **not** install `TheseusSessionSearch.session_coverage` in the Gateway or ChatGPT. An App-facing allowlist change, authenticated current target readback and host-level discovery are separate, permission-bearing changes. A source PR or Git merge must not be described as a usable preflight in the ChatGPT host until that verification is performed. Existing four App tools and identities are preserved.
+**Host boundary:** Arcade's production gateway is a tool allowlist, so source `tools/list` and the App-facing tool set remain separate claims. As of the verified 2026-11-20 checkpoint, `TheseusSessionSearch.session_coverage` is discoverable and executable through the App-backed ChatGPT path; a live read-only canary returned `OBSERVED` and a bounded coverage/currentness receipt without transcript retrieval. Future router/Gateway changes still require authenticated target/tool readback rather than assuming a source merge changed the host.
 
 ## Failure semantics
 
@@ -114,7 +114,7 @@ A prior router slug retained stale environment behavior after an env-only rollba
 
 The router MCP endpoint is registered as remote server `theseus-session-search`.
 
-The dedicated Arcade gateway `Session Search` currently exposes two intentional consumer tools: `TheseusSessionSearch.session_search` and `TheseusSessionSearch.session_feedback`. The search tool keeps the stable qualified identity used by the serving path; feedback is a separate bounded append-only capability.
+At the verified 2026-11-20 checkpoint, the dedicated Arcade gateway `Session Search` exposed five intentional consumer tools: `TheseusSessionSearch.session_search`, `TheseusSessionSearch.session_browse`, `TheseusSessionSearch.session_coverage`, `TheseusSessionSearch.session_feedback`, and `TheseusSessionSearch.session_feedback_get`. These names are dated runtime evidence rather than a promise that every future deployment must expose the same count; current tool availability is read back through discovery when it matters.
 
 This is a stable qualified tool identity. The Arcade gateway is an allowlist of discovered tool definitions, not a transparent proxy for all tools from every registered remote server. Router upgrades therefore keep both the canonical Arcade remote-server ID `theseus-session-search` and `TheseusSessionSearch.session_search` stable. A separately registered candidate server may be used for diagnostics, but must not be promoted by adding a version-suffixed sibling tool to the production gateway.
 
@@ -149,6 +149,26 @@ Verified after #264:
 - flat output remains an internal rollback/replay and rolling-upgrade seam, not a public MCP option.
 
 This checkpoint proves the observed serving state only; live topology and deployment numbers must still be re-read when currentness matters.
+
+## Current production checkpoint — 2026-11-20
+
+Verified after #275, #284, and #286:
+
+- App-backed `session_coverage` executes against the live router before search and reports observed index-window plus provider-watermark currentness;
+- provider-scoped source-watermark bindings distinguish `VERIFIED_TO_PROVIDER_REPORTED_WATERMARK`, `STALE_AFTER_PROVIDER_REPORTED_WATERMARK`, and `UNKNOWN_WITHOUT_SOURCE_WATERMARK` without claiming `SOURCE_COMPLETE`;
+- protected repository changes are classified by `.github/workflows/review-gate.yml` and wait for exact-head Codex `CLEAN`; ordinary low-risk changes do not inherit that blocking gate;
+- production router Function `ssrouter2` deployment #19 was active/completed on Node.js 24 with PostHog configuration present;
+- the router emits a narrow PostHog semantic lane for search outcomes, coverage classifications, and feedback, with strict properties, person-profile processing disabled, and bounded failure-isolated delivery;
+- a live `session_coverage` request was correlated by `request_ref` to a `session coverage classified` PostHog event; a separate PostHog flush timeout was observed in Neon logs without turning the service request into a failure.
+
+### Observability authority boundary
+
+- **OpenTelemetry / Grafana:** runtime request and shard traces/metrics.
+- **PostHog semantic events:** low-latency bounded service outcomes; useful for product-style longitudinal analysis, but not request or corpus authority.
+- **PostHog GitHub warehouse (`sessionsearch`):** delayed development/CI/review history; useful for drift and recurring-pattern analysis, but it can be stale independently of GitHub or the runtime.
+- **GitHub exact head / Neon current deployment / accepted source evidence:** remain the appropriate operational and evidence authorities for their respective claims.
+
+Do not infer success from an empty observability surface. `STALE`, `NO_SIGNAL`, and `UNAVAILABLE` are distinct states, and semantic-event delivery failure is deliberately non-fatal to Session Search serving.
 
 ## HTTP authentication boundary
 
