@@ -23,21 +23,23 @@ private App-backed Arcade Gateway and ChatGPT host exposed four concrete tools:
 `session_feedback_get`. Later coverage rollout under #275 added
 `session_coverage` as the fifth tool through the same stable App/Gateway
 identity; fresh host discovery executed a real read-only `OBSERVED` preflight.
+Current coverage guidance preserves the bounded source-watermark states `VERIFIED_TO_PROVIDER_REPORTED_WATERMARK`, `STALE_AFTER_PROVIDER_REPORTED_WATERMARK`, and fail-closed `UNKNOWN_WITHOUT_SOURCE_WATERMARK`; none is a `SOURCE_COMPLETE` claim.
 The feedback read-only method accepts an exact `feedback_ref` on the same
 authenticated private App, returning metadata and its original nullable, bounded
 `notes` when the updated router source is promoted. The original production
 readback before that follow-up showed `notes_present` only; keep dated runtime
 receipts separate from the current source contract.
 
-Source and installed plugin are distinct: installed App v1.0.6 was observed
-before this change with older instructions for only three tools. Update the
-**existing** plugin through a guarded release with current skills and check
-installed files byte-for-byte; an already-open chat may still cache the old
+Source and installed plugin are distinct. An earlier installed App v1.0.6
+observation with only three-tool guidance is retained as historical evidence,
+not current installed state. Current release/version is host runtime evidence:
+read it back when it matters, update the **existing** plugin through a guarded
+release, and preserve the App binding. An already-open chat may still cache old
 skill text. This repo's `scripts/verify_session_search_app_overlay.py` guards
-the current five-tool guidance and nullable notes readback contract on every canonical
-QA run; actual runtime state is checked separately, never inferred from Git.
+the current five-tool guidance and nullable notes readback contract on every
+canonical QA run; actual runtime state is checked separately, never inferred from Git.
 
-## Public source and installed App checkpoint — 2026-11-19
+## Historical public-source / installed-App checkpoint — 2026-11-19
 
 The source overlay contains two complementary agent skills:
 

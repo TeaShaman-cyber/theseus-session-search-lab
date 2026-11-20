@@ -138,7 +138,7 @@ Host execution is VERIFIED. In the selected App-backed ChatGPT plugin:
 5. the same host smoke passed again after the skill overlay update.
 
 
-## Current production checkpoint — 2026-11-10
+## Historical production checkpoint — 2026-11-10
 
 Verified after #264:
 - production router `ssrouter2` deployment #10 is active/completed;
@@ -157,9 +157,9 @@ Verified after #275, #284, and #286:
 - App-backed `session_coverage` executes against the live router before search and reports observed index-window plus provider-watermark currentness;
 - provider-scoped source-watermark bindings distinguish `VERIFIED_TO_PROVIDER_REPORTED_WATERMARK`, `STALE_AFTER_PROVIDER_REPORTED_WATERMARK`, and `UNKNOWN_WITHOUT_SOURCE_WATERMARK` without claiming `SOURCE_COMPLETE`;
 - protected repository changes are classified by `.github/workflows/review-gate.yml` and wait for exact-head Codex `CLEAN`; ordinary low-risk changes do not inherit that blocking gate;
-- production router Function `ssrouter2` deployment #19 was active/completed on Node.js 24 with PostHog configuration present;
+- production router Function `ssrouter2` deployment #20 was active/current completed on Node.js 24; the router code came from merged source `d619865fc6e30e9baa8d77a63c9cd9c47b057d29`, and the service-version telemetry label was corrected to that exact Git SHA;
 - the router emits a narrow PostHog semantic lane for search outcomes, coverage classifications, and feedback, with strict properties, person-profile processing disabled, and bounded failure-isolated delivery;
-- a live `session_coverage` request was correlated by `request_ref` to a `session coverage classified` PostHog event; a separate PostHog flush timeout was observed in Neon logs without turning the service request into a failure.
+- a live `session_coverage` request was correlated by `request_ref` to a `session coverage classified` PostHog event carrying the exact deployed service-version SHA; its technical event-level person UUID had no matching PostHog person profile row; a live strict search remained `FOUND` across both selected ChatGPT shards with none unavailable.
 
 ### Observability authority boundary
 
