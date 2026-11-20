@@ -13,6 +13,7 @@ PROTECTED_PREFIXES = (
     'scripts/arcade_',
     'functions/router/',
     'functions/shard/',
+    'sql/neon/',
 )
 
 PROTECTED_EXACT = {
@@ -22,6 +23,7 @@ PROTECTED_EXACT = {
     'tools/dev/check',
     'docs/qa.md',
     'functions/candidate-contract.mjs',
+    'functions/auth.mjs',
     'session_search/candidate_contract.py',
     'session_search/corpus_store.py',
     'session_search/reconciliation.py',
