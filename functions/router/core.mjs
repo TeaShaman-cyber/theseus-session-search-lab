@@ -176,6 +176,50 @@ export function validateFeedbackReadInput(input = {}) {
   return { feedback_ref: requireFeedbackRef(input.feedback_ref, 'FEEDBACK_REF_INVALID') };
 }
 
+export function applySourceWatermarkOverlay(catalog, rawOverlay) {
+  if (rawOverlay == null || rawOverlay === '') return catalog;
+
+  let overlay;
+  try {
+    overlay = JSON.parse(rawOverlay);
+  } catch {
+    throw new Error('SESSION_SEARCH_SOURCE_WATERMARKS_INVALID');
+  }
+  if (overlay == null || typeof overlay !== 'object' || Array.isArray(overlay)) {
+    throw new Error('SESSION_SEARCH_SOURCE_WATERMARKS_INVALID');
+  }
+
+  const providers = Object.keys(overlay);
+  if (providers.length === 0) throw new Error('SESSION_SEARCH_SOURCE_WATERMARKS_INVALID');
+  const catalogProviders = new Set(catalog.map((item) => item.provider));
+  const allowedFields = new Set([
+    'observed_through',
+    'status',
+    'basis',
+    'accepted_set_sha256',
+  ]);
+
+  for (const provider of providers) {
+    if (typeof provider !== 'string' || !provider || provider.length > 64
+        || !catalogProviders.has(provider)) {
+      throw new Error('SESSION_SEARCH_SOURCE_WATERMARKS_INVALID');
+    }
+    const value = overlay[provider];
+    if (value == null || typeof value !== 'object' || Array.isArray(value)
+        || Object.keys(value).some((key) => !allowedFields.has(key))
+        || Object.keys(value).length !== allowedFields.size
+        || normalizedSourceWatermark({ source_watermark: value }) == null) {
+      throw new Error('SESSION_SEARCH_SOURCE_WATERMARKS_INVALID');
+    }
+  }
+
+  return catalog.map((item) => (
+    Object.hasOwn(overlay, item.provider)
+      ? { ...item, source_watermark: { ...overlay[item.provider] } }
+      : item
+  ));
+}
+
 export function selectShards(catalog, input = {}) {
   return [...catalog]
     .filter((shard) => input.provider == null || shard.provider === input.provider)
