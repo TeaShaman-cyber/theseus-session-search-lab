@@ -21,6 +21,43 @@ const GENERATION_ID = /^[0-9a-f]{64}$/;
 const CORRELATION_REF = /^[0-9a-f]{32}$/;
 const DEFAULT_FLUSH_TIMEOUT_MS = 250;
 
+const NOOP_SEMANTIC_EVENTS = {
+  capture() { return false; },
+  async flush() { return true; },
+  async shutdown() { return true; },
+};
+
+function reportSemanticFailure(phase) {
+  console.error(JSON.stringify({ event: 'session_search_semantic_events_' + phase + '_failed' }));
+}
+
+function safeSemanticCapture(semanticEvents, event, properties) {
+  try {
+    return semanticEvents.capture(event, properties);
+  } catch {
+    reportSemanticFailure('capture');
+    return false;
+  }
+}
+
+async function safeSemanticFlush(semanticEvents) {
+  try {
+    return await semanticEvents.flush();
+  } catch {
+    reportSemanticFailure('flush');
+    return false;
+  }
+}
+
+async function safeSemanticShutdown(semanticEvents) {
+  try {
+    return await semanticEvents.shutdown();
+  } catch {
+    reportSemanticFailure('shutdown');
+    return false;
+  }
+}
+
 function newRequestRef() {
   return randomUUID().replaceAll('-', '');
 }
@@ -144,23 +181,28 @@ function feedbackSpanAttributes({ feedbackRef, baselineRequestRef, resultRequest
   return attributes;
 }
 
-export function createNoopTelemetry() {
+export function createNoopTelemetry({ semanticEvents = NOOP_SEMANTIC_EVENTS } = {}) {
   return {
     enabled: false,
     async withRequest(_request, _route, fn) {
-      return fn({
-        context: ROOT_CONTEXT,
-        requestRef: newRequestRef(),
-        setResult() {},
-        setErrorClass() {},
-        setFeedbackCorrelation() {},
-      });
+      try {
+        return await fn({
+          context: ROOT_CONTEXT,
+          requestRef: newRequestRef(),
+          setResult() {},
+          setErrorClass() {},
+          setFeedbackCorrelation() {},
+          emitSemantic(event, properties) { safeSemanticCapture(semanticEvents, event, properties); },
+        });
+      } finally {
+        await safeSemanticFlush(semanticEvents);
+      }
     },
     async withDispatch(_parentContext, _shard, baseHeaders, fn) {
       return fn(new Headers(baseHeaders));
     },
     async forceFlush() {},
-    async shutdown() {},
+    async shutdown() { await safeSemanticShutdown(semanticEvents); },
   };
 }
 
@@ -172,6 +214,7 @@ export function createTelemetryRuntime({
   metricExporter,
   metricExportIntervalMs = 60000,
   flushTimeoutMs = DEFAULT_FLUSH_TIMEOUT_MS,
+  semanticEvents = NOOP_SEMANTIC_EVENTS,
 }) {
   if (!serviceName || !traceExporter || !metricExporter) {
     throw new Error('TELEMETRY_RUNTIME_CONFIG_INVALID');
@@ -247,6 +290,9 @@ export function createTelemetryRuntime({
       setFeedbackCorrelation(value) {
         span.setAttributes(feedbackSpanAttributes(value));
       },
+      emitSemantic(event, properties) {
+        safeSemanticCapture(semanticEvents, event, properties);
+      },
       setResult(value = {}) {
         Object.assign(state, value);
         span.setAttributes(spanResultAttributes(value));
@@ -276,7 +322,7 @@ export function createTelemetryRuntime({
       requestDuration.record(Math.max(0, performance.now() - started), attrs);
       span.setAttributes(spanOutcomeAttributes({ status, errorClass: state.errorClass }));
       span.end();
-      await forceFlush();
+      await Promise.all([forceFlush(), safeSemanticFlush(semanticEvents)]);
     }
   }
 
@@ -341,14 +387,18 @@ export function createTelemetryRuntime({
     withDispatch,
     forceFlush,
     async shutdown() {
-      await Promise.allSettled([tracerProvider.shutdown(), meterProvider.shutdown()]);
+      await Promise.allSettled([
+        tracerProvider.shutdown(),
+        meterProvider.shutdown(),
+        safeSemanticShutdown(semanticEvents),
+      ]);
     },
   };
 }
 
-export function createTelemetryFromEnv({ serviceName, flushTimeoutMs = DEFAULT_FLUSH_TIMEOUT_MS }) {
+export function createTelemetryFromEnv({ serviceName, flushTimeoutMs = DEFAULT_FLUSH_TIMEOUT_MS, semanticEvents = NOOP_SEMANTIC_EVENTS }) {
   const endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT?.replace(/\/+$/, '');
-  if (!endpoint) return createNoopTelemetry();
+  if (!endpoint) return createNoopTelemetry({ semanticEvents });
   const headers = parseHeaderEnv(process.env.OTEL_EXPORTER_OTLP_HEADERS);
   const serviceVersion = process.env.SESSION_SEARCH_SERVICE_VERSION ?? 'unknown';
   const environment = process.env.SESSION_SEARCH_ENVIRONMENT ?? 'candidate';
@@ -357,6 +407,7 @@ export function createTelemetryFromEnv({ serviceName, flushTimeoutMs = DEFAULT_F
     serviceVersion,
     environment,
     flushTimeoutMs,
+    semanticEvents,
     traceExporter: new OTLPTraceExporter({
       url: `${endpoint}/v1/traces`,
       headers,
