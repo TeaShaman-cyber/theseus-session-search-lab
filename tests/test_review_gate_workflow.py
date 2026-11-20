@@ -14,6 +14,7 @@ class ReviewGateWorkflowContractTests(unittest.TestCase):
         self.assertIn('github.event.pull_request.base.sha', workflow)
         self.assertIn('FINDINGS', workflow)
         self.assertIn('persist-credentials: false', workflow)
+        self.assertIn('git diff --no-renames --name-only', workflow)
 
     def test_posthog_review_receipt_is_advisory_and_scoped(self):
         qa = (ROOT / 'docs/qa.md').read_text()
