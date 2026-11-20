@@ -1,4 +1,5 @@
 import { createTelemetryFromEnv } from '../telemetry.mjs';
+import { createPostHogEventsFromEnv } from '../posthog-events.mjs';
 import { makeRouterHandler } from './handler.mjs';
 import { applySourceWatermarkOverlay } from './core.mjs';
 import { neon } from '@neondatabase/serverless';
@@ -26,6 +27,8 @@ if (!Array.isArray(catalog) || catalog.length < 1) {
 catalog = applySourceWatermarkOverlay(catalog, rawSourceWatermarks);
 
 const ROUTER_TELEMETRY_FLUSH_TIMEOUT_MS = 1000;
+
+const semanticEvents = createPostHogEventsFromEnv();
 
 const telemetry = createTelemetryFromEnv({
   serviceName: 'session-search-router',

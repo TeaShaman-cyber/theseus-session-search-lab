@@ -1,6 +1,7 @@
 import { hasValidBearerToken } from '../auth.mjs';
 import { makeSessionBrowser } from './session-browse.mjs';
 import { createNoopTelemetry } from '../telemetry.mjs';
+import { createNoopPostHogEvents } from '../posthog-events.mjs';
 import {
   handleMcpRequest,
   mergeGroupedShardOutcomes,
@@ -33,6 +34,7 @@ export function makeRouterHandler({
   fetchImpl = fetch,
   shardTimeoutMs = 5000,
   telemetry = createNoopTelemetry(),
+  semanticEvents = createNoopPostHogEvents(),
   authToken,
   shardAuthToken,
   feedbackWriter = null,
@@ -142,6 +144,19 @@ export function makeRouterHandler({
   const browseSession = makeSessionBrowser({
     catalog, fetchImpl, shardAuthToken, shardTimeoutMs, telemetry,
   });
+
+  async function captureSearchSemantic(route, result, requestRef) {
+    const event = result.status === 'PARTIAL' ? 'session search partial' : 'session search completed';
+    await semanticEvents.capture(event, {
+      requestRef,
+      properties: {
+        route,
+        result_status: result.status,
+        queried_shards_count: result.queried_shards?.length ?? 0,
+        unavailable_shards_count: result.unavailable_shards?.length ?? 0,
+      },
+    });
+  }
 
   async function searchFederated(rawInput, requestContext, requestRef) {
     const input = validateSearchInput(rawInput);
@@ -311,6 +326,10 @@ export function makeRouterHandler({
               queriedShards: 0,
               unavailableShards: 0,
             });
+            await semanticEvents.capture('session coverage classified', {
+              requestRef: observation.requestRef,
+              properties: { route: 'coverage', result_status: result.coverage.window_fit },
+            });
             return json(result);
           } catch (error) {
             observation.setErrorClass('validation');
@@ -330,6 +349,7 @@ export function makeRouterHandler({
               queriedShards: result.queried_shards?.length ?? 0,
               unavailableShards: result.unavailable_shards?.length ?? 0,
             });
+            await captureSearchSemantic('search', result, observation.requestRef);
             return json(result);
           } catch (error) {
             observation.setErrorClass('validation');
@@ -373,12 +393,23 @@ export function makeRouterHandler({
               resultRequestRef: toolResult.feedback?.result_request_ref,
             });
           }
-          const searchResult = result?.result?.structuredContent;
-          if (searchResult?.status) {
+          const structured = result?.result?.structuredContent;
+          if (toolName === 'session_search' && structured?.status) {
             observation.setResult({
-              resultStatus: searchResult.status,
-              queriedShards: searchResult.queried_shards?.length ?? 0,
-              unavailableShards: searchResult.unavailable_shards?.length ?? 0,
+              resultStatus: structured.status,
+              queriedShards: structured.queried_shards?.length ?? 0,
+              unavailableShards: structured.unavailable_shards?.length ?? 0,
+            });
+            await captureSearchSemantic('mcp', structured, observation.requestRef);
+          } else if (toolName === 'session_feedback' && structured?.status) {
+            await semanticEvents.capture('session feedback submitted', {
+              requestRef: observation.requestRef,
+              properties: { route: 'mcp', result_status: structured.status },
+            });
+          } else if (toolName === 'session_coverage' && structured?.coverage?.window_fit) {
+            await semanticEvents.capture('session coverage classified', {
+              requestRef: observation.requestRef,
+              properties: { route: 'mcp', result_status: structured.coverage.window_fit },
             });
           }
           return json(result);
