@@ -9,7 +9,7 @@ const EVENT_SCHEMAS = {
   'session search completed': {
     required: ['route', 'request_ref', 'result_status', 'queried_shards_count', 'unavailable_shards_count'],
     validators: {
-      route: (v) => v === 'search' ? v : undefined,
+      route: (v) => new Set(['search', 'mcp']).has(v) ? v : undefined,
       request_ref: safeRequestRef,
       result_status: (v) => new Set(['FOUND', 'NO_SIGNAL']).has(v) ? v : undefined,
       queried_shards_count: safeCount,
@@ -19,7 +19,7 @@ const EVENT_SCHEMAS = {
   'session search partial': {
     required: ['route', 'request_ref', 'result_status', 'queried_shards_count', 'unavailable_shards_count'],
     validators: {
-      route: (v) => v === 'search' ? v : undefined,
+      route: (v) => new Set(['search', 'mcp']).has(v) ? v : undefined,
       request_ref: safeRequestRef,
       result_status: (v) => v === 'PARTIAL' ? v : undefined,
       queried_shards_count: safeCount,
@@ -29,7 +29,7 @@ const EVENT_SCHEMAS = {
   'session coverage classified': {
     required: ['route', 'request_ref', 'window_fit', 'source_currentness'],
     validators: {
-      route: (v) => v === 'coverage' ? v : undefined,
+      route: (v) => new Set(['coverage', 'mcp']).has(v) ? v : undefined,
       request_ref: safeRequestRef,
       window_fit: (v) => new Set(['OBSERVED_POSSIBLE', 'OUTSIDE_OBSERVED_INDEX_RANGE', 'UNKNOWN_COVERAGE']).has(v) ? v : undefined,
       source_currentness: (v) => new Set([

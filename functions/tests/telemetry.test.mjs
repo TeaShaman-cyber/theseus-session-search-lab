@@ -550,3 +550,67 @@ test('semantic adapter exceptions cannot change the request outcome', async () =
   assert.equal((await response.json()).status, 'FOUND');
   await assert.doesNotReject(() => telemetry.shutdown());
 });
+
+test('MCP session_search emits the same bounded semantic search outcome', async () => {
+  const semantic = semanticRecorder();
+  const telemetry = createNoopTelemetry({ semanticEvents: semantic.events });
+  const handler = makeRouterHandler({
+    telemetry, resultShape: 'flat_v1',
+    catalog: [{
+      shard_id: 'deepseek-0001', provider: 'deepseek', generation_id: 'c'.repeat(64),
+      state: 'READY', url: 'https://shard.test/search',
+    }],
+    fetchImpl: async () => Response.json({
+      generation_binding: 'router_pinned_v1', status: 'FOUND',
+      generation_id: 'c'.repeat(64), provider: 'deepseek', shard_id: 'deepseek-0001', hits: [],
+    }),
+  });
+  const response = await handler.fetch(new Request('https://router.test/mcp', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 101, method: 'tools/call', params: {
+      name: 'session_search', arguments: { query: 'MCP_SECRET_QUERY_NEVER_CAPTURE' },
+    } }),
+  }));
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  const structured = body.result.structuredContent;
+  assert.equal(body.result.isError, false);
+  assert.deepEqual(semantic.captures, [{
+    event: 'session search completed',
+    properties: {
+      route: 'mcp', request_ref: structured.request_ref, result_status: structured.status,
+      queried_shards_count: 1, unavailable_shards_count: 0,
+    },
+  }]);
+  assert.equal(JSON.stringify(semantic.captures).includes('MCP_SECRET_QUERY_NEVER_CAPTURE'), false);
+});
+
+test('MCP session_coverage emits bounded semantic coverage classification', async () => {
+  const semantic = semanticRecorder();
+  const telemetry = createNoopTelemetry({ semanticEvents: semantic.events });
+  const handler = makeRouterHandler({
+    telemetry,
+    catalog: [{
+      shard_id: 'chatgpt-0001', provider: 'chatgpt', generation_id: 'd'.repeat(64),
+      state: 'READY', url: 'https://shard.test/search', time_min: 100, time_max: 200,
+    }],
+  });
+  const response = await handler.fetch(new Request('https://router.test/mcp', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 102, method: 'tools/call', params: {
+      name: 'session_coverage', arguments: { provider: 'chatgpt', from_time: 120, to_time: 180 },
+    } }),
+  }));
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  const structured = body.result.structuredContent;
+  assert.equal(body.result.isError, false);
+  assert.deepEqual(semantic.captures, [{
+    event: 'session coverage classified',
+    properties: {
+      route: 'mcp', request_ref: structured.request_ref,
+      window_fit: structured.coverage.window_fit,
+      source_currentness: structured.coverage.source_currentness,
+    },
+  }]);
+});

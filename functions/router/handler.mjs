@@ -396,6 +396,32 @@ export function makeRouterHandler({
               resultRequestRef: toolResult.feedback?.result_request_ref,
             });
           }
+          if (result?.result?.isError === false &&
+              toolName === 'session_search' &&
+              ['FOUND', 'NO_SIGNAL', 'PARTIAL'].includes(toolResult?.status)) {
+            const queriedShardsCount = toolResult.queried_shards?.length ?? 0;
+            const unavailableShardsCount = toolResult.unavailable_shards?.length ?? 0;
+            observation.emitSemantic(
+              toolResult.status === 'PARTIAL' ? 'session search partial' : 'session search completed',
+              {
+                route: 'mcp',
+                request_ref: observation.requestRef,
+                result_status: toolResult.status,
+                queried_shards_count: queriedShardsCount,
+                unavailable_shards_count: unavailableShardsCount,
+              },
+            );
+          }
+          if (result?.result?.isError === false &&
+              toolName === 'session_coverage' &&
+              toolResult?.status === 'OBSERVED' && toolResult?.coverage) {
+            observation.emitSemantic('session coverage classified', {
+              route: 'mcp',
+              request_ref: observation.requestRef,
+              window_fit: toolResult.coverage.window_fit,
+              source_currentness: toolResult.coverage.source_currentness,
+            });
+          }
           const searchResult = result?.result?.structuredContent;
           if (searchResult?.status) {
             observation.setResult({
