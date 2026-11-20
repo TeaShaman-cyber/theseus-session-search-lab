@@ -1,5 +1,6 @@
 import { createTelemetryFromEnv } from '../telemetry.mjs';
 import { makeRouterHandler } from './handler.mjs';
+import { applySourceWatermarkOverlay } from './core.mjs';
 import { neon } from '@neondatabase/serverless';
 import { assertFeedbackDatabaseUrl, makeFeedbackReader, makeFeedbackWriter } from './feedback.mjs';
 
@@ -7,6 +8,7 @@ const rawCatalog = process.env.SESSION_SEARCH_CATALOG;
 const authToken = process.env.SESSION_SEARCH_ROUTER_AUTH_TOKEN;
 const shardAuthToken = process.env.SESSION_SEARCH_SHARD_AUTH_TOKEN;
 const resultShape = process.env.SESSION_SEARCH_RESULT_SHAPE ?? 'grouped_v1';
+const rawSourceWatermarks = process.env.SESSION_SEARCH_SOURCE_WATERMARKS ?? null;
 
 if (!rawCatalog) throw new Error('SESSION_SEARCH_CATALOG_MISSING');
 if (!authToken) throw new Error('SESSION_SEARCH_ROUTER_AUTH_TOKEN_MISSING');
@@ -21,6 +23,7 @@ try {
 if (!Array.isArray(catalog) || catalog.length < 1) {
   throw new Error('SESSION_SEARCH_CATALOG_EMPTY');
 }
+catalog = applySourceWatermarkOverlay(catalog, rawSourceWatermarks);
 
 const ROUTER_TELEMETRY_FLUSH_TIMEOUT_MS = 1000;
 
