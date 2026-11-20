@@ -13,7 +13,7 @@ Canonical remote MCP behind Arcade is the independently deployed Session Search 
 
 ## Stable server and tool identity
 
-As last verified on 2026-11-19, the existing **private** production Gateway
+As verified through the 2026-11-20 production checkpoint, the existing **private** production Gateway
 exposes **five** consumer tools: `TheseusSessionSearch.session_search`,
 `TheseusSessionSearch.session_browse`,
 `TheseusSessionSearch.session_feedback`,
@@ -23,7 +23,7 @@ two-tool checkpoints are retained below as dated historical evidence.
 The search identity stays stable. Before issue #232 the gateway allowed one
 read-only consumer tool, so older one-tool acceptance receipts remain historical. `TheseusSessionSearch.session_search`. The gateway is an allowlist of Arcade-discovered tools; it is not a transparent proxy that automatically substitutes a newly registered sibling server/tool. Preserve both the canonical remote-server ID `theseus-session-search` and the stable qualified tool identity across router deployments.
 
-Git source `c3f03696182e195d39af3a01d5ba5569b7ac09f7` (PR #277) added the fifth router MCP capability, `session_coverage`. On 2026-11-19 the existing production router was rolled forward in place, Arcade worker discovery was refreshed, and the existing Gateway was changed add-only to five tools. Fresh ChatGPT App discovery then exposed `TheseusSessionSearch.session_coverage`, and a real host call returned `status=OBSERVED`. A later config-only router deployment populated finite observed message bounds for all four active catalog generations; a broad preflight returned `catalog_bounds_complete=true`, while a ChatGPT window for 2026-11-17 through 2026-11-19 returned `OUTSIDE_OBSERVED_INDEX_RANGE` with zero selected shards. `source_currentness` deliberately remained `UNKNOWN_WITHOUT_SOURCE_WATERMARK`. These are dated serving observations, not proof of complete upstream ChatGPT history.
+Git source `c3f03696182e195d39af3a01d5ba5569b7ac09f7` (PR #277) added the fifth router MCP capability, `session_coverage`. On 2026-11-19 the existing production router was rolled forward in place, Arcade worker discovery was refreshed, and the existing Gateway was changed add-only to five tools. Fresh ChatGPT App discovery then exposed `TheseusSessionSearch.session_coverage`, and a real host call returned `status=OBSERVED`. A later config-only router deployment populated finite observed message bounds for all four active catalog generations; a broad preflight returned `catalog_bounds_complete=true`, while a ChatGPT window for 2026-11-17 through 2026-11-19 returned `OUTSIDE_OBSERVED_INDEX_RANGE` with zero selected shards. `source_currentness` deliberately remained `UNKNOWN_WITHOUT_SOURCE_WATERMARK` at that intermediate checkpoint. Later #275 source-watermark rollout added the bounded `VERIFIED_TO_PROVIDER_REPORTED_WATERMARK` / `STALE_AFTER_PROVIDER_REPORTED_WATERMARK` states while preserving fail-closed unknown. These are dated serving observations, not proof of complete upstream ChatGPT history.
 
 A verified router candidate may be registered separately for diagnostics, but do not add a second Session Search tool identity to the production gateway. Production cutover changes the URI/configuration of the existing Arcade worker, then refreshes its discovered tools, so `Arcade_SelectTools` and `Arcade_UseTool` continue to address the same qualified tool.
 
@@ -43,7 +43,7 @@ The invariant is that the existing App-backed host can discover and execute `The
 
 For retrieval-policy capable deployments, fresh discovery must expose `search_mode` with `strict`, `recall`, and `auto` (default `strict`). The stable `session_search` tool returns exact-text result groups by default, preserving all matched occurrences/provenance under each group. `auto` must return a `retrieval` receipt that distinguishes requested from effective mode; a strict grouped miss may escalate to recall, while `PARTIAL` must remain visible and must not be hidden by retry.
 
-After an **authorized** coverage rollout, acceptance changes from four to five intentional consumer tools by adding only `TheseusSessionSearch.session_coverage`. The prior four identities must remain present. Fresh host discovery must then execute a bounded coverage preflight and observe `status=OBSERVED`, a valid `coverage.window_fit`, and `source_currentness=UNKNOWN_WITHOUT_SOURCE_WATERMARK`. The preflight must remain metadata-only; it does not certify raw ChatGPT account completeness or source freshness.
+The authorized coverage rollout established five intentional consumer tools by adding only `TheseusSessionSearch.session_coverage`; the prior four identities remain present. Fresh host discovery must execute a bounded coverage preflight and observe `status=OBSERVED`, a valid `coverage.window_fit`, and one of the defined source-currentness states: `VERIFIED_TO_PROVIDER_REPORTED_WATERMARK`, `STALE_AFTER_PROVIDER_REPORTED_WATERMARK`, or fail-closed `UNKNOWN_WITHOUT_SOURCE_WATERMARK`. The preflight remains metadata-only; none of these states certifies raw ChatGPT account completeness or `SOURCE_COMPLETE`.
 
 ## Verified private feedback readback checkpoint — November 19 2026
 
@@ -91,7 +91,7 @@ ChatGPT host session still selected ONLY session_search; feedback write
 acceptance requires a fresh host tool discovery and genuine write/readback.
 Older one-tool acceptance receipts remain historical pre-#232 evidence.
 
-## Current grouped-default checkpoint, November 10 2026
+## Historical grouped-default checkpoint, November 10 2026
 
 After #264 promotion and runtime rollout:
 - the production Neon router is `ssrouter2` deployment #10, active/completed;
@@ -111,8 +111,8 @@ Gateway/control-plane existence is not host acceptance.
 A fresh host acceptance must:
 1. use the existing App-backed Session Search plugin identity;
 2. discover the current Session Search domain tools rather than infer them from Git or router source;
-3. after a coverage rollout, verify that `TheseusSessionSearch.session_coverage` is added while the previous four tools remain;
-4. execute a bounded coverage probe and preserve `UNKNOWN_WITHOUT_SOURCE_WATERMARK` source-currentness semantics;
+3. verify the five intentional tools remain available: `session_search`, `session_browse`, `session_coverage`, `session_feedback`, and `session_feedback_get`;
+4. execute a bounded coverage probe and accept only the defined source-currentness states: `VERIFIED_TO_PROVIDER_REPORTED_WATERMARK`, `STALE_AFTER_PROVIDER_REPORTED_WATERMARK`, or fail-closed `UNKNOWN_WITHOUT_SOURCE_WATERMARK`; none implies `SOURCE_COMPLETE`;
 5. execute a bounded live search probe;
 6. receive a terminal `FOUND`, `NO_SIGNAL`, or `PARTIAL` search result with explicit `queried_shards` and `unavailable_shards`;
 7. preserve returned shard/generation provenance;
