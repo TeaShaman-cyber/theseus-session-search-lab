@@ -198,14 +198,15 @@ After updating the existing App-backed plugin:
 
 1. start a fresh ChatGPT conversation on the intended host surface;
 2. select the existing Session Search App-backed plugin; do not create a replacement identity;
-3. use `Arcade_SelectTools` to confirm the existing four Session Search tools remain discoverable and, **only after the separately authorized coverage rollout**, that `TheseusSessionSearch.session_coverage` is also present;
-4. after that rollout, use `Arcade_UseTool` to run a bounded `session_coverage` probe for a known time window; require `status=OBSERVED`, a valid `window_fit`, `source_currentness=UNKNOWN_WITHOUT_SOURCE_WATERMARK`, and no transcript content in the receipt;
-5. use `Arcade_UseTool` to run a bounded safe `session_search` strict control probe;
-6. confirm the current search schema exposes `search_mode` = `strict|recall|auto` with default `strict`;
-7. run a bounded `search_mode=auto` probe that is known to strict-miss and require a `retrieval` receipt showing bounded strict-to-recall escalation;
-8. require a contract-valid terminal search status and explicit `queried_shards` / `unavailable_shards`;
-9. require `unavailable_shards=[]` before calling the serving path healthy;
-10. if the search result is `PARTIAL`, classify the host path as executable but serving as DEGRADED and do not escalate it through auto;
-11. compare observed provenance with the current live shard catalog/deployment evidence instead of historical #64 shard names.
+3. use `Arcade_SelectTools` to confirm all five expected Session Search tools are discoverable: `session_search`, `session_browse`, `session_feedback`, `session_feedback_get`, and `session_coverage`;
+4. use `Arcade_UseTool` to run a bounded `session_coverage` probe whose window ends at or before the separately verified provider watermark; require `status=OBSERVED`, a valid `window_fit`, `source_currentness=VERIFIED_TO_PROVIDER_REPORTED_WATERMARK`, bounded `source_watermark` metadata, and no transcript content in the receipt;
+5. run a second bounded `session_coverage` probe whose window extends later than that watermark and require `source_currentness=STALE_AFTER_PROVIDER_REPORTED_WATERMARK`; this validates staleness classification without treating the provider report as `SOURCE_COMPLETE`;
+6. use `Arcade_UseTool` to run a bounded safe `session_search` strict control probe;
+7. confirm the current search schema exposes `search_mode` = `strict|recall|auto` with default `strict`;
+8. run a bounded `search_mode=auto` probe that is known to strict-miss and require a `retrieval` receipt showing bounded strict-to-recall escalation;
+9. require a contract-valid terminal search status and explicit `queried_shards` / `unavailable_shards`;
+10. require `unavailable_shards=[]` before calling the serving path healthy;
+11. if the search result is `PARTIAL`, classify the host path as executable but serving as DEGRADED and do not escalate it through auto;
+12. compare observed provenance with the current live shard catalog/deployment evidence instead of historical #64 shard names.
 
 Do not infer host success from Arcade control-plane state alone. Do not infer corpus absence merely because a provider/shard family is not present in the current live catalog.
