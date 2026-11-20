@@ -68,7 +68,13 @@ Pass only the needed `provider`, `session_id`, `from_time`, and/or `to_time`; at
 - `OBSERVED_POSSIBLE`: the indexed catalog overlaps the requested window. This says only that a search may be worthwhile; it does not prove complete upstream history.
 - `UNKNOWN_COVERAGE`: provider/session coverage or catalog bounds are insufficient. Preserve uncertainty instead of asserting absence.
 
-Keep `source_currentness=UNKNOWN_WITHOUT_SOURCE_WATERMARK` unless a separately verified authoritative upstream watermark exists. `observed_at` is the router response time, **not** the source-history freshness time. Bounded generation metadata describes the serving catalog observed for that preflight, not raw-history authority.
+Interpret `source_currentness` separately from observed index bounds:
+
+- `UNKNOWN_WITHOUT_SOURCE_WATERMARK`: no common verified provider-export binding is present for every eligible shard. A green router, READY generation, or recent `time_max` does not change this.
+- `VERIFIED_TO_PROVIDER_REPORTED_WATERMARK`: every eligible shard for the explicitly scoped provider is bound to the same accepted set and provider-export watermark, and the requested window ends at or before that watermark.
+- `STALE_AFTER_PROVIDER_REPORTED_WATERMARK`: the same binding exists, but the request is open-ended or extends later than the watermark.
+
+When present, `source_watermark.status=PROVIDER_REPORTED_NO_KNOWN_GAPS` means the provider export manifest reported no known incomplete corpora / inventory warnings / omissions / redactions at capture time. Treat that as bounded provider-reported evidence, **not** as an unconditional claim that the original account history is complete. `source_watermark.observed_through` is the source snapshot time; `observed_at` remains the router response time. Bounded generation metadata describes the serving catalog observed for that preflight, not raw-history authority.
 
 If `session_coverage` is absent from fresh Arcade/host discovery, do not invent or assume it from Git source. Fall back to a time-scoped `session_search` only when that search is still useful, inspect its additive `coverage` receipt, and state that preventive preflight is unavailable on the current surface.
 

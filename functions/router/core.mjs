@@ -16,6 +16,9 @@ const FEEDBACK_FIELDS = new Set([
 const FEEDBACK_OPERATOR_FIELDS = new Set(['name', 'version']);
 const FEEDBACK_READ_FIELDS = new Set(['feedback_ref']);
 const COVERAGE_FIELDS = new Set(['provider', 'session_id', 'from_time', 'to_time']);
+const SOURCE_WATERMARK_STATUS = 'PROVIDER_REPORTED_NO_KNOWN_GAPS';
+const SOURCE_WATERMARK_BASIS = 'provider_export_manifest';
+const SHA256_REF = /^[0-9a-f]{64}$/;
 
 function validateSearchInput(input = {}) {
   if (Object.prototype.hasOwnProperty.call(input, 'grouping')
@@ -188,8 +191,57 @@ export function selectShards(catalog, input = {}) {
     .sort((a, b) => a.shard_id.localeCompare(b.shard_id));
 }
 
+function normalizedSourceWatermark(shard) {
+  const value = shard?.source_watermark;
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) return null;
+  if (!Number.isFinite(value.observed_through)) return null;
+  if (value.status !== SOURCE_WATERMARK_STATUS || value.basis !== SOURCE_WATERMARK_BASIS) {
+    return null;
+  }
+  if (typeof value.accepted_set_sha256 !== 'string'
+      || !SHA256_REF.test(value.accepted_set_sha256)) {
+    return null;
+  }
+  return {
+    observed_through: value.observed_through,
+    status: value.status,
+    basis: value.basis,
+    accepted_set_sha256: value.accepted_set_sha256,
+  };
+}
+
+function summarizeSourceCurrentness(eligible, input) {
+  const unknown = { source_currentness: 'UNKNOWN_WITHOUT_SOURCE_WATERMARK' };
+  if (input.provider == null || eligible.length === 0) return unknown;
+
+  const watermarks = eligible.map(normalizedSourceWatermark);
+  if (watermarks.some((watermark) => watermark == null)) return unknown;
+
+  const first = watermarks[0];
+  const sameBinding = watermarks.every((watermark) =>
+    watermark.observed_through === first.observed_through
+    && watermark.status === first.status
+    && watermark.basis === first.basis
+    && watermark.accepted_set_sha256 === first.accepted_set_sha256);
+  if (!sameBinding) return unknown;
+
+  const requestExtendsPastWatermark = input.to_time == null
+    || input.to_time > first.observed_through;
+  return {
+    source_currentness: requestExtendsPastWatermark
+      ? 'STALE_AFTER_PROVIDER_REPORTED_WATERMARK'
+      : 'VERIFIED_TO_PROVIDER_REPORTED_WATERMARK',
+    source_watermark: {
+      observed_through: first.observed_through,
+      status: first.status,
+      basis: first.basis,
+    },
+  };
+}
+
 // Observed catalog time bounds are not an upstream source freshness guarantee.
-// Keep this additive to the existing FOUND / NO_SIGNAL / PARTIAL search contract.
+// A source watermark is accepted only when every provider-scoped eligible shard
+// carries the same accepted-set binding and provider-report metadata.
 export function summarizeTimeWindowCoverage(catalog, input, selected) {
   if (input.from_time == null && input.to_time == null) return null;
 
@@ -205,6 +257,7 @@ export function summarizeTimeWindowCoverage(catalog, input, selected) {
     .map((shard) => shard.time_max)
     .filter((time) => Number.isFinite(time));
   const observedMax = knownMaxTimes.length ? Math.max(...knownMaxTimes) : null;
+  const sourceCurrentness = summarizeSourceCurrentness(eligible, input);
 
   return {
     window_fit: eligible.length === 0 || !catalogBoundsComplete
@@ -212,7 +265,7 @@ export function summarizeTimeWindowCoverage(catalog, input, selected) {
       : selected.length === 0
         ? 'OUTSIDE_OBSERVED_INDEX_RANGE'
         : 'OBSERVED_POSSIBLE',
-    source_currentness: 'UNKNOWN_WITHOUT_SOURCE_WATERMARK',
+    ...sourceCurrentness,
     eligible_shard_count: eligible.length,
     selected_shard_count: selected.length,
     catalog_observed_max_time: observedMax,
