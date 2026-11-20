@@ -290,6 +290,87 @@ test('coverage preflight is authenticated and does zero lexical shard requests',
   assert.equal((await send(ROUTER_TOKEN, { provider: 'chatgpt' })).status, 400);
 });
 
+
+test('coverage preflight verifies a provider-reported source watermark bound to every eligible shard', async () => {
+  const sourceWatermark = {
+    observed_through: 450,
+    status: 'PROVIDER_REPORTED_NO_KNOWN_GAPS',
+    basis: 'provider_export_manifest',
+    accepted_set_sha256: 'c'.repeat(64),
+  };
+  const catalog = [
+    { shard_id: 'chatgpt-0001', provider: 'chatgpt', generation_id: 'a'.repeat(64), state: 'READY',
+      time_min: 100, time_max: 500, source_watermark: sourceWatermark, url: 'https://a.test/search' },
+    { shard_id: 'chatgpt-0002', provider: 'chatgpt', generation_id: 'b'.repeat(64), state: 'READY',
+      time_min: 200, time_max: 500, source_watermark: sourceWatermark, url: 'https://b.test/search' },
+  ];
+  const handler = makeRouterHandler({ catalog, fetchImpl: async () => { throw Error('no lexical dispatch'); } });
+  const read = async (body) => {
+    const response = await handler.fetch(new Request('https://router.test/coverage', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    }));
+    assert.equal(response.status, 200);
+    return await response.json();
+  };
+
+  const bounded = await read({ provider: 'chatgpt', from_time: 300, to_time: 400 });
+  assert.equal(bounded.coverage.window_fit, 'OBSERVED_POSSIBLE');
+  assert.equal(bounded.coverage.source_currentness, 'VERIFIED_TO_PROVIDER_REPORTED_WATERMARK');
+  assert.deepEqual(bounded.coverage.source_watermark, {
+    observed_through: 450,
+    status: 'PROVIDER_REPORTED_NO_KNOWN_GAPS',
+    basis: 'provider_export_manifest',
+  });
+
+  const newer = await read({ provider: 'chatgpt', from_time: 440, to_time: 470 });
+  assert.equal(newer.coverage.window_fit, 'OBSERVED_POSSIBLE');
+  assert.equal(newer.coverage.source_currentness, 'STALE_AFTER_PROVIDER_REPORTED_WATERMARK');
+  assert.deepEqual(newer.coverage.source_watermark, bounded.coverage.source_watermark);
+
+  const openEnded = await read({ provider: 'chatgpt', from_time: 300 });
+  assert.equal(openEnded.coverage.source_currentness, 'STALE_AFTER_PROVIDER_REPORTED_WATERMARK');
+});
+
+test('coverage preflight fails closed when source-watermark bindings are missing or disagree', async () => {
+  const base = {
+    observed_through: 450,
+    status: 'PROVIDER_REPORTED_NO_KNOWN_GAPS',
+    basis: 'provider_export_manifest',
+  };
+  const catalog = [
+    { shard_id: 'chatgpt-0001', provider: 'chatgpt', generation_id: 'a'.repeat(64), state: 'READY',
+      time_min: 100, time_max: 500,
+      source_watermark: { ...base, accepted_set_sha256: 'c'.repeat(64) },
+      url: 'https://a.test/search' },
+    { shard_id: 'chatgpt-0002', provider: 'chatgpt', generation_id: 'b'.repeat(64), state: 'READY',
+      time_min: 200, time_max: 500,
+      source_watermark: { ...base, accepted_set_sha256: 'd'.repeat(64) },
+      url: 'https://b.test/search' },
+  ];
+  const handler = makeRouterHandler({ catalog, fetchImpl: async () => { throw Error('no lexical dispatch'); } });
+  const read = async (provider = 'chatgpt') => {
+    const response = await handler.fetch(new Request('https://router.test/coverage', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ provider, from_time: 300, to_time: 400 }),
+    }));
+    return await response.json();
+  };
+
+  const mismatch = await read();
+  assert.equal(mismatch.coverage.source_currentness, 'UNKNOWN_WITHOUT_SOURCE_WATERMARK');
+  assert.equal(Object.hasOwn(mismatch.coverage, 'source_watermark'), false);
+
+  catalog[1] = { ...catalog[1], source_watermark: undefined };
+  const missing = await read();
+  assert.equal(missing.coverage.source_currentness, 'UNKNOWN_WITHOUT_SOURCE_WATERMARK');
+  assert.equal(Object.hasOwn(missing.coverage, 'source_watermark'), false);
+
+  catalog[1] = { ...catalog[0], shard_id: 'chatgpt-0002', generation_id: 'b'.repeat(64), url: 'https://b.test/search' };
+  const unscoped = await read(null);
+  assert.equal(unscoped.coverage.source_currentness, 'UNKNOWN_WITHOUT_SOURCE_WATERMARK');
+  assert.equal(Object.hasOwn(unscoped.coverage, 'source_watermark'), false);
+});
+
 test('coverage preflight caps provenance rows but evaluates the full catalog', async () => {
   const catalog = Array.from({ length: 34 }, (_, index) => ({
     shard_id: `chatgpt-${String(index).padStart(4, '0')}`,
