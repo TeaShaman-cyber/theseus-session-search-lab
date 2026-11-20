@@ -311,6 +311,12 @@ export function makeRouterHandler({
               queriedShards: 0,
               unavailableShards: 0,
             });
+            observation.emitSemantic('session coverage classified', {
+              route: 'coverage',
+              request_ref: observation.requestRef,
+              window_fit: result.coverage.window_fit,
+              source_currentness: result.coverage.source_currentness,
+            });
             return json(result);
           } catch (error) {
             observation.setErrorClass('validation');
@@ -325,11 +331,23 @@ export function makeRouterHandler({
               observation.context,
               observation.requestRef,
             );
+            const queriedShardsCount = result.queried_shards?.length ?? 0;
+            const unavailableShardsCount = result.unavailable_shards?.length ?? 0;
             observation.setResult({
               resultStatus: result.status,
-              queriedShards: result.queried_shards?.length ?? 0,
-              unavailableShards: result.unavailable_shards?.length ?? 0,
+              queriedShards: queriedShardsCount,
+              unavailableShards: unavailableShardsCount,
             });
+            observation.emitSemantic(
+              result.status === 'PARTIAL' ? 'session search partial' : 'session search completed',
+              {
+                route: 'search',
+                request_ref: observation.requestRef,
+                result_status: result.status,
+                queried_shards_count: queriedShardsCount,
+                unavailable_shards_count: unavailableShardsCount,
+              },
+            );
             return json(result);
           } catch (error) {
             observation.setErrorClass('validation');
@@ -364,6 +382,11 @@ export function makeRouterHandler({
               baselineRequestRef: message?.params?.arguments?.baseline_request_ref,
               resultRequestRef: message?.params?.arguments?.result_request_ref,
             });
+            observation.emitSemantic('session feedback submitted', {
+              route: 'mcp',
+              request_ref: observation.requestRef,
+              feedback_status: toolResult.status,
+            });
           }
           if (result?.result?.isError === false &&
               toolName === 'session_feedback_get' && toolResult?.status === 'FOUND') {
@@ -371,6 +394,32 @@ export function makeRouterHandler({
               feedbackRef: toolResult.feedback_ref,
               baselineRequestRef: toolResult.feedback?.baseline_request_ref,
               resultRequestRef: toolResult.feedback?.result_request_ref,
+            });
+          }
+          if (result?.result?.isError === false &&
+              toolName === 'session_search' &&
+              ['FOUND', 'NO_SIGNAL', 'PARTIAL'].includes(toolResult?.status)) {
+            const queriedShardsCount = toolResult.queried_shards?.length ?? 0;
+            const unavailableShardsCount = toolResult.unavailable_shards?.length ?? 0;
+            observation.emitSemantic(
+              toolResult.status === 'PARTIAL' ? 'session search partial' : 'session search completed',
+              {
+                route: 'mcp',
+                request_ref: observation.requestRef,
+                result_status: toolResult.status,
+                queried_shards_count: queriedShardsCount,
+                unavailable_shards_count: unavailableShardsCount,
+              },
+            );
+          }
+          if (result?.result?.isError === false &&
+              toolName === 'session_coverage' &&
+              toolResult?.status === 'OBSERVED' && toolResult?.coverage) {
+            observation.emitSemantic('session coverage classified', {
+              route: 'mcp',
+              request_ref: observation.requestRef,
+              window_fit: toolResult.coverage.window_fit,
+              source_currentness: toolResult.coverage.source_currentness,
             });
           }
           const searchResult = result?.result?.structuredContent;

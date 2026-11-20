@@ -389,3 +389,228 @@ test('MCP feedback span carries a safe join to search traces without leaking ide
     await telemetry.shutdown();
   }
 });
+
+function semanticRecorder() {
+  const captures = [];
+  let flushes = 0;
+  return {
+    captures,
+    flushes: () => flushes,
+    events: {
+      enabled: true,
+      capture(event, properties) { captures.push({ event, properties }); return true; },
+      async flush() { flushes += 1; return true; },
+      async shutdown() { return true; },
+    },
+  };
+}
+
+test('semantic events use the request lifecycle even when OTLP is disabled', async () => {
+  const semantic = semanticRecorder();
+  const telemetry = createNoopTelemetry({ semanticEvents: semantic.events });
+  const response = await telemetry.withRequest(
+    new Request('https://router.test/search'),
+    'search',
+    async (scope) => {
+      scope.emitSemantic('session search completed', {
+        route: 'search', request_ref: scope.requestRef, result_status: 'FOUND',
+        queried_shards_count: 1, unavailable_shards_count: 0,
+      });
+      return Response.json({ status: 'FOUND' });
+    },
+  );
+  assert.equal(response.status, 200);
+  assert.equal(semantic.captures.length, 1);
+  assert.equal(semantic.captures[0].event, 'session search completed');
+  assert.match(semantic.captures[0].properties.request_ref, /^[0-9a-f]{32}$/);
+  assert.equal(semantic.flushes(), 1);
+});
+
+test('router emits search semantic outcome without query text', async () => {
+  const semantic = semanticRecorder();
+  const telemetry = createNoopTelemetry({ semanticEvents: semantic.events });
+  const handler = makeRouterHandler({
+    telemetry, resultShape: 'flat_v1',
+    catalog: [{
+      shard_id: 'deepseek-0001', provider: 'deepseek', generation_id: 'a'.repeat(64),
+      state: 'READY', url: 'https://shard.test/search',
+    }],
+    fetchImpl: async () => Response.json({
+      generation_binding: 'router_pinned_v1', status: 'FOUND',
+      generation_id: 'a'.repeat(64), provider: 'deepseek', shard_id: 'deepseek-0001', hits: [],
+    }),
+  });
+  const response = await handler.fetch(new Request('https://router.test/search', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ query: 'SECRET_QUERY_NEVER_CAPTURE' }),
+  }));
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.deepEqual(semantic.captures, [{
+    event: 'session search completed',
+    properties: {
+      route: 'search', request_ref: body.request_ref, result_status: body.status,
+      queried_shards_count: 1, unavailable_shards_count: 0,
+    },
+  }]);
+  assert.equal(JSON.stringify(semantic.captures).includes('SECRET_QUERY_NEVER_CAPTURE'), false);
+});
+
+test('internal grouped canary remains OTel-only and emits no semantic event', async () => {
+  const semantic = semanticRecorder();
+  const telemetry = createNoopTelemetry({ semanticEvents: semantic.events });
+  const handler = makeRouterHandler({
+    telemetry, groupedCanaryEnabled: true, catalog: [],
+    fetchImpl: async () => { throw new Error('empty catalog must not dispatch'); },
+  });
+  const response = await handler.fetch(new Request('https://router.test/internal/grouped-search', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ query: 'canary', search_mode: 'recall', limit: 2, candidate_budget: 6 }),
+  }));
+  assert.equal(response.status, 200);
+  assert.deepEqual(semantic.captures, []);
+});
+
+test('router emits bounded coverage classification semantics', async () => {
+  const semantic = semanticRecorder();
+  const telemetry = createNoopTelemetry({ semanticEvents: semantic.events });
+  const handler = makeRouterHandler({
+    telemetry,
+    catalog: [{
+      shard_id: 'chatgpt-0001', provider: 'chatgpt', generation_id: 'b'.repeat(64),
+      state: 'READY', url: 'https://shard.test/search', time_min: 100, time_max: 200,
+    }],
+  });
+  const response = await handler.fetch(new Request('https://router.test/coverage', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ provider: 'chatgpt', from_time: 120, to_time: 180 }),
+  }));
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.deepEqual(semantic.captures, [{
+    event: 'session coverage classified',
+    properties: {
+      route: 'coverage', request_ref: body.request_ref,
+      window_fit: body.coverage.window_fit,
+      source_currentness: body.coverage.source_currentness,
+    },
+  }]);
+});
+
+test('router emits feedback status but never feedback content or feedback ref', async () => {
+  const semantic = semanticRecorder();
+  const telemetry = createNoopTelemetry({ semanticEvents: semantic.events });
+  const feedbackRef = 'e'.repeat(32);
+  const handler = makeRouterHandler({
+    catalog: [], telemetry,
+    feedbackWriter: async () => ({ status: 'RECORDED', feedback_ref: feedbackRef }),
+  });
+  const response = await handler.fetch(new Request('https://router.test/mcp', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 99, method: 'tools/call', params: {
+      name: 'session_feedback', arguments: {
+        baseline_request_ref: 'a'.repeat(32), result_request_ref: 'b'.repeat(32),
+        failure_class: 'low_relevance', operator: { name: 'test_agent', version: 'v1' },
+        outcome: 'unknown', notes: 'SENSITIVE_FEEDBACK_NEVER_CAPTURE',
+      },
+    } }),
+  }));
+  assert.equal(response.status, 200);
+  assert.equal(semantic.captures.length, 1);
+  assert.deepEqual(semantic.captures[0], {
+    event: 'session feedback submitted',
+    properties: { route: 'mcp', request_ref: semantic.captures[0].properties.request_ref, feedback_status: 'RECORDED' },
+  });
+  assert.match(semantic.captures[0].properties.request_ref, /^[0-9a-f]{32}$/);
+  const encoded = JSON.stringify(semantic.captures);
+  assert.equal(encoded.includes(feedbackRef), false);
+  assert.equal(encoded.includes('SENSITIVE_FEEDBACK_NEVER_CAPTURE'), false);
+});
+
+test('semantic adapter exceptions cannot change the request outcome', async () => {
+  const telemetry = createNoopTelemetry({
+    semanticEvents: {
+      capture() { throw new Error('adapter-capture-broke'); },
+      async flush() { throw new Error('adapter-flush-broke'); },
+      async shutdown() { throw new Error('adapter-shutdown-broke'); },
+    },
+  });
+  const response = await telemetry.withRequest(
+    new Request('https://router.test/search'),
+    'search',
+    async (scope) => {
+      scope.emitSemantic('session search completed', {
+        route: 'search', request_ref: scope.requestRef, result_status: 'FOUND',
+        queried_shards_count: 1, unavailable_shards_count: 0,
+      });
+      return Response.json({ status: 'FOUND' });
+    },
+  );
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).status, 'FOUND');
+  await assert.doesNotReject(() => telemetry.shutdown());
+});
+
+test('MCP session_search emits the same bounded semantic search outcome', async () => {
+  const semantic = semanticRecorder();
+  const telemetry = createNoopTelemetry({ semanticEvents: semantic.events });
+  const handler = makeRouterHandler({
+    telemetry, resultShape: 'flat_v1',
+    catalog: [{
+      shard_id: 'deepseek-0001', provider: 'deepseek', generation_id: 'c'.repeat(64),
+      state: 'READY', url: 'https://shard.test/search',
+    }],
+    fetchImpl: async () => Response.json({
+      generation_binding: 'router_pinned_v1', status: 'FOUND',
+      generation_id: 'c'.repeat(64), provider: 'deepseek', shard_id: 'deepseek-0001', hits: [],
+    }),
+  });
+  const response = await handler.fetch(new Request('https://router.test/mcp', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 101, method: 'tools/call', params: {
+      name: 'session_search', arguments: { query: 'MCP_SECRET_QUERY_NEVER_CAPTURE' },
+    } }),
+  }));
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  const structured = body.result.structuredContent;
+  assert.equal(body.result.isError, false);
+  assert.deepEqual(semantic.captures, [{
+    event: 'session search completed',
+    properties: {
+      route: 'mcp', request_ref: structured.request_ref, result_status: structured.status,
+      queried_shards_count: 1, unavailable_shards_count: 0,
+    },
+  }]);
+  assert.equal(JSON.stringify(semantic.captures).includes('MCP_SECRET_QUERY_NEVER_CAPTURE'), false);
+});
+
+test('MCP session_coverage emits bounded semantic coverage classification', async () => {
+  const semantic = semanticRecorder();
+  const telemetry = createNoopTelemetry({ semanticEvents: semantic.events });
+  const handler = makeRouterHandler({
+    telemetry,
+    catalog: [{
+      shard_id: 'chatgpt-0001', provider: 'chatgpt', generation_id: 'd'.repeat(64),
+      state: 'READY', url: 'https://shard.test/search', time_min: 100, time_max: 200,
+    }],
+  });
+  const response = await handler.fetch(new Request('https://router.test/mcp', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 102, method: 'tools/call', params: {
+      name: 'session_coverage', arguments: { provider: 'chatgpt', from_time: 120, to_time: 180 },
+    } }),
+  }));
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  const structured = body.result.structuredContent;
+  assert.equal(body.result.isError, false);
+  assert.deepEqual(semantic.captures, [{
+    event: 'session coverage classified',
+    properties: {
+      route: 'mcp', request_ref: structured.request_ref,
+      window_fit: structured.coverage.window_fit,
+      source_currentness: structured.coverage.source_currentness,
+    },
+  }]);
+});

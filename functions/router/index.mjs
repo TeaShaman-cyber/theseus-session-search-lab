@@ -1,4 +1,5 @@
 import { createTelemetryFromEnv } from '../telemetry.mjs';
+import { createSemanticEventsFromEnv } from '../semantic-events.mjs';
 import { makeRouterHandler } from './handler.mjs';
 import { applySourceWatermarkOverlay } from './core.mjs';
 import { neon } from '@neondatabase/serverless';
@@ -27,9 +28,12 @@ catalog = applySourceWatermarkOverlay(catalog, rawSourceWatermarks);
 
 const ROUTER_TELEMETRY_FLUSH_TIMEOUT_MS = 1000;
 
+const semanticEvents = createSemanticEventsFromEnv();
+
 const telemetry = createTelemetryFromEnv({
   serviceName: 'session-search-router',
   flushTimeoutMs: ROUTER_TELEMETRY_FLUSH_TIMEOUT_MS,
+  semanticEvents,
 });
 
 // No server↔App synchronization: the App writes only to its separate issue232 DB.
