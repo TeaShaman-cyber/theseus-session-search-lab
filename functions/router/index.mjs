@@ -49,6 +49,7 @@ if (feedbackDatabaseUrl) {
 export default makeRouterHandler({
   catalog,
   telemetry,
+  semanticEvents,
   authToken,
   shardAuthToken,
   feedbackWriter,
