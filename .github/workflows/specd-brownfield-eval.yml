@@ -180,3 +180,84 @@ jobs:
           path: |
             /tmp/specd-upstream-*.json
             /tmp/specd-upstream-*.txt
+
+  spec-coverage-current:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Prepare exact upstream SpecD with MJS admission patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --quiet https://github.com/specd-sdd/SpecD.git /tmp/specd-upstream
+          git -C /tmp/specd-upstream checkout --detach e003de1525ff8636a014ee2838b37f59902e55e0
+          corepack enable
+          corepack prepare pnpm@10.6.5 --activate
+          cd /tmp/specd-upstream
+          pnpm install --frozen-lockfile
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("packages/code-graph/src/infrastructure/tree-sitter/typescript-language-adapter.ts")
+          text = p.read_text()
+          old = "return { '.ts': 'typescript', '.tsx': 'tsx', '.js': 'javascript', '.jsx': 'jsx' }"
+          new = "return { '.ts': 'typescript', '.tsx': 'tsx', '.js': 'javascript', '.jsx': 'jsx', '.mjs': 'javascript' }"
+          if old not in text:
+              raise SystemExit("expected SpecD extension map not found")
+          p.write_text(text.replace(old, new, 1))
+          PY
+          git diff --check
+          pnpm --filter @specd/cli... --workspace-concurrency=1 build
+
+      - name: Initialize and validate Router Failure Isolation spec
+        shell: bash
+        run: |
+          set -euo pipefail
+          SPECD=/tmp/specd-upstream/packages/cli/dist/index.js
+          node "$SPECD" specs init default:router/failure-isolation --format json \
+            | tee /tmp/specd-spec-init.json
+          node "$SPECD" specs implementation add default:router/failure-isolation \
+            --file functions/router/handler.mjs \
+            --symbol searchFederated \
+            --format json \
+            | tee /tmp/specd-spec-link.json
+          node "$SPECD" specs validate default:router/failure-isolation --format json \
+            | tee /tmp/specd-spec-validate.json
+          node "$SPECD" specs implementation list default:router/failure-isolation --format json \
+            | tee /tmp/specd-spec-implementation.json
+
+      - name: Index code and prove covering spec
+        shell: bash
+        run: |
+          set -euo pipefail
+          SPECD=/tmp/specd-upstream/packages/cli/dist/index.js
+          node "$SPECD" graph index --format json | tee /tmp/specd-spec-index.json
+          node "$SPECD" graph impact \
+            --file functions/router/handler.mjs \
+            --direction dependents \
+            --include-tests \
+            --format json \
+            | tee /tmp/specd-spec-impact.json
+          jq -e '.coveringSpecs | map(select(.specId == "default:router/failure-isolation")) | length > 0' \
+            /tmp/specd-spec-impact.json
+
+      - name: Record generated persisted spec state
+        shell: bash
+        run: |
+          cp specs/router/failure-isolation/spec-lock.json /tmp/specd-router-failure-isolation-spec-lock.json
+          sha256sum specs/router/failure-isolation/spec-lock.json > /tmp/specd-router-failure-isolation-spec-lock.sha256
+          git diff -- specs/router/failure-isolation/spec-lock.json > /tmp/specd-router-failure-isolation-spec-lock.diff
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: specd-router-failure-isolation
+          path: |
+            /tmp/specd-spec-*.json
+            /tmp/specd-router-failure-isolation-*
