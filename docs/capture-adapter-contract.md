@@ -76,6 +76,22 @@ A complete pagination claim requires both:
 The ordinary Barn Doctor importer still does not retroactively prove membership for legacy pages that lack independently captured request/session provenance. Provenance-aware Barn recovery is implemented by the separate recovery path from Issue #16 and can materialize a derived single-session artifact when request provenance proves ownership. That recovery capability does not strengthen already accepted legacy evidence by itself. A legacy Barn Doctor `COMPLETE_EXPOSED_CONVERSATION` value without proven page membership records an observed pagination boundary only and **must not be used as evidence of absence** for historical claims.
 
 If a portable artifact exposes multiple stable conversation identities, the ordinary importer remains fail-closed with `BLOCKED_MIXED_SESSION_ARTIFACT`. Provenance-aware preprocessing is a separate adapter/recovery layer; see [Mixed capture artifact recovery](mixed-artifact-recovery.md) and Issue #16.
+
+## NotebookLM-preserved Gemini rescue observation
+
+Google Takeout can preserve Gemini conversations indirectly as NotebookLM source HTML even when the ordinary Gemini product directory contains only non-chat data such as Gems or Scheduled Actions. The rescue adapter treats these HTML sources as **secondary captured evidence**, not as provider-complete Gemini history.
+
+Supported source members are NotebookLM `Sources/*.html` files containing explicit `User` and `Gemini` role markers. The adapter preserves the observed marker order without inventing missing turns, timestamps, provider message IDs, or Gemini conversation IDs. Distinct source paths remain distinct evidence even when their text is identical.
+
+Every child artifact binds:
+- exact parent Takeout SHA-256 and byte size;
+- exact NotebookLM member path and member SHA-256;
+- deterministic synthetic session/message identities derived only from observed bytes/path/order;
+- `PARTIAL_SESSION_SLICE` coverage;
+- preservation scope `PARTIAL_SECONDARY_COPY`.
+
+This source can improve retrieval continuity but cannot support historical-absence claims. A later official Gemini/My Activity export should be treated as stronger independent evidence and reconciled rather than silently replacing the rescued NotebookLM copies.
+
 ## Official ChatGPT account-export adapter
 
 The ChatGPT account-export adapter treats the provider mapping graph as authoritative historical evidence. `parent` links define graph structure; `current_node` is an observed active terminal marker, not branch identity authority. Every terminal leaf is materialized as its own root-to-leaf portable artifact so alternate continuations are never concatenated into fictitious dialogue.
