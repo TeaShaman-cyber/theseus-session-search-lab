@@ -1,0 +1,77 @@
+name: SpecD brownfield evaluation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  graph:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - name: current
+            sha: 2a0b213a5cc3a4b00e2bc680e42a5e0846ee56a7
+          - name: h1-pr66
+            sha: c9c27423eb4b87be1763ee4042a89abda64eaa34
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install published SpecD
+        run: npm install --global @specd/specd@0.2.0
+
+      - name: Checkout frozen Session Search snapshot
+        run: git checkout --detach '${{ matrix.target.sha }}'
+
+      - name: Initialize SpecD in ephemeral runner workspace
+        run: |
+          specd project init \
+            --schema @specd/schema-std \
+            --workspace default \
+            --workspace-path specs/ \
+            --format json | tee "/tmp/specd-init-${{ matrix.target.name }}.json"
+
+      - name: Build code graph
+        run: |
+          specd graph index --format json | tee "/tmp/specd-index-${{ matrix.target.name }}.json"
+          specd graph stats --format json | tee "/tmp/specd-stats-${{ matrix.target.name }}.json"
+
+      - name: Probe known Session Search symbols
+        shell: bash
+        run: |
+          set +e
+          specd graph search searchFederated --symbols --format json \
+            > "/tmp/specd-search-router-${{ matrix.target.name }}.json" 2>&1
+          echo $? > "/tmp/specd-search-router-${{ matrix.target.name }}.exit"
+          specd graph search CorpusStore --symbols --format json \
+            > "/tmp/specd-search-python-${{ matrix.target.name }}.json" 2>&1
+          echo $? > "/tmp/specd-search-python-${{ matrix.target.name }}.exit"
+          set -e
+
+      - name: Record environment and frozen inputs
+        run: |
+          {
+            echo "target=${{ matrix.target.name }}"
+            echo "session_search_sha=$(git rev-parse HEAD)"
+            echo "node=$(node --version)"
+            echo "npm=$(npm --version)"
+            echo "specd=$(specd --version)"
+          } > "/tmp/specd-env-${{ matrix.target.name }}.txt"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: specd-brownfield-${{ matrix.target.name }}
+          path: |
+            /tmp/specd-*.json
+            /tmp/specd-*.txt
+            /tmp/specd-*.exit
