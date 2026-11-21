@@ -76,3 +76,107 @@ jobs:
             /tmp/specd-*.json
             /tmp/specd-*.txt
             /tmp/specd-*.exit
+
+  graph-upstream-mjs:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - name: current
+            sha: 2a0b213a5cc3a4b00e2bc680e42a5e0846ee56a7
+          - name: h1-pr66
+            sha: c9c27423eb4b87be1763ee4042a89abda64eaa34
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Prepare exact upstream SpecD with MJS admission patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --quiet https://github.com/specd-sdd/SpecD.git /tmp/specd-upstream
+          git -C /tmp/specd-upstream checkout --detach e003de1525ff8636a014ee2838b37f59902e55e0
+          corepack enable
+          corepack prepare pnpm@10.6.5 --activate
+          cd /tmp/specd-upstream
+          pnpm install --frozen-lockfile
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("packages/code-graph/src/infrastructure/tree-sitter/typescript-language-adapter.ts")
+          text = p.read_text()
+          old = "return { '.ts': 'typescript', '.tsx': 'tsx', '.js': 'javascript', '.jsx': 'jsx' }"
+          new = "return { '.ts': 'typescript', '.tsx': 'tsx', '.js': 'javascript', '.jsx': 'jsx', '.mjs': 'javascript' }"
+          if old not in text:
+              raise SystemExit("expected SpecD extension map not found")
+          p.write_text(text.replace(old, new, 1))
+          PY
+          git diff --check
+          pnpm --filter @specd/cli... --workspace-concurrency=1 build
+          node packages/cli/dist/index.js --version
+
+      - name: Checkout frozen Session Search snapshot
+        run: git checkout --detach '${{ matrix.target.sha }}'
+
+      - name: Initialize exact upstream SpecD in ephemeral workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          SPECD=/tmp/specd-upstream/packages/cli/dist/index.js
+          node "$SPECD" project init \
+            --schema @specd/schema-std \
+            --workspace default \
+            --workspace-path specs/ \
+            --format json | tee "/tmp/specd-upstream-init-${{ matrix.target.name }}.json"
+
+      - name: Build exact upstream code graph
+        shell: bash
+        run: |
+          set -euo pipefail
+          SPECD=/tmp/specd-upstream/packages/cli/dist/index.js
+          node "$SPECD" graph index --format json \
+            | tee "/tmp/specd-upstream-index-${{ matrix.target.name }}.json"
+          node "$SPECD" graph stats --format json \
+            | tee "/tmp/specd-upstream-stats-${{ matrix.target.name }}.json"
+
+      - name: Probe MJS symbols and H1 router impact
+        shell: bash
+        run: |
+          set -euo pipefail
+          SPECD=/tmp/specd-upstream/packages/cli/dist/index.js
+          node "$SPECD" graph search validateSearchInput --symbols --format json \
+            | tee "/tmp/specd-upstream-search-route-${{ matrix.target.name }}.json"
+          node "$SPECD" graph search makeRouterHandler --symbols --format json \
+            | tee "/tmp/specd-upstream-search-handler-${{ matrix.target.name }}.json"
+          node "$SPECD" graph impact \
+            --file functions/router/core.mjs functions/router/handler.mjs \
+            --direction dependents \
+            --include-tests \
+            --format json \
+            | tee "/tmp/specd-upstream-impact-router-${{ matrix.target.name }}.json"
+
+      - name: Record exact upstream environment
+        shell: bash
+        run: |
+          {
+            echo "target=${{ matrix.target.name }}"
+            echo "session_search_sha=$(git rev-parse HEAD)"
+            echo "node=$(node --version)"
+            echo "pnpm=$(pnpm --version)"
+            echo "specd_source_sha=$(git -C /tmp/specd-upstream rev-parse HEAD)"
+            echo "specd_code_graph_version=$(node -p \"require('/tmp/specd-upstream/packages/code-graph/package.json').version\")"
+          } > "/tmp/specd-upstream-env-${{ matrix.target.name }}.txt"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: specd-upstream-mjs-${{ matrix.target.name }}
+          path: |
+            /tmp/specd-upstream-*.json
+            /tmp/specd-upstream-*.txt
