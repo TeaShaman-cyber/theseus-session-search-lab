@@ -7,3 +7,4 @@ __pycache__/
 *.zip
 functions/node_modules/
 functions/dist/
+specd.local.yaml

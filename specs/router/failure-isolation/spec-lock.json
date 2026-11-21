@@ -1,0 +1,15 @@
+{
+  "schema": {
+    "name": "schema-std",
+    "version": 1
+  },
+  "dependsOn": [],
+  "implementation": [
+    {
+      "file": "default:functions/router/handler.mjs",
+      "symbols": [
+        "makeRouterHandler"
+      ]
+    }
+  ]
+}
