@@ -136,6 +136,69 @@ class NotebookLmGeminiAdapterTest(unittest.TestCase):
             self.assertEqual(first["assistant_message_count"], 1)
             self.assertEqual(first["preservation_scope"], "PARTIAL_SECONDARY_COPY")
 
+    def test_html_table_cells_and_rows_keep_searchable_boundaries(self):
+        from session_search.notebooklm_gemini import materialize_takeout
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            source = write_takeout(root / "takeout.zip", {
+                "Takeout/NotebookLM/Test/Sources/table.html":
+                    "<p><strong>User</strong> : show settings"
+                    "<strong>Gemini</strong> : "
+                    "<table><tr><th>Setting</th><th>Value</th></tr>"
+                    "<tr><td>timeout</td><td>30</td></tr></table></p>",
+            })
+            artifact = normalize_artifact(materialize_takeout(source, root / "out")[0])
+            answer = artifact.messages[1].text
+            self.assertIn("Setting", answer)
+            self.assertIn("Value", answer)
+            self.assertIn("timeout", answer)
+            self.assertIn("30", answer)
+            self.assertNotIn("SettingValue", answer)
+            self.assertNotIn("timeout30", answer)
+
+    def test_parent_hash_and_parsed_messages_use_one_captured_archive_snapshot(self):
+        from unittest import mock
+        import session_search.notebooklm_gemini as adapter
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            source = write_takeout(root / "takeout.zip", {
+                "Takeout/NotebookLM/Test/Sources/chat.html":
+                    "<p><strong>User</strong> : old question"
+                    "<strong>Gemini</strong> : old answer</p>",
+            })
+            replacement = write_takeout(root / "replacement.zip", {
+                "Takeout/NotebookLM/Test/Sources/chat.html":
+                    "<p><strong>User</strong> : replacement question"
+                    "<strong>Gemini</strong> : replacement answer</p>",
+            }).read_bytes()
+            original_parent = source.read_bytes()
+            real_read_bytes = pathlib.Path.read_bytes
+            mutated = {"done": False}
+
+            def read_then_replace(path):
+                data = real_read_bytes(path)
+                if path == source and not mutated["done"]:
+                    source.write_bytes(replacement)
+                    mutated["done"] = True
+                return data
+
+            with mock.patch.object(pathlib.Path, "read_bytes", new=read_then_replace):
+                child = adapter.materialize_takeout(source, root / "out")[0]
+
+            artifact = normalize_artifact(child)
+            self.assertEqual(
+                [m.text for m in artifact.messages],
+                ["old question", "old answer"],
+            )
+            with zipfile.ZipFile(child) as zf:
+                manifest = json.loads(zf.read("manifest.json"))
+            self.assertEqual(
+                manifest["source_export_sha256"],
+                hashlib.sha256(original_parent).hexdigest(),
+            )
+
     def test_ingest_reuses_existing_corpus_search(self):
         from session_search.notebooklm_gemini import ingest_takeout
         from session_search.search import search_corpus

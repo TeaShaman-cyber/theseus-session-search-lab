@@ -4,6 +4,7 @@ import argparse
 import dataclasses
 import hashlib
 import html.parser
+import io
 import json
 import os
 import pathlib
@@ -46,11 +47,16 @@ class _PlainTextParser(html.parser.HTMLParser):
             self.parts.append("\n")
         elif tag == "li":
             self.parts.append("\n- ")
+        elif tag == "tr":
+            self.parts.append("\n")
         elif tag in self._BLOCK_START:
             self.parts.append("\n")
 
     def handle_endtag(self, tag: str) -> None:
-        if tag.lower() in self._BLOCK_END:
+        tag = tag.lower()
+        if tag in {"td", "th"}:
+            self.parts.append(" ")
+        elif tag == "tr" or tag in self._BLOCK_END:
             self.parts.append("\n")
 
     def handle_data(self, data: str) -> None:
@@ -178,8 +184,6 @@ def _zip_write(zf: zipfile.ZipFile, name: str, data: bytes) -> None:
 
 
 def _portable_zip_bytes(member: str, payload_bytes: bytes, manifest: dict) -> bytes:
-    import io
-
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as zf:
         _zip_write(zf, member, payload_bytes)
@@ -218,7 +222,7 @@ def _materialize_takeout_snapshot(source: pathlib.Path, output_dir: pathlib.Path
     parent_sha = _sha256(raw_export)
 
     conversations: list[_ConversationSource] = []
-    with zipfile.ZipFile(source) as zf:
+    with zipfile.ZipFile(io.BytesIO(raw_export)) as zf:
         names = safe_members(zf)
         candidates = _candidate_source_members(names)
         for member_name in candidates:
