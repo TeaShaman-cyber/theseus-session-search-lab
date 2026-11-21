@@ -215,23 +215,22 @@ jobs:
           git diff --check
           pnpm --filter @specd/cli... --workspace-concurrency=1 build
 
-      - name: Initialize and validate Router Failure Isolation spec
+      - name: Validate persisted Router Failure Isolation spec
         shell: bash
         run: |
           set -euo pipefail
           SPECD=/tmp/specd-upstream/packages/cli/dist/index.js
           node "$SPECD" project init             --schema @specd/schema-std             --workspace default             --workspace-path specs/             --force             --format json             | tee /tmp/specd-project-init.json
-          node "$SPECD" specs init default:router/failure-isolation --format json \
-            | tee /tmp/specd-spec-init.json
-          node "$SPECD" specs implementation add default:router/failure-isolation \
-            --file functions/router/handler.mjs \
-            --symbol makeRouterHandler \
-            --format json \
-            | tee /tmp/specd-spec-link.json
-          node "$SPECD" specs validate default:router/failure-isolation --format json \
-            | tee /tmp/specd-spec-validate.json
-          node "$SPECD" specs implementation list default:router/failure-isolation --format json \
-            | tee /tmp/specd-spec-implementation.json
+          node "$SPECD" specs validate default:router/failure-isolation --format json             | tee /tmp/specd-spec-validate.json
+          node "$SPECD" specs implementation list default:router/failure-isolation --format json             | tee /tmp/specd-spec-implementation.json
+          jq -e '
+            .implementation == [
+              {
+                "file": "default:functions/router/handler.mjs",
+                "symbols": ["makeRouterHandler"]
+              }
+            ]
+          ' /tmp/specd-spec-implementation.json
 
       - name: Index code and prove covering spec
         shell: bash
@@ -248,12 +247,11 @@ jobs:
           jq -e '.coveringSpecs | map(select(.specId == "default:router/failure-isolation")) | length > 0' \
             /tmp/specd-spec-impact.json
 
-      - name: Record generated persisted spec state
+      - name: Record persisted spec state
         shell: bash
         run: |
           cp specs/router/failure-isolation/spec-lock.json /tmp/specd-router-failure-isolation-spec-lock.json
           sha256sum specs/router/failure-isolation/spec-lock.json > /tmp/specd-router-failure-isolation-spec-lock.sha256
-          git diff -- specs/router/failure-isolation/spec-lock.json > /tmp/specd-router-failure-isolation-spec-lock.diff
 
       - uses: actions/upload-artifact@v4
         if: always()
