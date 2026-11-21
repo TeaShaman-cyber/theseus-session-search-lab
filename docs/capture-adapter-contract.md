@@ -91,7 +91,7 @@ For a supported prompt card, the source itself must expose:
 
 Exactly one app ID establishes provider conversation identity. Multiple or missing IDs do not authorize the adapter to guess; those cards are isolated under deterministic unresolved session identity while retaining all observed related IDs.
 
-The account-activity timestamp applies to the observed prompt event. The adapter must not manufacture an assistant response timestamp from that same value. Ordering is preserved separately through a snapshot-independent integer provider-order key derived from prompt second + activity signature + role. A hash collision between different activity signatures within the same second blocks rather than silently reorders evidence.
+The account-activity timestamp applies to the observed prompt event. The adapter must not manufacture an assistant response timestamp from that same value. Ordering is preserved separately through a snapshot-independent integer provider-order key derived from prompt second + activity signature + occurrence rank + role. A hash collision between different activity signatures within the same second blocks rather than silently reorders evidence.
 
 Attachment hrefs are provenance, not implicit file authority. Relative references are URL-decoded and resolved only when they map unambiguously to a regular member of the same captured Takeout. Resolved members record exact SHA-256 and byte size. Missing or malformed references remain explicit unresolved attachment references; they do not cause invented attachment content.
 

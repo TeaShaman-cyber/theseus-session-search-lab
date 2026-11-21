@@ -384,6 +384,80 @@ class GoogleGeminiMyActivityAdapterTest(unittest.TestCase):
             self.assertEqual([m.text for m in assistants], ["OK", "OK"])
             self.assertEqual(len({m.message_id for m in assistants}), 2)
 
+    def test_identical_same_second_occurrences_keep_prompt_response_pairs_adjacent(self):
+        from session_search.google_gemini_activity import materialize_takeout
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            card = activity_card(
+                user="same question",
+                answer="same answer",
+                timestamp="20 нояб. 2026 г., 10:00:00 CET",
+                app_ids=["abc123"],
+            )
+            source = write_takeout(root / "takeout.tgz", gemini_html=card + card)
+            artifact = normalize_artifact(materialize_takeout(source, root / "out")[0])
+            self.assertEqual(
+                [(m.role, m.text) for m in artifact.messages],
+                [
+                    ("user", "same question"),
+                    ("assistant", "same answer"),
+                    ("user", "same question"),
+                    ("assistant", "same answer"),
+                ],
+            )
+            orders = [m.provider_order for m in artifact.messages]
+            self.assertEqual(orders, sorted(orders))
+            self.assertEqual(len(set(orders)), 4)
+
+    def test_attachment_resolution_change_does_not_change_activity_message_identity(self):
+        from session_search.google_gemini_activity import ingest_takeout
+        import sqlite3
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus"
+            card = activity_card(
+                user="same attachment event",
+                answer="same response",
+                timestamp="20 нояб. 2026 г., 10:00:00 CET",
+                app_ids=["abc123"],
+                attachment_hrefs=["evidence%20file.txt"],
+            )
+            unresolved = write_takeout(
+                root / "unresolved.tgz",
+                gemini_html=card,
+            )
+            resolved = write_takeout(
+                root / "resolved.tgz",
+                gemini_html=card,
+                extra_members={
+                    "Takeout/Мои действия/Приложения Gemini/evidence file.txt":
+                        b"resolved attachment bytes",
+                },
+            )
+
+            self.assertEqual(ingest_takeout(unresolved, corpus)["status"], "COMPLETE")
+            con = sqlite3.connect(corpus / "corpus.sqlite3")
+            before = con.execute(
+                "SELECT message_id,role,text FROM messages "
+                "WHERE session_id=? ORDER BY ordinal",
+                ("gemini:abc123",),
+            ).fetchall()
+            con.close()
+
+            self.assertEqual(ingest_takeout(resolved, corpus)["status"], "COMPLETE")
+            con = sqlite3.connect(corpus / "corpus.sqlite3")
+            after = con.execute(
+                "SELECT message_id,role,text FROM messages "
+                "WHERE session_id=? ORDER BY ordinal",
+                ("gemini:abc123",),
+            ).fetchall()
+            con.close()
+
+            self.assertEqual(before, after)
+            self.assertEqual(len(after), 2)
+
     def test_overlapping_partial_snapshots_keep_prompt_response_pairs_in_provider_order(self):
         from session_search.google_gemini_activity import ingest_takeout
         import sqlite3
