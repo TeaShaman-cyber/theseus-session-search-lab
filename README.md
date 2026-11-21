@@ -355,6 +355,34 @@ The adapter accepts only NotebookLM `Sources/*.html` members containing explicit
 
 The parent Takeout SHA-256, source-member SHA-256, source path, role labels, and deterministic message order are retained as provenance. Identical text stored at different NotebookLM source paths remains distinct evidence rather than being heuristically deduplicated. A later official Gemini export is a stronger independent source and should be reconciled separately; absence from NotebookLM never proves that a Gemini conversation did not exist.
 
+### Official Google My Activity Gemini adapter
+
+Google Takeout exports from **My Activity -> Gemini Apps** can be converted into the portable Session Search artifact contract with stronger provider-origin provenance than NotebookLM-preserved copies.
+
+Inspect an export without ingesting it:
+
+```bash
+python3 -m session_search.google_my_activity_gemini takeout.tgz --inspect
+```
+
+Materialize portable artifacts:
+
+```bash
+python3 -m session_search.google_my_activity_gemini takeout.tgz --output-dir ./gemini-my-activity-artifacts
+```
+
+Or ingest into a separate candidate corpus:
+
+```bash
+python3 -m session_search.google_my_activity_gemini takeout.tgz --corpus /private/path/session-search-corpus-candidate
+```
+
+The adapter treats explicit `gemini.google.com/app/<id>` metadata as provider conversation identity only when one request activity resolves to exactly one ID. A request that carries multiple app IDs is preserved as a separate ambiguous event rather than being duplicated across conversations or assigned to the first ID by position. Prompt-only activities are retained without inventing an assistant reply. Feedback, generated-media lifecycle entries, and other non-request activity remain outside the dialogue projection.
+
+Provider timestamps are preserved when the observed Takeout locale/time-zone form is supported. Attachment links are retained as provenance and, when the referenced Takeout member is present, are bound to exact member path, byte size, and SHA-256 without injecting binary attachment contents into dialogue search.
+
+The exact parent Takeout SHA-256 and exact Gemini activity HTML SHA-256 are bound into every child. Coverage remains `PARTIAL_SESSION_SLICE`: My Activity is stronger provider-origin evidence but is not proof that deleted/disabled-history conversations never existed. NotebookLM-preserved Gemini artifacts remain an independent secondary provenance lane; reconciliation must not silently delete them merely because an official export later exists.
+
 ### Speed Booster Toolkit ChatGPT export adapter
 
 Speed Booster Toolkit JSON exports can be transcoded into the same portable Session Search artifact contract without making the browser extension a runtime dependency. The observed export shape is one sequential chat slice with top-level `title`, `exported_at`, `created_at`, and `messages[]` records containing role, timestamp, model, text, and optional source/image metadata.

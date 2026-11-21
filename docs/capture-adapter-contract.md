@@ -92,6 +92,26 @@ Every child artifact binds:
 
 This source can improve retrieval continuity but cannot support historical-absence claims. A later official Gemini/My Activity export should be treated as stronger independent evidence and reconciled rather than silently replacing the rescued NotebookLM copies.
 
+## Official Google My Activity Gemini adapter
+
+The My Activity Gemini adapter consumes provider-origin Takeout activity HTML without treating the activity log as proof of provider-complete history.
+
+Observed request activities contain a prompt, one provider activity timestamp, the Gemini response when one was retained, and service metadata linking the activity to one or more `gemini.google.com/app/<id>` identities. Exactly one app ID is accepted as direct conversation identity. Multiple IDs are preserved as one ambiguous event with the full related-ID set; the adapter does not choose a primary ID by list order and does not duplicate the event into multiple sessions.
+
+The adapter preserves:
+- exact parent Takeout SHA-256 and byte size;
+- exact Gemini activity HTML member name and SHA-256;
+- provider app ID where unambiguous;
+- raw provider timestamp plus parsed epoch when the locale/time zone is supported;
+- deterministic user/assistant message identity and provider order;
+- prompt-only activities without a fabricated assistant turn;
+- attachment hrefs and exact Takeout member hash/size when resolvable;
+- `PARTIAL_SESSION_SLICE` coverage with preservation scope `PROVIDER_ACTIVITY_HISTORY_PARTIAL`.
+
+Feedback and other non-request activity are counted for inspection but are not projected as dialogue. Binary attachments remain evidence references rather than searchable dialogue payload.
+
+Official My Activity and NotebookLM-preserved Gemini captures are independent provenance lanes. Exact overlap can support reconciliation, but neither source silently replaces the other and absence from either source does not prove historical absence.
+
 ## Official ChatGPT account-export adapter
 
 The ChatGPT account-export adapter treats the provider mapping graph as authoritative historical evidence. `parent` links define graph structure; `current_node` is an observed active terminal marker, not branch identity authority. Every terminal leaf is materialized as its own root-to-leaf portable artifact so alternate continuations are never concatenated into fictitious dialogue.
