@@ -81,6 +81,7 @@ class _AttachmentRef:
 @dataclasses.dataclass(frozen=True)
 class _RequestEvent:
     source_card_index: int
+    occurrence_index: int
     conversation_ids: tuple[str, ...]
     timestamp_raw: str
     create_time: float
@@ -316,6 +317,7 @@ def _parse_request(
     )
     return _RequestEvent(
         source_card_index=source_card_index,
+        occurrence_index=0,
         conversation_ids=_caption_ids(caption_html),
         timestamp_raw=timestamp_raw,
         create_time=_parse_timestamp(timestamp_raw),
@@ -325,7 +327,7 @@ def _parse_request(
     )
 
 
-def _event_identity(event: _RequestEvent) -> str:
+def _event_fingerprint(event: _RequestEvent) -> str:
     obj = {
         "conversation_ids": list(event.conversation_ids),
         "timestamp_raw": event.timestamp_raw,
@@ -334,6 +336,48 @@ def _event_identity(event: _RequestEvent) -> str:
         "attachments": [dataclasses.asdict(ref) for ref in event.attachments],
     }
     return _sha256(_stable_json_bytes(obj))
+
+
+def _assign_occurrence_indices(events: list[_RequestEvent]) -> list[_RequestEvent]:
+    grouped: dict[str, list[_RequestEvent]] = {}
+    for event in events:
+        grouped.setdefault(_event_fingerprint(event), []).append(event)
+
+    ranks: dict[tuple[str, int], int] = {}
+    for fingerprint, matches in grouped.items():
+        # Takeout cards are newest-first. Ranking identical provider events from
+        # oldest to newest keeps existing ranks stable when a later export only
+        # prepends newer occurrences.
+        for rank, event in enumerate(
+            sorted(matches, key=lambda item: item.source_card_index, reverse=True)
+        ):
+            ranks[(fingerprint, event.source_card_index)] = rank
+
+    return [
+        dataclasses.replace(
+            event,
+            occurrence_index=ranks[(_event_fingerprint(event), event.source_card_index)],
+        )
+        for event in events
+    ]
+
+
+def _event_identity(event: _RequestEvent) -> str:
+    return _sha256(
+        _stable_json_bytes(
+            [_event_fingerprint(event), int(event.occurrence_index)]
+        )
+    )
+
+
+def _provider_order(event: _RequestEvent, role_rank: int) -> int:
+    # session_search_order is projected as provider_order. It must therefore be
+    # merge-safe across independently captured partial exports, not a local
+    # zero-based ordinal. Provider timestamps are second-resolution; a stable
+    # event-identity tie break preserves user/assistant adjacency within a second.
+    seconds = int(event.create_time)
+    tie = int(_event_identity(event)[:8], 16) & 0x3FFFFFFF
+    return seconds * (1 << 31) + (tie << 1) + int(role_rank)
 
 
 def _message_id(session_id: str, event: _RequestEvent, role: str, text: str) -> str:
@@ -393,10 +437,10 @@ def _payload_for_session(session: _Session) -> dict:
     messages: list[dict] = []
     attachment_refs: list[dict] = []
     seen_attachments: set[tuple] = set()
-    order = 0
     for event in session.events:
         event_metadata = {
             "google_my_activity_source_card_index": event.source_card_index,
+            "google_my_activity_occurrence_index": event.occurrence_index,
             "google_my_activity_timestamp_raw": event.timestamp_raw,
             "google_my_activity_conversation_ids": list(event.conversation_ids),
             "google_my_activity_grouping": session.grouping,
@@ -418,11 +462,10 @@ def _payload_for_session(session: _Session) -> dict:
                 "content": {"content_type": "text", "parts": [event.prompt]},
                 "metadata": {
                     **event_metadata,
-                    "session_search_order": order,
+                    "session_search_order": _provider_order(event, 0),
                 },
             }
         )
-        order += 1
         if event.response:
             messages.append(
                 {
@@ -437,11 +480,10 @@ def _payload_for_session(session: _Session) -> dict:
                     "content": {"content_type": "text", "parts": [event.response]},
                     "metadata": {
                         **event_metadata,
-                        "session_search_order": order,
+                        "session_search_order": _provider_order(event, 1),
                     },
                 }
             )
-            order += 1
 
     return {
         "conversation_id": session.session_id,
@@ -536,6 +578,12 @@ def _materialize_snapshot(
                 )
             )
 
+        if not events:
+            raise ValueError(
+                "BLOCKED_UNSUPPORTED_GOOGLE_MY_ACTIVITY_GEMINI: "
+                "no supported request activities; locale or format may be unsupported"
+            )
+        events = _assign_occurrence_indices(events)
         sessions = _group_sessions(events)
         pending: list[tuple[pathlib.Path, bytes]] = []
         outputs: list[pathlib.Path] = []

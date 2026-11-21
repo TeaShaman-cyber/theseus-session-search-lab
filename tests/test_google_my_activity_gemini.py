@@ -3,6 +3,7 @@ import hashlib
 import io
 import json
 import pathlib
+import sqlite3
 import tarfile
 import tempfile
 import unittest
@@ -179,6 +180,75 @@ class GoogleMyActivityGeminiTest(unittest.TestCase):
             source = make_takeout(
                 root / "takeout.tgz",
                 card("Отправлен запрос q<br>timestamp changed<br>a", ["bad"]),
+            )
+            with self.assertRaisesRegex(ValueError, "BLOCKED_UNSUPPORTED_GOOGLE_MY_ACTIVITY_GEMINI"):
+                materialize_takeout(source, root / "out")
+
+    def test_partial_exports_merge_in_timestamp_order_without_order_reset(self):
+        from session_search.google_my_activity_gemini import materialize_takeout
+        from session_search.corpus_store import ingest_artifact
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            first = make_takeout(
+                root / "first.tgz",
+                request("q0", "a0", "21 окт. 2026 г., 11:56:23 CET", ["merge"]),
+            )
+            second = make_takeout(
+                root / "second.tgz",
+                request("q1", "a1", "21 нояб. 2026 г., 16:28:40 CET", ["merge"]),
+            )
+            first_child = materialize_takeout(first, root / "first-out")[0]
+            second_child = materialize_takeout(second, root / "second-out")[0]
+            corpus = root / "corpus"
+            ingest_artifact(first_child, corpus)
+            ingest_artifact(second_child, corpus)
+            with sqlite3.connect(corpus / "corpus.sqlite3") as conn:
+                rows = conn.execute(
+                    "SELECT role,text FROM messages WHERE session_id=? ORDER BY ordinal",
+                    ("google-gemini:merge",),
+                ).fetchall()
+            self.assertEqual(rows, [("user", "q0"), ("assistant", "a0"), ("user", "q1"), ("assistant", "a1")])
+
+    def test_identical_activity_cards_remain_distinct_occurrences(self):
+        from session_search.google_my_activity_gemini import materialize_takeout
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            repeated = request(
+                "same q",
+                "same a",
+                "21 нояб. 2026 г., 16:28:40 CET",
+                ["dup"],
+            )
+            source = make_takeout(root / "takeout.tgz", repeated + repeated)
+            artifact = normalize_artifact(materialize_takeout(source, root / "out")[0])
+            self.assertEqual(len(artifact.messages), 4)
+            self.assertEqual(len({m.message_id for m in artifact.messages}), 4)
+
+            multi = request(
+                "cross",
+                "answer",
+                "21 нояб. 2026 г., 16:28:40 CET",
+                ["one", "two"],
+            )
+            multi_source = make_takeout(root / "multi.tgz", multi + multi)
+            outputs = materialize_takeout(multi_source, root / "multi-out")
+            self.assertEqual(len(outputs), 2)
+            sessions = [normalize_artifact(path).session_id for path in outputs]
+            self.assertEqual(len(set(sessions)), 2)
+
+    def test_unsupported_activity_locale_fails_closed_instead_of_empty_success(self):
+        from session_search.google_my_activity_gemini import materialize_takeout
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            source = make_takeout(
+                root / "takeout.tgz",
+                card(
+                    "Sent prompt hello<br>Nov 21, 2026, 4:28:40 PM CET<br>answer",
+                    ["english"],
+                ),
             )
             with self.assertRaisesRegex(ValueError, "BLOCKED_UNSUPPORTED_GOOGLE_MY_ACTIVITY_GEMINI"):
                 materialize_takeout(source, root / "out")
