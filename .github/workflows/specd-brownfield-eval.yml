@@ -225,7 +225,7 @@ jobs:
             | tee /tmp/specd-spec-init.json
           node "$SPECD" specs implementation add default:router/failure-isolation \
             --file functions/router/handler.mjs \
-            --symbol searchFederated \
+            --symbol makeRouterHandler \
             --format json \
             | tee /tmp/specd-spec-link.json
           node "$SPECD" specs validate default:router/failure-isolation --format json \
