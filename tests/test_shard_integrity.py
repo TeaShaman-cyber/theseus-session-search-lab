@@ -153,6 +153,77 @@ class ShardSourceIntegrityTest(unittest.TestCase):
             self.assertIn("BRANCH_MATCH", result["route_states"])
             self.assertGreaterEqual(result["closure_artifact_count"], 3)
 
+    def test_direct_branch_shard_replays_full_official_family_closure(self):
+        from session_search.artifact import normalize_artifact
+        from session_search.chatgpt_export import ingest_export, materialize_export
+        from session_search.neon_materializer import _load_rows_for_sessions
+
+        helper = ChatGPTExportAdapterTest()
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            source = helper.write_export(
+                root, [helper.conversation(cid="route-split")]
+            )
+            children = materialize_export(source, root / "children")
+            by_id = {normalize_artifact(path).session_id: path for path in children}
+            alt_id = next(
+                sid for sid in by_id if sid.startswith("route-split~branch-")
+            )
+            corpus = root / "corpus"
+            self.assertEqual(ingest_export(source, corpus)["status"], "COMPLETE")
+
+            db = CorpusPaths.from_root(corpus).db
+            with sqlite3.connect(db) as con:
+                sessions, messages = _load_rows_for_sessions(con, (alt_id,))
+                adapters = [
+                    str(row[0])
+                    for row in con.execute(
+                        """
+                        SELECT DISTINCT a.source_adapter
+                        FROM artifact_routes r
+                        JOIN artifacts a ON a.artifact_id=r.artifact_id
+                        WHERE r.projected_session_id=?
+                        ORDER BY a.source_adapter
+                        """,
+                        (alt_id,),
+                    )
+                ]
+                route_states = {
+                    str(row[0])
+                    for row in con.execute(
+                        """
+                        SELECT DISTINCT r.route_state
+                        FROM artifact_routes r
+                        JOIN artifacts a ON a.artifact_id=r.artifact_id
+                        WHERE r.projected_session_id=?
+                        """,
+                        (alt_id,),
+                    )
+                }
+            self.assertEqual(route_states, {"DIRECT"})
+
+            fake_shard = {
+                "provider": "chatgpt",
+                "shard_id": "chatgpt-0001",
+                "sessions": len(sessions),
+                "searchable_messages": len(messages),
+                "searchable_text_bytes": sum(
+                    len(row[6].encode("utf-8")) for row in messages
+                ),
+            }
+            with mock.patch(
+                "session_search.shard_integrity._select_shard_assignment",
+                return_value=(fake_shard, (alt_id,), adapters),
+            ):
+                result = verify_shard_source_integrity(
+                    corpus, provider="chatgpt", shard_id="chatgpt-0001"
+                )
+
+            self.assertEqual(result["status"], "VERIFIED")
+            self.assertEqual(result["route_states"], ["DIRECT"])
+            self.assertEqual(result["shard_artifact_count"], 1)
+            self.assertEqual(result["closure_artifact_count"], len(children))
+
     def test_unrelated_corrupted_blob_is_outside_chatgpt_family_closure(self):
         from session_search.chatgpt_export import ingest_export, materialize_export
         from session_search.artifact import normalize_artifact

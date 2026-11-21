@@ -70,7 +70,13 @@ def _route_rows_for_artifacts(
 def _chatgpt_family_closure_shas(
     all_routes: list[tuple[str, ...]], target_routes: list[tuple[str, ...]]
 ) -> tuple[set[str], tuple[str, ...]]:
-    family_ids = tuple(sorted({row[1] for row in target_routes if row[3] != "DIRECT"}))
+    family_id_set = {row[1] for row in target_routes if row[3] != "DIRECT"}
+    for row in target_routes:
+        accepted_session_id = row[1]
+        source_adapter = row[6]
+        if source_adapter == "chatgpt-export" and "~branch-" in accepted_session_id:
+            family_id_set.add(accepted_session_id.split("~branch-", 1)[0])
+    family_ids = tuple(sorted(family_id_set))
     closure_shas = {row[0] for row in target_routes}
     if not family_ids:
         return closure_shas, family_ids
