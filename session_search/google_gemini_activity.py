@@ -578,6 +578,31 @@ def _activity_signature(card: _PromptCard) -> str:
     )
 
 
+_PROVIDER_ORDER_TIE_BITS = 30
+_PROVIDER_ORDER_TIE_MASK = (1 << _PROVIDER_ORDER_TIE_BITS) - 1
+_PROVIDER_ORDER_SHIFT = _PROVIDER_ORDER_TIE_BITS + 1
+_SQLITE_MAX_INTEGER = (1 << 63) - 1
+
+
+def _provider_order_components(card: _PromptCard) -> tuple[int, int, str]:
+    second = int(card.timestamp_epoch)
+    signature = _activity_signature(card)
+    tie = int(signature[:8], 16) & _PROVIDER_ORDER_TIE_MASK
+    return second, tie, signature
+
+
+def _provider_order(card: _PromptCard, role: str) -> int:
+    second, tie, _ = _provider_order_components(card)
+    role_bit = 0 if role == "user" else 1
+    value = (second << _PROVIDER_ORDER_SHIFT) | (tie << 1) | role_bit
+    if value < 0 or value > _SQLITE_MAX_INTEGER:
+        raise ValueError(
+            "BLOCKED_GEMINI_PROVIDER_ORDER_OUT_OF_RANGE: "
+            f"{card.timestamp_raw}"
+        )
+    return value
+
+
 def _activity_occurrence_id(
     session_id: str,
     card: _PromptCard,
@@ -634,10 +659,17 @@ def _messages_for_cards(
 ) -> list[dict]:
     ordered_cards = sorted(cards, key=lambda card: (card.timestamp_epoch, -card.card_index))
     messages: list[dict] = []
-    order = 0
     signature_counts: collections.Counter[str] = collections.Counter()
+    ordering_witnesses: dict[tuple[int, int], str] = {}
     for card in ordered_cards:
-        signature = _activity_signature(card)
+        second, tie, signature = _provider_order_components(card)
+        witness_key = (second, tie)
+        prior_signature = ordering_witnesses.get(witness_key)
+        if prior_signature is not None and prior_signature != signature:
+            raise ValueError(
+                "BLOCKED_GEMINI_PROVIDER_ORDER_HASH_COLLISION"
+            )
+        ordering_witnesses[witness_key] = signature
         occurrence_rank = int(signature_counts[signature])
         signature_counts[signature] += 1
         occurrence_id = _activity_occurrence_id(
@@ -653,12 +685,15 @@ def _messages_for_cards(
             "gemini_activity_related_app_ids": list(card.app_ids),
             "gemini_activity_occurrence_id": occurrence_id,
             "gemini_activity_occurrence_rank": occurrence_rank,
+            "gemini_activity_provider_order_basis": "PROMPT_SECOND_PLUS_ACTIVITY_SIGNATURE_V1",
         }
+        user_order = _provider_order(card, "user")
+        assistant_order = _provider_order(card, "assistant")
         user_metadata = {
             **common,
             "gemini_activity_time_semantics": "USER_PROMPT_ACTIVITY_TIME",
             "gemini_attachment_refs": [ref.as_metadata() for ref in card.attachment_refs],
-            "session_search_order": order,
+            "session_search_order": user_order,
         }
         messages.append(
             {
@@ -674,12 +709,11 @@ def _messages_for_cards(
                 "metadata": user_metadata,
             }
         )
-        order += 1
         if card.assistant_text:
             assistant_metadata = {
                 **common,
                 "gemini_activity_time_semantics": "RESPONSE_TIME_NOT_EXPOSED",
-                "session_search_order": order,
+                "session_search_order": assistant_order,
             }
             messages.append(
                 {
@@ -695,7 +729,6 @@ def _messages_for_cards(
                     "metadata": assistant_metadata,
                 }
             )
-            order += 1
     return messages
 
 

@@ -118,7 +118,11 @@ class GoogleGeminiMyActivityAdapterTest(unittest.TestCase):
             )
             self.assertIsNotNone(artifact.messages[0].create_time)
             self.assertIsNone(artifact.messages[1].create_time)
-            self.assertEqual([m.provider_order for m in artifact.messages], [0, 1, 2, 3])
+            orders = [m.provider_order for m in artifact.messages]
+            self.assertTrue(all(isinstance(value, int) for value in orders))
+            self.assertEqual(orders, sorted(orders))
+            self.assertEqual(orders[1], orders[0] + 1)
+            self.assertEqual(orders[3], orders[2] + 1)
 
     def test_multi_app_prompt_is_preserved_as_unresolved_instead_of_misattributed(self):
         from session_search.google_gemini_activity import inspect_takeout, materialize_takeout
@@ -379,6 +383,61 @@ class GoogleGeminiMyActivityAdapterTest(unittest.TestCase):
             assistants = [m for m in artifact.messages if m.role == "assistant"]
             self.assertEqual([m.text for m in assistants], ["OK", "OK"])
             self.assertEqual(len({m.message_id for m in assistants}), 2)
+
+    def test_overlapping_partial_snapshots_keep_prompt_response_pairs_in_provider_order(self):
+        from session_search.google_gemini_activity import ingest_takeout
+        import sqlite3
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus"
+
+            a = activity_card(
+                user="A question",
+                answer="A answer",
+                timestamp="20 нояб. 2026 г., 10:00:00 CET",
+                app_ids=["abc123"],
+            )
+            b = activity_card(
+                user="B question",
+                answer="B answer",
+                timestamp="20 нояб. 2026 г., 11:00:00 CET",
+                app_ids=["abc123"],
+            )
+            c = activity_card(
+                user="C question",
+                answer="C answer",
+                timestamp="20 нояб. 2026 г., 12:00:00 CET",
+                app_ids=["abc123"],
+            )
+
+            first = write_takeout(root / "first.tgz", gemini_html=b + a)
+            second = write_takeout(root / "second.tgz", gemini_html=c + b)
+
+            self.assertEqual(ingest_takeout(first, corpus)["status"], "COMPLETE")
+            self.assertEqual(ingest_takeout(second, corpus)["status"], "COMPLETE")
+
+            con = sqlite3.connect(corpus / "corpus.sqlite3")
+            rows = con.execute(
+                "SELECT role,text,provider_order FROM messages "
+                "WHERE session_id=? ORDER BY ordinal",
+                ("gemini:abc123",),
+            ).fetchall()
+            con.close()
+
+            self.assertEqual(
+                [(role, text) for role, text, _ in rows],
+                [
+                    ("user", "A question"),
+                    ("assistant", "A answer"),
+                    ("user", "B question"),
+                    ("assistant", "B answer"),
+                    ("user", "C question"),
+                    ("assistant", "C answer"),
+                ],
+            )
+            orders = [order for _, _, order in rows]
+            self.assertEqual(orders, sorted(orders))
 
     def test_english_myactivity_member_fails_closed_until_locale_is_supported(self):
         from session_search.google_gemini_activity import inspect_takeout
