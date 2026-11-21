@@ -328,6 +328,33 @@ python3 -m session_search.search "previous decision" --corpus /private/path/sess
 For xAI, `parent_response_id` is graph authority because official exports may omit or partially populate `children`. When `leaf_response_id` is present, that root-to-leaf path is indexed as normal dialogue and off-path alternatives are retained as `trace`. Without explicit active-leaf metadata, a unique leaf is unambiguous; multiple leaves materialize explicit branch variants rather than guessing. `human` maps to user dialogue, `assistant`/`ASSISTANT` map to assistant dialogue, and unrecognized sender values remain trace. Mongo-style millisecond timestamps are parsed deterministically; missing time remains unknown.
 
 
+
+### NotebookLM-preserved Gemini rescue adapter
+
+A Google Takeout may contain Gemini conversations only as sources previously imported into NotebookLM even when the ordinary `Takeout/Gemini/` product export contains no chat history. These NotebookLM copies are **secondary preservation evidence**, not an official Gemini account-history export.
+
+Inspect a Takeout without ingesting private conversation text:
+
+```bash
+python3 -m session_search.notebooklm_gemini takeout.zip --inspect
+```
+
+Materialize portable per-source artifacts:
+
+```bash
+python3 -m session_search.notebooklm_gemini takeout.zip --output-dir ./gemini-notebooklm-artifacts
+```
+
+Or ingest directly into a separate candidate corpus:
+
+```bash
+python3 -m session_search.notebooklm_gemini takeout.zip --corpus /private/path/session-search-corpus-candidate
+```
+
+The adapter accepts only NotebookLM `Sources/*.html` members containing explicit `User` and `Gemini` role markers. It preserves marker order exactly, including consecutive same-role fragments, because NotebookLM may preserve branch/continuation material without a matching intervening turn. Provider timestamps and Gemini conversation IDs are not invented. Session identity is therefore bound to the exact NotebookLM member path plus member SHA-256, and all rescued sessions are conservatively marked `PARTIAL_SESSION_SLICE` with preservation scope `PARTIAL_SECONDARY_COPY`.
+
+The parent Takeout SHA-256, source-member SHA-256, source path, role labels, and deterministic message order are retained as provenance. Identical text stored at different NotebookLM source paths remains distinct evidence rather than being heuristically deduplicated. A later official Gemini export is a stronger independent source and should be reconciled separately; absence from NotebookLM never proves that a Gemini conversation did not exist.
+
 ### Speed Booster Toolkit ChatGPT export adapter
 
 Speed Booster Toolkit JSON exports can be transcoded into the same portable Session Search artifact contract without making the browser extension a runtime dependency. The observed export shape is one sequential chat slice with top-level `title`, `exported_at`, `created_at`, and `messages[]` records containing role, timestamp, model, text, and optional source/image metadata.
