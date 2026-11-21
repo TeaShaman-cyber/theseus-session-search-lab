@@ -35,7 +35,7 @@ jobs:
       - name: Initialize SpecD in ephemeral runner workspace
         run: |
           set -euo pipefail
-          npx -y @specd/specd@0.2.0 project init \
+          npx -y @specd/cli@0.2.0 project init \
             --schema @specd/schema-std \
             --workspace default \
             --workspace-path specs/ \
@@ -44,17 +44,17 @@ jobs:
       - name: Build code graph
         run: |
           set -euo pipefail
-          npx -y @specd/specd@0.2.0 graph index --format json | tee "/tmp/specd-index-${{ matrix.target.name }}.json"
-          npx -y @specd/specd@0.2.0 graph stats --format json | tee "/tmp/specd-stats-${{ matrix.target.name }}.json"
+          npx -y @specd/cli@0.2.0 graph index --format json | tee "/tmp/specd-index-${{ matrix.target.name }}.json"
+          npx -y @specd/cli@0.2.0 graph stats --format json | tee "/tmp/specd-stats-${{ matrix.target.name }}.json"
 
       - name: Probe known Session Search symbols
         shell: bash
         run: |
           set +e
-          npx -y @specd/specd@0.2.0 graph search searchFederated --symbols --format json \
+          npx -y @specd/cli@0.2.0 graph search searchFederated --symbols --format json \
             > "/tmp/specd-search-router-${{ matrix.target.name }}.json" 2>&1
           echo $? > "/tmp/specd-search-router-${{ matrix.target.name }}.exit"
-          npx -y @specd/specd@0.2.0 graph search CorpusStore --symbols --format json \
+          npx -y @specd/cli@0.2.0 graph search CorpusStore --symbols --format json \
             > "/tmp/specd-search-python-${{ matrix.target.name }}.json" 2>&1
           echo $? > "/tmp/specd-search-python-${{ matrix.target.name }}.exit"
           set -e
@@ -66,7 +66,7 @@ jobs:
             echo "session_search_sha=$(git rev-parse HEAD)"
             echo "node=$(node --version)"
             echo "npm=$(npm --version)"
-            echo "specd=$(npx -y @specd/specd@0.2.0 --version)"
+            echo "specd=$(npx -y @specd/cli@0.2.0 --version)"
           } > "/tmp/specd-env-${{ matrix.target.name }}.txt"
 
       - uses: actions/upload-artifact@v4
