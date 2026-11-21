@@ -170,7 +170,7 @@ jobs:
             echo "node=$(node --version)"
             echo "pnpm=$(pnpm --version)"
             echo "specd_source_sha=$(git -C /tmp/specd-upstream rev-parse HEAD)"
-            echo "specd_code_graph_version=$(node -p \"require('/tmp/specd-upstream/packages/code-graph/package.json').version\")"
+            echo "specd_code_graph_version=$(jq -r .version /tmp/specd-upstream/packages/code-graph/package.json)"
           } > "/tmp/specd-upstream-env-${{ matrix.target.name }}.txt"
 
       - uses: actions/upload-artifact@v4
