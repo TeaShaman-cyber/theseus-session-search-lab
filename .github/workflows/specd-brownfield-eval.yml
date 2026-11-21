@@ -220,6 +220,7 @@ jobs:
         run: |
           set -euo pipefail
           SPECD=/tmp/specd-upstream/packages/cli/dist/index.js
+          node "$SPECD" project init             --schema @specd/schema-std             --workspace default             --workspace-path specs/             --force             --format json             | tee /tmp/specd-project-init.json
           node "$SPECD" specs init default:router/failure-isolation --format json \
             | tee /tmp/specd-spec-init.json
           node "$SPECD" specs implementation add default:router/failure-isolation \
