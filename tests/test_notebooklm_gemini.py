@@ -157,6 +157,25 @@ class NotebookLmGeminiAdapterTest(unittest.TestCase):
             self.assertNotIn("SettingValue", answer)
             self.assertNotIn("timeout30", answer)
 
+    def test_preformatted_code_preserves_indentation_and_blank_lines(self):
+        from session_search.notebooklm_gemini import materialize_takeout
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            source = write_takeout(root / "takeout.zip", {
+                "Takeout/NotebookLM/Test/Sources/code.html":
+                    "<p><strong>User</strong> : show code"
+                    "<strong>Gemini</strong> : <pre><code>"
+                    "if ready:\n    run()\n\nelse:\n    stop()"
+                    "</code></pre></p>",
+            })
+            artifact = normalize_artifact(materialize_takeout(source, root / "out")[0])
+            answer = artifact.messages[1].text
+            self.assertIn(
+                "if ready:\n    run()\n\nelse:\n    stop()",
+                answer,
+            )
+
     def test_parent_hash_and_parsed_messages_use_one_captured_archive_snapshot(self):
         from unittest import mock
         import session_search.notebooklm_gemini as adapter

@@ -40,9 +40,19 @@ class _PlainTextParser(html.parser.HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.parts: list[str] = []
+        self.preformatted: list[str] = []
+        self._pre_depth = 0
 
     def handle_starttag(self, tag: str, attrs) -> None:
         tag = tag.lower()
+        if tag == "pre":
+            self.parts.append("\n")
+            self._pre_depth += 1
+            return
+        if self._pre_depth:
+            if tag == "br":
+                self.parts.append("\n")
+            return
         if tag == "br":
             self.parts.append("\n")
         elif tag == "li":
@@ -54,12 +64,27 @@ class _PlainTextParser(html.parser.HTMLParser):
 
     def handle_endtag(self, tag: str) -> None:
         tag = tag.lower()
+        if tag == "pre":
+            if self._pre_depth:
+                self._pre_depth -= 1
+            self.parts.append("\n")
+            return
+        if self._pre_depth:
+            return
         if tag in {"td", "th"}:
             self.parts.append(" ")
         elif tag == "tr" or tag in self._BLOCK_END:
             self.parts.append("\n")
 
     def handle_data(self, data: str) -> None:
+        if self._pre_depth:
+            index = len(self.preformatted)
+            token = f"\ue000PRE{index}\ue001"
+            self.preformatted.append(
+                data.replace("\xa0", " ").replace("\r\n", "\n").replace("\r", "\n")
+            )
+            self.parts.append(token)
+            return
         self.parts.append(data)
 
     def text(self) -> str:
@@ -69,7 +94,10 @@ class _PlainTextParser(html.parser.HTMLParser):
             normalized = re.sub(r"[ \t\f\v]+", " ", line).strip()
             if normalized:
                 lines.append(normalized)
-        return "\n".join(lines).strip()
+        result = "\n".join(lines).strip()
+        for index, value in enumerate(self.preformatted):
+            result = result.replace(f"\ue000PRE{index}\ue001", value)
+        return result.strip("\n")
 
 
 @dataclasses.dataclass(frozen=True)
