@@ -332,7 +332,7 @@ For xAI, `parent_response_id` is graph authority because official exports may om
 
 ### Official Google My Activity / Gemini Apps adapter
 
-Google Takeout can expose Gemini chat history under `My Activity -> Gemini Apps` (localized exports may use names such as `Мои действия/Приложения Gemini`). This is stronger provenance than NotebookLM-preserved copies because each prompt activity can expose an official Gemini app/conversation URL and account activity timestamp.
+Google Takeout can expose Gemini chat history under `My Activity -> Gemini Apps`. The current adapter is empirically validated against the observed Russian Takeout surface `Мои действия/Приложения Gemini`. English `Gemini Apps/MyActivity.html` is recognized as a potential source member but currently fails closed with `BLOCKED_UNSUPPORTED_GEMINI_ACTIVITY_LOCALE` until locale-specific prompt/timestamp fixtures are implemented. This is stronger provenance than NotebookLM-preserved copies because each supported prompt activity can expose an official Gemini app/conversation URL and account activity timestamp.
 
 Inspect without ingesting:
 

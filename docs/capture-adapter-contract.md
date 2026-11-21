@@ -80,7 +80,7 @@ If a portable artifact exposes multiple stable conversation identities, the ordi
 
 ## Official Google My Activity / Gemini Apps adapter
 
-The official Gemini activity adapter consumes only the Gemini Apps product member from a Google Takeout My Activity archive. Localized product names are part of the adapter boundary; AI Mode is treated as a distinct product and is never merged into Gemini chat history by proximity.
+The official Gemini activity adapter consumes only the Gemini Apps product member from a Google Takeout My Activity archive. The currently verified parser contract is the observed Russian `Мои действия/Приложения Gemini` surface. An English `Gemini Apps/MyActivity.html` member is recognized but fails closed as an unsupported locale until its prompt and timestamp shapes are covered by explicit fixtures. AI Mode is treated as a distinct product and is never merged into Gemini chat history by proximity.
 
 For a supported prompt card, the source itself must expose:
 - the explicit prompt activity marker;

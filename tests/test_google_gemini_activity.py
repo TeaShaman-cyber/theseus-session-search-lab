@@ -65,8 +65,9 @@ def write_takeout(
     gemini_html: str,
     extra_members: dict[str, bytes] | None = None,
     ai_mode_html: str | None = None,
+    gemini_member: str = GEMINI_MEMBER,
 ) -> pathlib.Path:
-    members: dict[str, bytes] = {GEMINI_MEMBER: gemini_html.encode("utf-8")}
+    members: dict[str, bytes] = {gemini_member: gemini_html.encode("utf-8")}
     if ai_mode_html is not None:
         members[AI_MODE_MEMBER] = ai_mode_html.encode("utf-8")
     members.update(extra_members or {})
@@ -320,6 +321,87 @@ class GoogleGeminiMyActivityAdapterTest(unittest.TestCase):
             self.assertEqual(first["resolved_conversation_count"], 1)
             self.assertEqual(first["unresolved_artifact_count"], 1)
             self.assertEqual(first["message_count"], 4)
+
+    def test_quoted_timestamp_inside_response_does_not_hide_provider_timestamp(self):
+        from session_search.google_gemini_activity import materialize_takeout
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            source = write_takeout(
+                root / "takeout.tgz",
+                gemini_html=activity_card(
+                    user="what time did we mention",
+                    answer=(
+                        "We previously wrote 20 нояб. 2026 г., 12:00:00 CET "
+                        "inside the conversation."
+                    ),
+                    timestamp="21 нояб. 2026 г., 16:28:40 CET",
+                    app_ids=["abc123"],
+                ),
+            )
+            artifact = normalize_artifact(materialize_takeout(source, root / "out")[0])
+            self.assertEqual(
+                [(m.role, m.text) for m in artifact.messages],
+                [
+                    ("user", "what time did we mention"),
+                    (
+                        "assistant",
+                        "We previously wrote 20 нояб. 2026 г., 12:00:00 CET inside the conversation.",
+                    ),
+                ],
+            )
+
+    def test_same_second_identical_assistant_text_keeps_distinct_activity_occurrences(self):
+        from session_search.google_gemini_activity import materialize_takeout
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            timestamp = "21 нояб. 2026 г., 16:28:40 CET"
+            source = write_takeout(
+                root / "takeout.tgz",
+                gemini_html=(
+                    activity_card(
+                        user="second question",
+                        answer="OK",
+                        timestamp=timestamp,
+                        app_ids=["abc123"],
+                    )
+                    + activity_card(
+                        user="first question",
+                        answer="OK",
+                        timestamp=timestamp,
+                        app_ids=["abc123"],
+                    )
+                ),
+            )
+            artifact = normalize_artifact(materialize_takeout(source, root / "out")[0])
+            self.assertEqual(len(artifact.messages), 4)
+            assistants = [m for m in artifact.messages if m.role == "assistant"]
+            self.assertEqual([m.text for m in assistants], ["OK", "OK"])
+            self.assertEqual(len({m.message_id for m in assistants}), 2)
+
+    def test_english_myactivity_member_fails_closed_until_locale_is_supported(self):
+        from session_search.google_gemini_activity import inspect_takeout
+
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            source = write_takeout(
+                root / "takeout.tgz",
+                gemini_html=(
+                    '<div class="outer-cell mdl-cell mdl-cell--12-col mdl-shadow--2dp">'
+                    '<div class="content-cell mdl-cell mdl-cell--6-col mdl-typography--body-1">'
+                    'Prompted hello<br>Nov 21, 2026, 4:28:40 PM CET<br>answer'
+                    '</div>'
+                    '<div class="content-cell mdl-cell mdl-cell--12-col mdl-typography--caption">'
+                    '<a href="https://gemini.google.com/app/abc123">chat</a>'
+                    '</div></div>'
+                ),
+                gemini_member="Takeout/My Activity/Gemini Apps/MyActivity.html",
+            )
+            with self.assertRaisesRegex(
+                ValueError, "BLOCKED_UNSUPPORTED_GEMINI_ACTIVITY_LOCALE"
+            ):
+                inspect_takeout(source)
 
     def test_response_preserves_table_boundaries_and_preformatted_whitespace(self):
         from session_search.google_gemini_activity import materialize_takeout

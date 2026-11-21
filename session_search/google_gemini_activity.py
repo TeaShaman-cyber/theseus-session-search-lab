@@ -167,6 +167,10 @@ class _TextAccumulator:
             return
         self.parts.append(value)
 
+    @property
+    def in_preformatted(self) -> bool:
+        return self._pre_depth > 0
+
     def text(self) -> str:
         raw = (
             "".join(self.parts)
@@ -191,11 +195,32 @@ class _TextAccumulator:
 @dataclasses.dataclass
 class _Cell:
     css_class: str
-    text_accumulator: _TextAccumulator = dataclasses.field(default_factory=_TextAccumulator)
+    segments: list[_TextAccumulator] = dataclasses.field(
+        default_factory=lambda: [_TextAccumulator()]
+    )
     hrefs: list[str] = dataclasses.field(default_factory=list)
 
+    @property
+    def current_segment(self) -> _TextAccumulator:
+        return self.segments[-1]
+
+    def start(self, tag: str, attrs: dict[str, str]) -> None:
+        if tag.lower() == "br" and not self.current_segment.in_preformatted:
+            self.segments.append(_TextAccumulator())
+            return
+        self.current_segment.start(tag, attrs)
+
+    def end(self, tag: str) -> None:
+        self.current_segment.end(tag)
+
+    def data(self, value: str) -> None:
+        self.current_segment.data(value)
+
+    def segment_texts(self) -> list[str]:
+        return [segment.text() for segment in self.segments]
+
     def text(self) -> str:
-        return self.text_accumulator.text()
+        return "\n".join(part for part in self.segment_texts() if part).strip()
 
 
 @dataclasses.dataclass
@@ -239,13 +264,13 @@ class _MyActivityParser(html.parser.HTMLParser):
                 href = attrs_dict.get("href")
                 if href:
                     self.current_cell.hrefs.append(href)
-            self.current_cell.text_accumulator.start(tag, attrs_dict)
+            self.current_cell.start(tag, attrs_dict)
 
     def handle_endtag(self, tag: str) -> None:
         lower = tag.lower()
         if self.current_cell is not None:
             if not (lower == "div" and self.cell_depth == self.div_depth):
-                self.current_cell.text_accumulator.end(tag)
+                self.current_cell.end(tag)
 
         if lower == "div":
             if self.current_cell is not None and self.cell_depth == self.div_depth:
@@ -258,7 +283,7 @@ class _MyActivityParser(html.parser.HTMLParser):
 
     def handle_data(self, data: str) -> None:
         if self.current_cell is not None:
-            self.current_cell.text_accumulator.data(data)
+            self.current_cell.data(data)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -389,6 +414,13 @@ def _analyze_takeout_bytes(raw_export: bytes) -> _Analysis:
         if source_member is None:
             raise ValueError("BLOCKED_GEMINI_ACTIVITY_MEMBER_NOT_FOUND")
 
+        source_product = pathlib.PurePosixPath(source_member).parent.name
+        if source_product != "Приложения Gemini":
+            raise ValueError(
+                "BLOCKED_UNSUPPORTED_GEMINI_ACTIVITY_LOCALE: "
+                f"{source_product}"
+            )
+
         ai_member = _find_product_activity_member(members, _AI_MODE_PRODUCT_NAMES)
         source_file = tf.extractfile(members[source_member])
         if source_file is None:
@@ -427,20 +459,35 @@ def _analyze_takeout_bytes(raw_export: bytes) -> _Analysis:
             if body is None:
                 other_activity_cards += 1
                 continue
-            main = body.text()
+            segments = body.segment_texts()
+            main = "\n".join(part for part in segments if part).strip()
             if not main.startswith(_PROMPT_PREFIX):
                 other_activity_cards += 1
                 continue
 
-            matches = list(_RU_TIMESTAMP_RE.finditer(main))
-            if len(matches) != 1:
+            timestamp_indexes = [
+                index
+                for index, segment in enumerate(segments)
+                if _RU_TIMESTAMP_RE.fullmatch(segment.strip())
+            ]
+            if not timestamp_indexes:
                 unsupported_prompt_cards += 1
                 continue
-            match = matches[0]
-            timestamp_raw = match.group(0)
+            timestamp_index = timestamp_indexes[0]
+            timestamp_raw = segments[timestamp_index].strip()
             timestamp_epoch = _parse_timestamp(timestamp_raw)
-            user_text = main[len(_PROMPT_PREFIX) : match.start()].strip()
-            assistant_text = main[match.end() :].strip()
+
+            pre_timestamp = "\n".join(
+                part for part in segments[:timestamp_index] if part
+            ).strip()
+            post_timestamp = "\n".join(
+                part for part in segments[timestamp_index + 1 :] if part
+            ).strip()
+            if not pre_timestamp.startswith(_PROMPT_PREFIX):
+                unsupported_prompt_cards += 1
+                continue
+            user_text = pre_timestamp[len(_PROMPT_PREFIX) :].strip()
+            assistant_text = post_timestamp
             if not user_text:
                 unsupported_prompt_cards += 1
                 continue
@@ -506,42 +553,72 @@ def _analyze_takeout_bytes(raw_export: bytes) -> _Analysis:
     )
 
 
-def _message_id(
-    session_id: str,
-    card: _PromptCard,
-    role: str,
-    text: str,
-) -> str:
-    attachment_signatures = [
+def _activity_signature(card: _PromptCard) -> str:
+    attachments = [
         {
             "href": ref.href,
+            "decoded_href": ref.decoded_href,
             "resolution": ref.resolution,
+            "member_name": ref.member_name,
+            "bytes": ref.bytes,
             "sha256": ref.sha256,
         }
         for ref in card.attachment_refs
     ]
-    digest = _sha256(
-        _stable_json_bytes(
-            [
-                session_id,
-                card.timestamp_raw,
-                role,
-                text,
-                attachment_signatures if role == "user" else [],
-            ]
-        )
-    )
-    return f"google-gemini-myactivity-message:{digest}"
-
-
-def _unresolved_session_id(card: _PromptCard) -> str:
-    digest = _sha256(
+    return _sha256(
         _stable_json_bytes(
             [
                 list(card.app_ids),
                 card.timestamp_raw,
                 card.user_text,
                 card.assistant_text,
+                attachments,
+            ]
+        )
+    )
+
+
+def _activity_occurrence_id(
+    session_id: str,
+    card: _PromptCard,
+    occurrence_rank: int,
+) -> str:
+    digest = _sha256(
+        _stable_json_bytes(
+            [session_id, _activity_signature(card), int(occurrence_rank)]
+        )
+    )
+    return f"google-gemini-myactivity-occurrence:{digest}"
+
+
+def _message_id(
+    session_id: str,
+    occurrence_id: str,
+    role: str,
+    text: str,
+) -> str:
+    digest = _sha256(
+        _stable_json_bytes(
+            [
+                session_id,
+                occurrence_id,
+                role,
+                text,
+            ]
+        )
+    )
+    return f"google-gemini-myactivity-message:{digest}"
+
+
+def _unresolved_session_id(
+    card: _PromptCard,
+    occurrence_rank: int = 0,
+) -> str:
+    digest = _sha256(
+        _stable_json_bytes(
+            [
+                _activity_signature(card),
+                int(occurrence_rank),
             ]
         )
     )
@@ -558,13 +635,24 @@ def _messages_for_cards(
     ordered_cards = sorted(cards, key=lambda card: (card.timestamp_epoch, -card.card_index))
     messages: list[dict] = []
     order = 0
+    signature_counts: collections.Counter[str] = collections.Counter()
     for card in ordered_cards:
+        signature = _activity_signature(card)
+        occurrence_rank = int(signature_counts[signature])
+        signature_counts[signature] += 1
+        occurrence_id = _activity_occurrence_id(
+            session_id,
+            card,
+            occurrence_rank,
+        )
         common = {
             "gemini_activity_source_member": source_member,
             "gemini_activity_source_member_sha256": source_member_sha256,
             "gemini_activity_card_index": card.card_index,
             "gemini_activity_timestamp_raw": card.timestamp_raw,
             "gemini_activity_related_app_ids": list(card.app_ids),
+            "gemini_activity_occurrence_id": occurrence_id,
+            "gemini_activity_occurrence_rank": occurrence_rank,
         }
         user_metadata = {
             **common,
@@ -574,7 +662,12 @@ def _messages_for_cards(
         }
         messages.append(
             {
-                "id": _message_id(session_id, card, "user", card.user_text),
+                "id": _message_id(
+                    session_id,
+                    occurrence_id,
+                    "user",
+                    card.user_text,
+                ),
                 "author": {"role": "user"},
                 "create_time": card.timestamp_epoch,
                 "content": {"content_type": "text", "parts": [card.user_text]},
@@ -590,7 +683,12 @@ def _messages_for_cards(
             }
             messages.append(
                 {
-                    "id": _message_id(session_id, card, "assistant", card.assistant_text),
+                    "id": _message_id(
+                        session_id,
+                        occurrence_id,
+                        "assistant",
+                        card.assistant_text,
+                    ),
                     "author": {"role": "assistant"},
                     "create_time": None,
                     "content": {"content_type": "text", "parts": [card.assistant_text]},
@@ -671,8 +769,15 @@ def _materialize_takeout_snapshot(
                 f"Gemini Apps {app_id}",
             )
         )
-    for card in sorted(unresolved, key=lambda item: item.card_index):
-        session_id = _unresolved_session_id(card)
+    unresolved_counts: collections.Counter[str] = collections.Counter()
+    for card in sorted(
+        unresolved,
+        key=lambda item: (item.timestamp_epoch, -item.card_index),
+    ):
+        signature = _activity_signature(card)
+        occurrence_rank = int(unresolved_counts[signature])
+        unresolved_counts[signature] += 1
+        session_id = _unresolved_session_id(card, occurrence_rank)
         specs.append(
             (
                 session_id,
