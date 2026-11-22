@@ -123,8 +123,8 @@ def _safe_qa(value: Any) -> dict[str, Any]:
 def _validate_watermarks(raw: Any, blockers: list[str]) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
     output: list[dict[str, Any]] = []
     by_provider: dict[str, dict[str, Any]] = {}
-    if not isinstance(raw, list) or not raw:
-        blockers.append("SOURCE_WATERMARKS_EMPTY")
+    if not isinstance(raw, list):
+        blockers.append("SOURCE_WATERMARKS_INVALID")
         return output, by_provider
 
     for index, item in enumerate(raw):
@@ -317,6 +317,7 @@ def evaluate_serving_promotion_readiness(
 
     source_commit: str | None = None
     watermarks: list[dict[str, Any]] = []
+    source_currentness_modes: dict[str, str] = {}
     replacements: list[dict[str, Any]] = []
     unchanged: list[dict[str, Any]] = []
     rollback: dict[str, str | None] = {}
@@ -349,15 +350,24 @@ def evaluate_serving_promotion_readiness(
             new_shards=new_shards,
         )
 
-        for provider, data_max in provider_max.items():
+        for provider, sets in accepted_sets.items():
+            if len(sets) != 1:
+                blockers.append(f"ACCEPTED_SET_INCONSISTENT:{provider}")
+
             watermark = watermark_by_provider.get(provider)
             if watermark is None:
-                blockers.append(f"SOURCE_WATERMARK_MISSING:{provider}")
+                source_currentness_modes[provider] = "UNKNOWN_WITHOUT_SOURCE_WATERMARK"
                 continue
-            if _finite(watermark["observed_through"]) and float(watermark["observed_through"]) < data_max:
+
+            source_currentness_modes[provider] = "BOUND_PROVIDER_WATERMARK"
+            data_max = provider_max.get(provider)
+            if (
+                data_max is not None
+                and _finite(watermark["observed_through"])
+                and float(watermark["observed_through"]) < data_max
+            ):
                 blockers.append(f"WATERMARK_BEFORE_DATA_MAX:{provider}")
-            sets = accepted_sets.get(provider, set())
-            if len(sets) != 1 or watermark["accepted_set_sha256"] not in sets:
+            if len(sets) == 1 and watermark["accepted_set_sha256"] not in sets:
                 blockers.append(f"ACCEPTED_SET_MISMATCH:{provider}")
 
     blockers = list(dict.fromkeys(blockers))
@@ -368,6 +378,7 @@ def evaluate_serving_promotion_readiness(
         "repo": {"head": head, "branch": branch, "clean": clean},
         "qa": qa,
         "source_watermarks": watermarks,
+        "source_currentness_modes": dict(sorted(source_currentness_modes.items())),
         "replacement_shards": replacements,
         "unchanged_catalog": unchanged,
         "rollback_generations": dict(sorted(rollback.items())),
@@ -407,6 +418,7 @@ def _input_error_receipt(
         },
         "qa": _safe_qa(qa_state),
         "source_watermarks": [],
+        "source_currentness_modes": {},
         "replacement_shards": [],
         "unchanged_catalog": [],
         "rollback_generations": {},
