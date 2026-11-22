@@ -3,7 +3,9 @@
 Status: DRAFT FOR HUMAN REVIEW
 Capability map: CAPABILITY_MAP-gemini.md
 Tracking issue: #311
-Depends on: verified gemini-source-acceptance receipt, gemini-provider-allocation, gemini-currentness
+Depends on: CAPABILITY_MAP-gemini.md (APPROVED); verified
+theseus.session-search-recovery-receipt.v1 from gemini-source-acceptance bound
+to the accepted_set_sha256; gemini-provider-allocation; gemini-currentness
 
 ## Objective
 

@@ -2,6 +2,7 @@
 
 Status: DRAFT FOR HUMAN REVIEW
 Capability map: CAPABILITY_MAP-gemini.md
+Depends on: CAPABILITY_MAP-gemini.md (APPROVED)
 Tracking issue: #311
 
 ## Objective
@@ -24,11 +25,13 @@ Inspect the exact official export:
 
     python3 -m session_search.google_gemini_activity takeout.tgz --inspect
 
+Focused router/currentness tests:
+
+    cd functions && node --test tests/serving.test.mjs tests/semantic-events.test.mjs tests/router-pinned-stage2.test.mjs
+
 Canonical repository QA:
 
     ./tools/dev/check
-
-Future implementation tests must use the repository-focused currentness/router test commands discovered from the exact implementation diff before modification.
 
 ## Project Structure
 

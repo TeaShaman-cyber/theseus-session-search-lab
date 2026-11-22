@@ -1,5 +1,10 @@
 # Authority note
 
+INSTANCE-SPECIFIC EVIDENCE NOTE: dated timestamps, counts, hashes, and request/archive
+facts in this supporting document describe the initial #311 acceptance only. They
+must not be copied into reusable Gemini module logic or treated as constants. The
+root SPEC-gemini-*.md files define reusable behavior.
+
 This file is supporting architecture narrative. Canonical Spec D authority for
 the Gemini initiative is indexed by ../CAPABILITY_MAP-gemini.md and the four
 root SPEC-gemini-*.md module specifications. If this narrative conflicts with a
