@@ -87,3 +87,24 @@ An unrun or uncovered check is `UNKNOWN`, never PASS. Search results, SQLite sta
 Session coverage, corpus freshness, and live-provider completeness are different claims. A `COMPLETE_EXPOSED_CONVERSATION` session can still live inside a corpus whose newest accepted capture is old. Conversely, a recently accepted partial capture does not prove complete history.
 
 Without an authoritative acquisition/source watermark, `corpus status` must report `UNKNOWN_WITHOUT_SOURCE_WATERMARK`; wall-clock age alone is not enough to label an archive `CURRENT` or `STALE`.
+
+## Spec-Driven Development review boundary
+
+Canonical Spec D artifacts are authority-bearing inputs to later implementation,
+not ordinary narrative documentation. The risk classifier therefore requires an
+exact-head Codex review when a PR changes any of these paths:
+
+- root CAPABILITY_MAP.md or CAPABILITY_MAP-*.md;
+- root SPEC-*.md;
+- tasks/plan.md;
+- tasks/todo.md.
+
+This is intentionally narrower than docs/**: ordinary explanatory
+documentation remains low-risk unless protected by another rule. The workflow
+loads scripts/review_gate_required.py from the PR base branch when available,
+so a PR cannot weaken or redefine its own review requirement.
+
+A green review-gate job means exact-head Codex review only when classification
+returned required=true. When classification returns required=false, the job
+means only that the protected boundary was not touched. Codex quota exhaustion,
+timeout, or incomplete review on a required path is BLOCKED, never PASS.

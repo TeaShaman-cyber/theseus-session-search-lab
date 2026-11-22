@@ -17,6 +17,8 @@ PROTECTED_PREFIXES = (
 )
 
 PROTECTED_EXACT = {
+    'tasks/plan.md',
+    'tasks/todo.md',
     'scripts/review_gate_required.py',
     'scripts/materialize_neon_shard.py',
     'scripts/prepare_refresh.py',
@@ -39,6 +41,11 @@ def _normalize(path: str) -> str:
 def _reason(path: str) -> str | None:
     if path in PROTECTED_EXACT:
         return 'protected-exact'
+    if '/' not in path and path.endswith('.md'):
+        if path == 'CAPABILITY_MAP.md' or path.startswith('CAPABILITY_MAP-'):
+            return 'spec-d-capability-map'
+        if path.startswith('SPEC-'):
+            return 'spec-d-module-spec'
     for prefix in PROTECTED_PREFIXES:
         if path.startswith(prefix):
             return f'protected-prefix:{prefix}'
