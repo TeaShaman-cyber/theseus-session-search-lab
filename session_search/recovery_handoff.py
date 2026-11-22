@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import pathlib
 import re
@@ -46,6 +47,56 @@ def _require_nonempty(value: Any, code: str) -> str:
     return value
 
 
+_SOURCE_SNAPSHOT_KEYS = {
+    "provider",
+    "source_scope",
+    "observed_through",
+    "basis",
+    "accepted_set_sha256",
+}
+
+
+def _validated_source_snapshot(snapshot: Any, accepted_set_sha256: str) -> dict:
+    if not isinstance(snapshot, dict):
+        raise ValueError("RECOVERY_SOURCE_SNAPSHOT_INVALID")
+    if set(snapshot) != _SOURCE_SNAPSHOT_KEYS:
+        raise ValueError("RECOVERY_SOURCE_SNAPSHOT_FIELDS_INVALID")
+
+    provider = _require_nonempty(
+        snapshot.get("provider"),
+        "RECOVERY_SOURCE_SNAPSHOT_PROVIDER_INVALID",
+    )
+    source_scope = _require_nonempty(
+        snapshot.get("source_scope"),
+        "RECOVERY_SOURCE_SNAPSHOT_SCOPE_INVALID",
+    )
+    observed_through = snapshot.get("observed_through")
+    if (
+        isinstance(observed_through, bool)
+        or not isinstance(observed_through, (int, float))
+        or not math.isfinite(observed_through)
+    ):
+        raise ValueError("RECOVERY_SOURCE_SNAPSHOT_OBSERVED_THROUGH_INVALID")
+    basis = _require_nonempty(
+        snapshot.get("basis"),
+        "RECOVERY_SOURCE_SNAPSHOT_BASIS_INVALID",
+    )
+    accepted_set = _require_sha256(
+        snapshot.get("accepted_set_sha256"),
+        "RECOVERY_SOURCE_SNAPSHOT_ACCEPTED_SET_INVALID",
+    )
+    if accepted_set != accepted_set_sha256:
+        raise ValueError("RECOVERY_SOURCE_SNAPSHOT_ACCEPTED_SET_MISMATCH")
+
+    return {
+        "provider": provider,
+        "source_scope": source_scope,
+        "observed_through": observed_through,
+        "basis": basis,
+        "accepted_set_sha256": accepted_set,
+    }
+
+
 def _projection_schema_version(db_path: pathlib.Path) -> str:
     conn = sqlite3.connect(f"file:{db_path.resolve()}?mode=ro&immutable=1", uri=True)
     try:
@@ -84,6 +135,7 @@ def build_receipt(
     accepted_set_sha256: str,
     verification: dict,
     source_watermark: dict | None = None,
+    source_snapshot: dict | None = None,
     projection_encoding: str = "zstd",
 ) -> dict:
     if not isinstance(verification, dict) or verification.get("status") != "VERIFIED":
@@ -136,6 +188,11 @@ def build_receipt(
         if not isinstance(source_watermark, dict):
             raise ValueError("RECOVERY_SOURCE_WATERMARK_INVALID")
         payload["source_watermark"] = dict(source_watermark)
+    if source_snapshot is not None:
+        payload["source_snapshot"] = _validated_source_snapshot(
+            source_snapshot,
+            accepted_set,
+        )
     validate_receipt(payload)
     return payload
 
@@ -145,7 +202,7 @@ def validate_receipt(receipt: dict) -> dict:
         raise ValueError("RECOVERY_RECEIPT_SCHEMA_MISMATCH")
     if not _GIT_RE.fullmatch(str(receipt.get("source_commit", ""))):
         raise ValueError("RECOVERY_SOURCE_COMMIT_INVALID")
-    _require_sha256(
+    accepted_set = _require_sha256(
         receipt.get("accepted_set_sha256"),
         "RECOVERY_ACCEPTED_SET_DIGEST_INVALID",
     )
@@ -188,6 +245,8 @@ def validate_receipt(receipt: dict) -> dict:
     )
     if "source_watermark" in receipt and not isinstance(receipt["source_watermark"], dict):
         raise ValueError("RECOVERY_SOURCE_WATERMARK_INVALID")
+    if "source_snapshot" in receipt:
+        _validated_source_snapshot(receipt["source_snapshot"], accepted_set)
     return receipt
 
 
@@ -391,6 +450,7 @@ def main() -> int:
             accepted_set_sha256=spec["accepted_set_sha256"],
             verification=spec["verification"],
             source_watermark=spec.get("source_watermark"),
+            source_snapshot=spec.get("source_snapshot"),
             projection_encoding=spec.get("projection_encoding", "zstd"),
         )
         write_private_json(args.out, receipt)
