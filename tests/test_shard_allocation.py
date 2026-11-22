@@ -26,6 +26,29 @@ class ProviderLineageTest(unittest.TestCase):
             "chatgpt",
         )
 
+    def test_official_gemini_adapter_maps_to_gemini(self):
+        self.assertEqual(
+            provider_from_adapters({"google-gemini-myactivity"}),
+            "gemini",
+        )
+
+    def test_notebooklm_rescue_adapter_maps_to_gemini(self):
+        self.assertEqual(
+            provider_from_adapters({"notebooklm-preserved-gemini"}),
+            "gemini",
+        )
+
+    def test_official_and_rescue_gemini_adapters_share_provider(self):
+        self.assertEqual(
+            provider_from_adapters(
+                {"google-gemini-myactivity", "notebooklm-preserved-gemini"}
+            ),
+            "gemini",
+        )
+
+    def test_unknown_gemini_like_adapter_remains_unresolved(self):
+        self.assertIsNone(provider_from_adapters({"gemini-maybe-import"}))
+
     def test_unknown_only_is_unresolved(self):
         self.assertIsNone(provider_from_adapters({"third-party-dialogue-bridge"}))
 
