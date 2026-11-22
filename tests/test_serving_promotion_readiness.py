@@ -50,6 +50,7 @@ def manifest() -> dict:
     return {
         "schema": "theseus.session-search-serving-promotion-readiness-input.v1",
         "source_commit": "b" * 40,
+        "source_snapshots": [],
         "source_watermarks": [
             {
                 "provider": "chatgpt",
@@ -133,6 +134,51 @@ class ServingPromotionReadinessTest(unittest.TestCase):
         )
 
 
+    def test_legacy_readiness_manifest_without_source_snapshots_remains_valid(self) -> None:
+        raw = manifest()
+        del raw["source_snapshots"]
+
+        receipt = evaluate_serving_promotion_readiness(
+            raw, repo_state=repo_state(), qa_state=qa_state()
+        )
+
+        self.assertEqual(receipt["state"], "READY_FOR_RUNTIME_GATES")
+        self.assertEqual(receipt["source_snapshots"], [])
+        self.assertEqual(
+            receipt["source_currentness_modes"],
+            {"chatgpt": "BOUND_PROVIDER_WATERMARK"},
+        )
+
+    def test_provider_cannot_bind_watermark_and_snapshot_at_once(self) -> None:
+        raw = manifest()
+        raw["source_snapshots"] = [{
+            "provider": "gemini",
+            "source_scope": "GEMINI_APPS_ACTIVITY",
+            "observed_through": 2600.0,
+            "basis": "provider_takeout_request_receipt",
+            "accepted_set_sha256": "a" * 64,
+        }]
+        raw["source_watermarks"].append({
+            "provider": "gemini",
+            "observed_through": 2600.0,
+            "status": "PROVIDER_REPORTED_NO_KNOWN_GAPS",
+            "basis": "provider_export_manifest",
+            "accepted_set_sha256": "a" * 64,
+        })
+        target = replacement("gemini-0001", "gemini-source", None)
+        target["provider"] = "gemini"
+        raw["replacement_shards"] = [target]
+
+        receipt = evaluate_serving_promotion_readiness(
+            raw, repo_state=repo_state(), qa_state=qa_state()
+        )
+
+        self.assertEqual(receipt["state"], "BLOCKED")
+        self.assertIn(
+            "SOURCE_CURRENTNESS_BINDING_CONFLICT:gemini",
+            receipt["blockers"],
+        )
+
     def test_new_shard_allows_null_previous_generation_and_preserves_null_rollback(self) -> None:
         raw = manifest()
         raw["replacement_shards"] = [
@@ -207,6 +253,81 @@ class ServingPromotionReadinessTest(unittest.TestCase):
         self.assertEqual(
             receipt["source_currentness_modes"],
             {"gemini": "UNKNOWN_WITHOUT_SOURCE_WATERMARK"},
+        )
+
+    def test_gemini_source_snapshot_marks_provider_as_bound_snapshot(self) -> None:
+        raw = manifest()
+        target = replacement("gemini-0001", "gemini-source", None)
+        target["provider"] = "gemini"
+        raw["replacement_shards"] = [target]
+        raw["source_watermarks"] = []
+        raw["source_snapshots"] = [{
+            "provider": "gemini",
+            "source_scope": "GEMINI_APPS_ACTIVITY",
+            "observed_through": 1795275928.0,
+            "basis": "provider_takeout_request_receipt",
+            "accepted_set_sha256": "a" * 64,
+        }]
+
+        receipt = evaluate_serving_promotion_readiness(
+            raw, repo_state=repo_state(), qa_state=qa_state()
+        )
+
+        self.assertEqual(receipt["state"], "READY_FOR_RUNTIME_GATES")
+        self.assertEqual(receipt["blockers"], [])
+        self.assertEqual(
+            receipt["source_currentness_modes"],
+            {"gemini": "BOUND_PROVIDER_SNAPSHOT"},
+        )
+        self.assertEqual(
+            receipt["source_snapshots"],
+            raw["source_snapshots"],
+        )
+
+    def test_source_snapshot_rejects_strengthened_or_mismatched_binding(self) -> None:
+        raw = manifest()
+        target = replacement("gemini-0001", "gemini-source", None)
+        target["provider"] = "gemini"
+        raw["replacement_shards"] = [target]
+        raw["source_watermarks"] = []
+        raw["source_snapshots"] = [{
+            "provider": "gemini",
+            "source_scope": "GEMINI_APPS_ACTIVITY",
+            "observed_through": 1795275928.0,
+            "basis": "provider_takeout_request_receipt",
+            "accepted_set_sha256": "8" * 64,
+            "status": "PROVIDER_REPORTED_NO_KNOWN_GAPS",
+        }]
+
+        receipt = evaluate_serving_promotion_readiness(
+            raw, repo_state=repo_state(), qa_state=qa_state()
+        )
+
+        self.assertEqual(receipt["state"], "BLOCKED")
+        self.assertTrue(any(code.startswith("SOURCE_SNAPSHOT_KEYS_MISMATCH") for code in receipt["blockers"]))
+
+    def test_source_snapshot_accepted_set_mismatch_blocks(self) -> None:
+        raw = manifest()
+        target = replacement("gemini-0001", "gemini-source", None)
+        target["provider"] = "gemini"
+        raw["replacement_shards"] = [target]
+        raw["source_watermarks"] = []
+        raw["source_snapshots"] = [{
+            "provider": "gemini",
+            "source_scope": "GEMINI_APPS_ACTIVITY",
+            "observed_through": 1795275928.0,
+            "basis": "provider_takeout_request_receipt",
+            "accepted_set_sha256": "8" * 64,
+        }]
+
+        receipt = evaluate_serving_promotion_readiness(
+            raw, repo_state=repo_state(), qa_state=qa_state()
+        )
+
+        self.assertEqual(receipt["state"], "BLOCKED")
+        self.assertIn(
+            "SOURCE_SNAPSHOT_ACCEPTED_SET_MISMATCH:gemini",
+            receipt["blockers"],
         )
 
     def test_same_provider_targets_must_share_accepted_set_without_watermark(self) -> None:

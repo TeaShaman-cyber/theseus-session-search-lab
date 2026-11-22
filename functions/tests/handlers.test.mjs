@@ -291,6 +291,106 @@ test('coverage preflight is authenticated and does zero lexical shard requests',
 });
 
 
+test('coverage preflight classifies bounded Gemini provider snapshot relative to to_time', async () => {
+  const sourceSnapshot = {
+    source_scope: 'GEMINI_APPS_ACTIVITY',
+    observed_through: 450,
+    basis: 'provider_takeout_request_receipt',
+    accepted_set_sha256: 'e'.repeat(64),
+  };
+  const catalog = [{
+    shard_id: 'gemini-0001', provider: 'gemini', generation_id: 'f'.repeat(64), state: 'READY',
+    time_min: 100, time_max: 500, source_snapshot: sourceSnapshot, url: 'https://g.test/search',
+  }];
+  const handler = makeRouterHandler({ catalog, fetchImpl: async () => { throw Error('no lexical dispatch'); } });
+  const read = async (body) => {
+    const response = await handler.fetch(new Request('https://router.test/coverage', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    }));
+    assert.equal(response.status, 200);
+    return await response.json();
+  };
+
+  const bounded = await read({ provider: 'gemini', from_time: 300, to_time: 450 });
+  assert.equal(bounded.coverage.source_currentness, 'VERIFIED_TO_BOUNDED_PROVIDER_EXPORT_SNAPSHOT');
+  assert.deepEqual(bounded.coverage.source_snapshot, {
+    source_scope: 'GEMINI_APPS_ACTIVITY',
+    observed_through: 450,
+    basis: 'provider_takeout_request_receipt',
+  });
+
+  const newer = await read({ provider: 'gemini', from_time: 440, to_time: 451 });
+  assert.equal(newer.coverage.source_currentness, 'STALE_AFTER_BOUNDED_PROVIDER_EXPORT_SNAPSHOT');
+  assert.deepEqual(newer.coverage.source_snapshot, bounded.coverage.source_snapshot);
+
+  const openEnded = await read({ provider: 'gemini', from_time: 300 });
+  assert.equal(openEnded.coverage.source_currentness, 'STALE_AFTER_BOUNDED_PROVIDER_EXPORT_SNAPSHOT');
+  assert.deepEqual(openEnded.coverage.source_snapshot, bounded.coverage.source_snapshot);
+});
+
+test('time-scoped search serializes bounded Gemini snapshot currentness', async () => {
+  const sourceSnapshot = {
+    source_scope: 'GEMINI_APPS_ACTIVITY',
+    observed_through: 450,
+    basis: 'provider_takeout_request_receipt',
+    accepted_set_sha256: 'e'.repeat(64),
+  };
+  const catalog = [{
+    shard_id: 'gemini-0001', provider: 'gemini', generation_id: 'f'.repeat(64), state: 'READY',
+    time_min: 100, time_max: 500, source_snapshot: sourceSnapshot, url: 'https://g.test/search',
+  }];
+  const handler = makeRouterHandler({
+    catalog,
+    fetchImpl: async () => Response.json(groupedPayload({
+      generationId: 'f'.repeat(64), shardId: 'gemini-0001', provider: 'gemini',
+    })),
+  });
+  const response = await handler.fetch(new Request('https://router.test/search', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ query: 'gemini', provider: 'gemini', from_time: 300, to_time: 450 }),
+  }));
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.coverage.source_currentness, 'VERIFIED_TO_BOUNDED_PROVIDER_EXPORT_SNAPSHOT');
+  assert.deepEqual(body.coverage.source_snapshot, {
+    source_scope: 'GEMINI_APPS_ACTIVITY',
+    observed_through: 450,
+    basis: 'provider_takeout_request_receipt',
+  });
+});
+
+test('MCP session_coverage preserves bounded Gemini snapshot currentness metadata', async () => {
+  const sourceSnapshot = {
+    source_scope: 'GEMINI_APPS_ACTIVITY',
+    observed_through: 450,
+    basis: 'provider_takeout_request_receipt',
+    accepted_set_sha256: 'e'.repeat(64),
+  };
+  const catalog = [{
+    shard_id: 'gemini-0001', provider: 'gemini', generation_id: 'f'.repeat(64), state: 'READY',
+    time_min: 100, time_max: 500, source_snapshot: sourceSnapshot, url: 'https://g.test/search',
+  }];
+  const handler = makeRouterHandler({ catalog, fetchImpl: async () => { throw Error('no lexical dispatch'); } });
+  const response = await handler.fetch(new Request('https://router.test/mcp', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 329, method: 'tools/call', params: {
+      name: 'session_coverage', arguments: { provider: 'gemini', from_time: 300, to_time: 450 },
+    } }),
+  }));
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.result.isError, false);
+  assert.equal(
+    body.result.structuredContent.coverage.source_currentness,
+    'VERIFIED_TO_BOUNDED_PROVIDER_EXPORT_SNAPSHOT',
+  );
+  assert.deepEqual(body.result.structuredContent.coverage.source_snapshot, {
+    source_scope: 'GEMINI_APPS_ACTIVITY',
+    observed_through: 450,
+    basis: 'provider_takeout_request_receipt',
+  });
+});
+
 test('coverage preflight verifies a provider-reported source watermark bound to every eligible shard', async () => {
   const sourceWatermark = {
     observed_through: 450,

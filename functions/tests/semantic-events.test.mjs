@@ -76,10 +76,12 @@ test('coverage, feedback, and MCP search schemas stay bounded', () => {
   const events = createPostHogSemanticEvents({ client, serviceVersion: 'v', environment: 'e' });
   assert.equal(events.capture('session coverage classified', { route: 'coverage', request_ref: 'c'.repeat(32), window_fit: 'OBSERVED_POSSIBLE', source_currentness: 'UNKNOWN_WITHOUT_SOURCE_WATERMARK' }), true);
   assert.equal(events.capture('session coverage classified', { route: 'mcp', request_ref: 'd'.repeat(32), window_fit: 'OBSERVED_POSSIBLE', source_currentness: 'UNKNOWN_WITHOUT_SOURCE_WATERMARK' }), true);
+  assert.equal(events.capture('session coverage classified', { route: 'coverage', request_ref: '7'.repeat(32), window_fit: 'OBSERVED_POSSIBLE', source_currentness: 'VERIFIED_TO_BOUNDED_PROVIDER_EXPORT_SNAPSHOT' }), true);
+  assert.equal(events.capture('session coverage classified', { route: 'mcp', request_ref: '8'.repeat(32), window_fit: 'OBSERVED_POSSIBLE', source_currentness: 'STALE_AFTER_BOUNDED_PROVIDER_EXPORT_SNAPSHOT' }), true);
   assert.equal(events.capture('session search completed', { route: 'mcp', request_ref: 'e'.repeat(32), result_status: 'FOUND', queried_shards_count: 1, unavailable_shards_count: 0 }), true);
   assert.equal(events.capture('session feedback submitted', { route: 'mcp', request_ref: 'f'.repeat(32), feedback_status: 'RECORDED' }), true);
   assert.equal(events.capture('session search completed', { route: 'internal', request_ref: '1'.repeat(32), result_status: 'FOUND', queried_shards_count: 1, unavailable_shards_count: 0 }), false);
-  assert.equal(client.captures.length, 4);
+  assert.equal(client.captures.length, 6);
 });
 
 test('capture and flush failures are contained and flush is budget bounded', async () => {

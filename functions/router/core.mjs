@@ -18,6 +18,8 @@ const FEEDBACK_READ_FIELDS = new Set(['feedback_ref']);
 const COVERAGE_FIELDS = new Set(['provider', 'session_id', 'from_time', 'to_time']);
 const SOURCE_WATERMARK_STATUS = 'PROVIDER_REPORTED_NO_KNOWN_GAPS';
 const SOURCE_WATERMARK_BASIS = 'provider_export_manifest';
+const SOURCE_SNAPSHOT_SCOPE = 'GEMINI_APPS_ACTIVITY';
+const SOURCE_SNAPSHOT_BASIS = 'provider_takeout_request_receipt';
 const SHA256_REF = /^[0-9a-f]{64}$/;
 
 function validateSearchInput(input = {}) {
@@ -220,6 +222,61 @@ export function applySourceWatermarkOverlay(catalog, rawOverlay) {
   ));
 }
 
+function normalizedSourceSnapshot(shard) {
+  const value = shard?.source_snapshot;
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) return null;
+  const fields = Object.keys(value).sort();
+  const expected = ['accepted_set_sha256', 'basis', 'observed_through', 'source_scope'];
+  if (fields.length !== expected.length || fields.some((field, index) => field !== expected[index])) return null;
+  if (value.source_scope !== SOURCE_SNAPSHOT_SCOPE || value.basis !== SOURCE_SNAPSHOT_BASIS) {
+    return null;
+  }
+  if (!Number.isFinite(value.observed_through)) return null;
+  if (typeof value.accepted_set_sha256 !== 'string'
+      || !SHA256_REF.test(value.accepted_set_sha256)) {
+    return null;
+  }
+  return {
+    source_scope: value.source_scope,
+    observed_through: value.observed_through,
+    basis: value.basis,
+    accepted_set_sha256: value.accepted_set_sha256,
+  };
+}
+
+export function applySourceSnapshotOverlay(catalog, rawOverlay) {
+  if (rawOverlay == null || rawOverlay === '') return catalog;
+
+  let overlay;
+  try {
+    overlay = JSON.parse(rawOverlay);
+  } catch {
+    throw new Error('SESSION_SEARCH_SOURCE_SNAPSHOTS_INVALID');
+  }
+  if (overlay == null || typeof overlay !== 'object' || Array.isArray(overlay)) {
+    throw new Error('SESSION_SEARCH_SOURCE_SNAPSHOTS_INVALID');
+  }
+
+  const providers = Object.keys(overlay);
+  if (providers.length === 0) throw new Error('SESSION_SEARCH_SOURCE_SNAPSHOTS_INVALID');
+  const catalogProviders = new Set(catalog.map((item) => item.provider));
+
+  for (const provider of providers) {
+    if (provider !== 'gemini' || !catalogProviders.has(provider)) {
+      throw new Error('SESSION_SEARCH_SOURCE_SNAPSHOTS_INVALID');
+    }
+    if (normalizedSourceSnapshot({ source_snapshot: overlay[provider] }) == null) {
+      throw new Error('SESSION_SEARCH_SOURCE_SNAPSHOTS_INVALID');
+    }
+  }
+
+  return catalog.map((item) => (
+    Object.hasOwn(overlay, item.provider)
+      ? { ...item, source_snapshot: { ...overlay[item.provider] } }
+      : item
+  ));
+}
+
 export function selectShards(catalog, input = {}) {
   return [...catalog]
     .filter((shard) => input.provider == null || shard.provider === input.provider)
@@ -259,7 +316,36 @@ function summarizeSourceCurrentness(eligible, input) {
   if (input.provider == null || eligible.length === 0) return unknown;
 
   const watermarks = eligible.map(normalizedSourceWatermark);
-  if (watermarks.some((watermark) => watermark == null)) return unknown;
+  const snapshots = eligible.map(normalizedSourceSnapshot);
+  const allWatermarks = watermarks.every((watermark) => watermark != null);
+  const allSnapshots = snapshots.every((snapshot) => snapshot != null);
+
+  if (allWatermarks && allSnapshots) return unknown;
+
+  if (allSnapshots) {
+    const first = snapshots[0];
+    const sameBinding = snapshots.every((snapshot) =>
+      snapshot.source_scope === first.source_scope
+      && snapshot.observed_through === first.observed_through
+      && snapshot.basis === first.basis
+      && snapshot.accepted_set_sha256 === first.accepted_set_sha256);
+    if (!sameBinding) return unknown;
+
+    const requestExtendsPastSnapshot = input.to_time == null
+      || input.to_time > first.observed_through;
+    return {
+      source_currentness: requestExtendsPastSnapshot
+        ? 'STALE_AFTER_BOUNDED_PROVIDER_EXPORT_SNAPSHOT'
+        : 'VERIFIED_TO_BOUNDED_PROVIDER_EXPORT_SNAPSHOT',
+      source_snapshot: {
+        source_scope: first.source_scope,
+        observed_through: first.observed_through,
+        basis: first.basis,
+      },
+    };
+  }
+
+  if (!allWatermarks) return unknown;
 
   const first = watermarks[0];
   const sameBinding = watermarks.every((watermark) =>

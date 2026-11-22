@@ -1,7 +1,7 @@
 import { createTelemetryFromEnv } from '../telemetry.mjs';
 import { createSemanticEventsFromEnv } from '../semantic-events.mjs';
 import { makeRouterHandler } from './handler.mjs';
-import { applySourceWatermarkOverlay } from './core.mjs';
+import { applySourceSnapshotOverlay, applySourceWatermarkOverlay } from './core.mjs';
 import { neon } from '@neondatabase/serverless';
 import { assertFeedbackDatabaseUrl, makeFeedbackReader, makeFeedbackWriter } from './feedback.mjs';
 
@@ -10,6 +10,7 @@ const authToken = process.env.SESSION_SEARCH_ROUTER_AUTH_TOKEN;
 const shardAuthToken = process.env.SESSION_SEARCH_SHARD_AUTH_TOKEN;
 const resultShape = process.env.SESSION_SEARCH_RESULT_SHAPE ?? 'grouped_v1';
 const rawSourceWatermarks = process.env.SESSION_SEARCH_SOURCE_WATERMARKS ?? null;
+const rawSourceSnapshots = process.env.SESSION_SEARCH_SOURCE_SNAPSHOTS ?? null;
 
 if (!rawCatalog) throw new Error('SESSION_SEARCH_CATALOG_MISSING');
 if (!authToken) throw new Error('SESSION_SEARCH_ROUTER_AUTH_TOKEN_MISSING');
@@ -25,6 +26,7 @@ if (!Array.isArray(catalog) || catalog.length < 1) {
   throw new Error('SESSION_SEARCH_CATALOG_EMPTY');
 }
 catalog = applySourceWatermarkOverlay(catalog, rawSourceWatermarks);
+catalog = applySourceSnapshotOverlay(catalog, rawSourceSnapshots);
 
 const ROUTER_TELEMETRY_FLUSH_TIMEOUT_MS = 1000;
 
