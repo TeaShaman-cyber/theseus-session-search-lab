@@ -11,8 +11,25 @@ BROWSE = OVERLAY / "skills" / "session-browse-usage" / "SKILL.md"
 FEEDBACK_DOC = ROOT / "docs" / "feedback-sync.md"
 FEEDBACK_CODE = ROOT / "functions" / "router" / "feedback.mjs"
 FEEDBACK_CORE = ROOT / "functions" / "router" / "core.mjs"
+ROOT_README = ROOT / "README.md"
+RUNBOOK = ROOT / "docs" / "federated-serving-promotion-runbook.md"
+GEMINI_SPEC = ROOT / "docs" / "gemini-official-corpus-serving-spec.md"
+HOUSEKEEPING = ROOT / "docs" / "neon-housekeeping.md"
 
-for path in (README, SKILL, GATEWAY, SERVING, BROWSE, FEEDBACK_DOC, FEEDBACK_CODE, FEEDBACK_CORE):
+for path in (
+    README,
+    SKILL,
+    GATEWAY,
+    SERVING,
+    BROWSE,
+    FEEDBACK_DOC,
+    FEEDBACK_CODE,
+    FEEDBACK_CORE,
+    ROOT_README,
+    RUNBOOK,
+    GEMINI_SPEC,
+    HOUSEKEEPING,
+):
     if not path.is_file():
         raise SystemExit(f"SESSION_SEARCH_APP_OVERLAY_FAIL missing {path.relative_to(ROOT)}")
 
@@ -24,6 +41,10 @@ browse = BROWSE.read_text(encoding="utf-8")
 feedback_doc = FEEDBACK_DOC.read_text(encoding="utf-8")
 feedback_code = FEEDBACK_CODE.read_text(encoding="utf-8")
 feedback_core = FEEDBACK_CORE.read_text(encoding="utf-8")
+root_readme = ROOT_README.read_text(encoding="utf-8")
+runbook = RUNBOOK.read_text(encoding="utf-8")
+gemini_spec = GEMINI_SPEC.read_text(encoding="utf-8")
+housekeeping = HOUSEKEEPING.read_text(encoding="utf-8")
 
 for marker in (
     "App-backed",
@@ -122,6 +143,61 @@ if "name: 'session_feedback_get'" not in feedback_core or "notes: feedback.notes
 
 if "still selects only session_search when asked for feedback" in skill:
     raise SystemExit("SESSION_SEARCH_APP_OVERLAY_FAIL stale current feedback discovery assertion")
+
+for label, document in (
+    ("overlay README", readme),
+    ("search skill", skill),
+    ("gateway", gateway),
+    ("serving plane", serving),
+    ("root README", root_readme),
+    ("promotion runbook", runbook),
+):
+    for marker in (
+        "VERIFIED_TO_BOUNDED_PROVIDER_EXPORT_SNAPSHOT",
+        "STALE_AFTER_BOUNDED_PROVIDER_EXPORT_SNAPSHOT",
+    ):
+        if marker not in document:
+            raise SystemExit(
+                f"SESSION_SEARCH_APP_OVERLAY_FAIL {label} Gemini snapshot marker: {marker}"
+            )
+
+for stale in (
+    "If the gateway lists three tools but this host still discovers only the earlier two",
+    "tools_count=3",
+):
+    if stale in browse:
+        raise SystemExit(
+            f"SESSION_SEARCH_APP_OVERLAY_FAIL stale browse discovery checkpoint: {stale}"
+        )
+
+for label, document in (
+    ("overlay README", readme),
+    ("gateway", gateway),
+    ("serving plane", serving),
+):
+    for marker in ("gemini-0001", "five READY shards"):
+        if marker not in document:
+            raise SystemExit(
+                f"SESSION_SEARCH_APP_OVERLAY_FAIL {label} live Gemini marker: {marker}"
+            )
+
+if "GEMINI LIVE / FIVE-SHARD PRODUCTION VERIFIED" not in gemini_spec:
+    raise SystemExit("SESSION_SEARCH_APP_OVERLAY_FAIL Gemini spec terminal state missing")
+
+if "live five shard generations" not in housekeeping:
+    raise SystemExit("SESSION_SEARCH_APP_OVERLAY_FAIL housekeeping live five-shard retention missing")
+if "live four shard generations" in housekeeping:
+    raise SystemExit("SESSION_SEARCH_APP_OVERLAY_FAIL housekeeping stale four-shard retention")
+
+for label, document in (("search skill", skill), ("serving plane", serving)):
+    if "exe.dev first" not in document:
+        raise SystemExit(f"SESSION_SEARCH_APP_OVERLAY_FAIL {label} exe.dev-first route missing")
+    if "MarcoPolo may be used for engineering" in document or "MarcoPolo remains an engineering" in document:
+        raise SystemExit(f"SESSION_SEARCH_APP_OVERLAY_FAIL {label} stale MarcoPolo-first-era wording")
+
+for marker in ("OUTSIDE_OBSERVED_INDEX_RANGE", "OBSERVED_POSSIBLE", "UNKNOWN_COVERAGE"):
+    if marker not in skill:
+        raise SystemExit(f"SESSION_SEARCH_APP_OVERLAY_FAIL search skill window-fit marker: {marker}")
 
 legacy_current_smoke = "require `FOUND` with both `chatgpt-0001` and `hermes-0001` provenance"
 if legacy_current_smoke in skill:

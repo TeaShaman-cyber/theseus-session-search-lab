@@ -302,22 +302,17 @@ Require current discovery of the intended Session Search tools, including:
 - TheseusSessionSearch.session_feedback;
 - TheseusSessionSearch.session_feedback_get.
 
-Then verify:
+Then verify the source-currentness contract appropriate to the scoped provider:
 
-1. a ChatGPT window ending at or before the accepted provider watermark:
-   - status=OBSERVED;
-   - catalog_bounds_complete=true;
-   - expected new generation IDs and finite bounds;
-   - source_currentness=VERIFIED_TO_PROVIDER_REPORTED_WATERMARK;
-2. a later/open ChatGPT window:
-   - source_currentness=STALE_AFTER_PROVIDER_REPORTED_WATERMARK;
-   - expected window_fit from current observed bounds;
-3. a bounded strict positive search:
+1. for a provider-reporting export such as the accepted ChatGPT source, a window ending at or before the accepted provider watermark must return status=OBSERVED, catalog_bounds_complete=true, expected generation IDs and finite bounds, and source_currentness=VERIFIED_TO_PROVIDER_REPORTED_WATERMARK; a later/open window must return STALE_AFTER_PROVIDER_REPORTED_WATERMARK;
+2. for a bounded provider export snapshot that does not claim provider completeness, currently Gemini Apps Activity, a window ending at or before source_snapshot.observed_through must return VERIFIED_TO_BOUNDED_PROVIDER_EXPORT_SNAPSHOT with the expected source_scope/basis; a later/open window must return STALE_AFTER_BOUNDED_PROVIDER_EXPORT_SNAPSHOT;
+3. if neither one coherent watermark nor one coherent snapshot binding is independently verified for every eligible shard, require fail-closed UNKNOWN_WITHOUT_SOURCE_WATERMARK rather than inventing freshness;
+4. a bounded strict positive search:
    - terminal FOUND;
    - expected new generation provenance;
    - unavailable_shards=[];
-4. a provider-scoped positive search where useful;
-5. a bounded impossible strict control:
+5. a provider-scoped positive search where useful;
+6. a bounded impossible strict control:
    - NO_SIGNAL;
    - unavailable_shards=[].
 

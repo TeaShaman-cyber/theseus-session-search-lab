@@ -487,9 +487,10 @@ misclassified as disposable based solely on its experiment label.
    issue/test is not itself proof that no URL, job, or rollback depends on it.
 4. **Archived legacy projects:** personal xAI / DeepSeek / Hermes prototypes.
    Lower immediate priority; verify cross-project ownership and retention.
-5. **Preserve:** live four shard generations, all serving Functions, production
+5. **Preserve:** live five shard generations (ChatGPT x2, DeepSeek, xAI, Gemini), all serving Functions, production
    router and associated credentials, accepted corpus/release authority, and
-   old rollback projects until #166 formally discharges the rollback window.
+   the retained pre-Gemini four-shard rollback router/assets until a separate
+   verified cleanup explicitly discharges that rollback window.
 
 **Deletion gate for each object:** observed exact ID + current scope, no active
 catalog endpoint or connected workflow, retained authoritative rebuild source

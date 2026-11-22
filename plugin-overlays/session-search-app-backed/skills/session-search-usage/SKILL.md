@@ -62,21 +62,24 @@ Start with the smallest useful query:
 
 When current host discovery exposes `TheseusSessionSearch.session_coverage` and the user's request is materially time-scoped, prefer that cheap read-only preflight **before** `session_search`. It reads the router's current shard catalog and performs no lexical shard dispatch.
 
-Pass only the needed `provider`, `session_id`, `from_time`, and/or `to_time`; at least one time bound is required. Interpret the receipt conservatively:
+Pass only the needed provider, session_id, from_time, and/or to_time; at least one time bound is required.
 
-- `OUTSIDE_OBSERVED_INDEX_RANGE`: the requested window does not intersect any eligible shard's complete observed indexed bounds. Skip a lexical search for that exact window unless the user also wants older analogous material.
-- `OBSERVED_POSSIBLE`: the indexed catalog overlaps the requested window. This says only that a search may be worthwhile; it does not prove complete upstream history.
-- `UNKNOWN_COVERAGE`: provider/session coverage or catalog bounds are insufficient. Preserve uncertainty instead of asserting absence.
+Interpret coverage.window_fit first:
+- OUTSIDE_OBSERVED_INDEX_RANGE: the requested window does not intersect any eligible shard's complete observed indexed bounds. Skip a lexical search for that exact window unless the user also wants older analogous material.
+- OBSERVED_POSSIBLE: the indexed catalog overlaps the requested window. This says only that a search may be worthwhile; it does not prove complete upstream history.
+- UNKNOWN_COVERAGE: provider/session coverage or catalog bounds are insufficient. Preserve uncertainty instead of asserting absence.
 
-Interpret `source_currentness` separately from observed index bounds:
+Interpret source_currentness separately from observed index bounds:
 
-- `UNKNOWN_WITHOUT_SOURCE_WATERMARK`: no common verified provider-export binding is present for every eligible shard. A green router, READY generation, or recent `time_max` does not change this.
-- `VERIFIED_TO_PROVIDER_REPORTED_WATERMARK`: every eligible shard for the explicitly scoped provider is bound to the same accepted set and provider-export watermark, and the requested window ends at or before that watermark.
-- `STALE_AFTER_PROVIDER_REPORTED_WATERMARK`: the same binding exists, but the request is open-ended or extends later than the watermark.
+- UNKNOWN_WITHOUT_SOURCE_WATERMARK: no single verified accepted-set-bound source evidence contract applies coherently to every eligible shard. A green router, READY generation, or recent time_max does not change this.
+- VERIFIED_TO_PROVIDER_REPORTED_WATERMARK: every eligible shard for the explicitly scoped provider is bound to the same accepted set and provider-reporting export watermark, and the requested window ends at or before that watermark.
+- STALE_AFTER_PROVIDER_REPORTED_WATERMARK: the same watermark binding exists, but the request is open-ended or extends later than the watermark.
+- VERIFIED_TO_BOUNDED_PROVIDER_EXPORT_SNAPSHOT: every eligible shard is bound to the same accepted bounded provider snapshot, and the requested window ends at or before source_snapshot.observed_through. The current Gemini Apps Activity source uses this state.
+- STALE_AFTER_BOUNDED_PROVIDER_EXPORT_SNAPSHOT: the same snapshot binding exists, but the request is open-ended or extends later than source_snapshot.observed_through.
 
-When present, `source_watermark.status=PROVIDER_REPORTED_NO_KNOWN_GAPS` means the provider export manifest reported no known incomplete corpora / inventory warnings / omissions / redactions at capture time. Treat that as bounded provider-reported evidence, **not** as an unconditional claim that the original account history is complete. `source_watermark.observed_through` is the source snapshot time; `observed_at` remains the router response time. Bounded generation metadata describes the serving catalog observed for that preflight, not raw-history authority.
+When present, source_watermark.status=PROVIDER_REPORTED_NO_KNOWN_GAPS means the provider export manifest reported no known incomplete corpora / inventory warnings / omissions / redactions at capture time. Treat that as bounded provider-reported evidence, not as an unconditional claim that the original account history is complete. source_snapshot is deliberately weaker: for Gemini it describes the accepted GEMINI_APPS_ACTIVITY Takeout surface and its conservative request-time boundary, not all Gemini conversations ever created. observed_at remains the router response time. Bounded generation metadata describes the serving catalog observed for that preflight, not raw-history authority.
 
-If `session_coverage` is absent from fresh Arcade/host discovery, do not invent or assume it from Git source. Fall back to a time-scoped `session_search` only when that search is still useful, inspect its additive `coverage` receipt, and state that preventive preflight is unavailable on the current surface.
+If session_coverage is absent from fresh Arcade/host discovery, do not invent or assume it from Git source. Fall back to a time-scoped `session_search` only when that search is still useful, inspect its additive `coverage` receipt, and state that preventive preflight is unavailable on the current surface.
 
 Do not silently translate `PARTIAL` into `NO_SIGNAL`.
 
@@ -144,6 +147,8 @@ The live shard catalog may evolve independently of the consumer skill. Therefore
 
 Point-in-time observation on 2026-10-26 showed `deepseek-0001` and `xai-0001` in the live catalog. A later verified acceptance on 2026-10-31, after issue #126 promotion, observed `chatgpt-0001`, `chatgpt-0002`, `deepseek-0001`, and `xai-0001` with `unavailable_shards=[]` through the App-backed host path. These observations are evidence, not permanent acceptance constants.
 
+A fresh terminal production acceptance on 2026-11-22 after issues #311/#332 observed five READY shards through the same App-backed identity: chatgpt-0001, chatgpt-0002, deepseek-0001, xai-0001, and gemini-0001, with unavailable_shards=[] on the broad impossible control. Gemini uses bounded provider-export snapshot currentness rather than the ChatGPT provider watermark contract. This is dated runtime evidence; continue to trust each call's queried_shards/unavailable_shards over hard-coded topology.
+
 ## Historical #64 acceptance
 
 The historical #64 host acceptance used synthetic `chatgpt-0001` and `hermes-0001` shards and required `copper compass -> FOUND` from both. That smoke proved the App-backed host path at that point in time.
@@ -165,7 +170,7 @@ durable accepted source exports
   -> ChatGPT
 ```
 
-MarcoPolo may be used for engineering, ingest, QA, rebuild, recovery, and current deployment verification. It is not part of the production read request path.
+The governed engineering and promotion route is exe.dev first, using the current project/cloud-shell rules. Sprites and MarcoPolo are fallbacks only after observed exe.dev insufficiency or capability mismatch. None of those engineering runtimes is part of the production read request path.
 
 A successful live query proves only the queried serving surface and shards. It does not prove completeness of every provider corpus.
 
@@ -198,15 +203,15 @@ After updating the existing App-backed plugin:
 
 1. start a fresh ChatGPT conversation on the intended host surface;
 2. select the existing Session Search App-backed plugin; do not create a replacement identity;
-3. use `Arcade_SelectTools` to confirm all five expected Session Search tools are discoverable: `session_search`, `session_browse`, `session_feedback`, `session_feedback_get`, and `session_coverage`;
-4. use `Arcade_UseTool` to run a bounded `session_coverage` probe whose window ends at or before the separately verified provider watermark; require `status=OBSERVED`, a valid `window_fit`, `source_currentness=VERIFIED_TO_PROVIDER_REPORTED_WATERMARK`, bounded `source_watermark` metadata, and no transcript content in the receipt;
-5. run a second bounded `session_coverage` probe whose window extends later than that watermark and require `source_currentness=STALE_AFTER_PROVIDER_REPORTED_WATERMARK`; this validates staleness classification without treating the provider report as `SOURCE_COMPLETE`;
-6. use `Arcade_UseTool` to run a bounded safe `session_search` strict control probe;
-7. confirm the current search schema exposes `search_mode` = `strict|recall|auto` with default `strict`;
-8. run a bounded `search_mode=auto` probe that is known to strict-miss and require a `retrieval` receipt showing bounded strict-to-recall escalation;
-9. require a contract-valid terminal search status and explicit `queried_shards` / `unavailable_shards`;
-10. require `unavailable_shards=[]` before calling the serving path healthy;
-11. if the search result is `PARTIAL`, classify the host path as executable but serving as DEGRADED and do not escalate it through auto;
+3. use Arcade_SelectTools to confirm all five expected Session Search tools are discoverable: session_search, session_browse, session_feedback, session_feedback_get, and session_coverage;
+4. use Arcade_UseTool to run a bounded session_coverage probe appropriate to the provider's independently verified source evidence: provider-reporting watermark or bounded provider export snapshot; require status=OBSERVED, a valid window_fit, the matching verified currentness state, bounded source metadata, and no transcript content in the receipt;
+5. run a paired later/open session_coverage probe and require the matching stale state: STALE_AFTER_PROVIDER_REPORTED_WATERMARK or STALE_AFTER_BOUNDED_PROVIDER_EXPORT_SNAPSHOT; do not reinterpret either evidence family as SOURCE_COMPLETE;
+6. use Arcade_UseTool to run a bounded safe session_search strict control probe;
+7. confirm the current search schema exposes search_mode = strict|recall|auto with default strict;
+8. run a bounded search_mode=auto probe that is known to strict-miss and require a retrieval receipt showing bounded strict-to-recall escalation;
+9. require a contract-valid terminal search status and explicit queried_shards / unavailable_shards;
+10. require unavailable_shards=[] before calling the serving path healthy;
+11. if the search result is PARTIAL, classify the host path as executable but serving as DEGRADED and do not escalate it through auto;
 12. compare observed provenance with the current live shard catalog/deployment evidence instead of historical #64 shard names.
 
 Do not infer host success from Arcade control-plane state alone. Do not infer corpus absence merely because a provider/shard family is not present in the current live catalog.

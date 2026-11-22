@@ -43,7 +43,7 @@ The invariant is that the existing App-backed host can discover and execute `The
 
 For retrieval-policy capable deployments, fresh discovery must expose `search_mode` with `strict`, `recall`, and `auto` (default `strict`). The stable `session_search` tool returns exact-text result groups by default, preserving all matched occurrences/provenance under each group. `auto` must return a `retrieval` receipt that distinguishes requested from effective mode; a strict grouped miss may escalate to recall, while `PARTIAL` must remain visible and must not be hidden by retry.
 
-The authorized coverage rollout established five intentional consumer tools by adding only `TheseusSessionSearch.session_coverage`; the prior four identities remain present. Fresh host discovery must execute a bounded coverage preflight and observe `status=OBSERVED`, a valid `coverage.window_fit`, and one of the defined source-currentness states: `VERIFIED_TO_PROVIDER_REPORTED_WATERMARK`, `STALE_AFTER_PROVIDER_REPORTED_WATERMARK`, or fail-closed `UNKNOWN_WITHOUT_SOURCE_WATERMARK`. The preflight remains metadata-only; none of these states certifies raw ChatGPT account completeness or `SOURCE_COMPLETE`.
+The authorized coverage rollout established five intentional consumer tools by adding only TheseusSessionSearch.session_coverage; the prior four identities remain present. Fresh host discovery must execute a bounded coverage preflight and observe status=OBSERVED, a valid coverage.window_fit, and one defined source-currentness state. Provider-reporting exports use VERIFIED_TO_PROVIDER_REPORTED_WATERMARK / STALE_AFTER_PROVIDER_REPORTED_WATERMARK; accepted bounded provider snapshots use VERIFIED_TO_BOUNDED_PROVIDER_EXPORT_SNAPSHOT / STALE_AFTER_BOUNDED_PROVIDER_EXPORT_SNAPSHOT; missing or conflicting evidence fails closed to UNKNOWN_WITHOUT_SOURCE_WATERMARK. The preflight remains metadata-only; none of these states certifies complete raw account history or SOURCE_COMPLETE.
 
 ## Verified serving refresh checkpoint — November 22 2026
 
@@ -79,6 +79,16 @@ The source snapshot watermark and runtime deployment freshness are separate
 claims. The plugin can be correctly deployed against the latest accepted export
 while conversations later than that export still report stale/outside observed
 coverage.
+
+## Verified Gemini terminal checkpoint — November 22 2026
+
+Issues #311 and #332 promoted the official Gemini Apps Activity corpus through the same production identity. Fresh App-backed readback observed five READY shards: chatgpt-0001, chatgpt-0002, deepseek-0001, xai-0001, and gemini-0001. The canonical worker remains theseus-session-search on the original ssrouter2 production URI and still exposes exactly five consumer tools.
+
+Gemini coverage at/before the accepted Takeout request boundary returns VERIFIED_TO_BOUNDED_PROVIDER_EXPORT_SNAPSHOT with source_scope=GEMINI_APPS_ACTIVITY. A later/open Gemini window returns STALE_AFTER_BOUNDED_PROVIDER_EXPORT_SNAPSHOT. Fresh Gemini strict search returns FOUND with exact gemini-0001 generation provenance and unavailable_shards=[]; a broad impossible control queries all five shards with unavailable_shards=[].
+
+The production cutover again proved that deployment completion alone is not module-scope reload evidence. The combined source/config deployment reached completed while direct health still exposed four shards; a distinct runtime-only deployment on the same URI produced the observable five READY shard state. Arcade worker tools were then refreshed and App-backed acceptance repeated.
+
+This is dated runtime evidence. The live catalog remains runtime state rather than a permanent constant, and the Gemini snapshot contract does not claim complete lifetime Gemini history.
 
 ## Verified private feedback readback checkpoint — November 19 2026
 
@@ -146,15 +156,15 @@ Gateway/control-plane existence is not host acceptance.
 A fresh host acceptance must:
 1. use the existing App-backed Session Search plugin identity;
 2. discover the current Session Search domain tools rather than infer them from Git or router source;
-3. verify the five intentional tools remain available: `session_search`, `session_browse`, `session_coverage`, `session_feedback`, and `session_feedback_get`;
-4. execute a bounded coverage probe and accept only the defined source-currentness states: `VERIFIED_TO_PROVIDER_REPORTED_WATERMARK`, `STALE_AFTER_PROVIDER_REPORTED_WATERMARK`, or fail-closed `UNKNOWN_WITHOUT_SOURCE_WATERMARK`; none implies `SOURCE_COMPLETE`;
+3. verify the five intentional tools remain available: session_search, session_browse, session_coverage, session_feedback, and session_feedback_get;
+4. execute a bounded coverage probe and accept the source-currentness family justified by the scoped provider: VERIFIED_TO_PROVIDER_REPORTED_WATERMARK / STALE_AFTER_PROVIDER_REPORTED_WATERMARK for provider-reporting exports, VERIFIED_TO_BOUNDED_PROVIDER_EXPORT_SNAPSHOT / STALE_AFTER_BOUNDED_PROVIDER_EXPORT_SNAPSHOT for accepted bounded provider snapshots, or fail-closed UNKNOWN_WITHOUT_SOURCE_WATERMARK; none implies SOURCE_COMPLETE;
 5. execute a bounded live search probe;
-6. receive a terminal `FOUND`, `NO_SIGNAL`, or `PARTIAL` search result with explicit `queried_shards` and `unavailable_shards`;
+6. receive a terminal FOUND, NO_SIGNAL, or PARTIAL search result with explicit queried_shards and unavailable_shards;
 7. preserve returned shard/generation provenance;
 8. require no unavailable shards before declaring the serving path healthy;
-9. for an `auto` acceptance probe, require a `retrieval` receipt with `requested_mode`, `effective_mode`, `strict_group_count`, and `returned_group_count` consistent with the observed bounded policy.
+9. for an auto acceptance probe, require a retrieval receipt with requested_mode, effective_mode, strict_group_count, and returned_group_count consistent with the observed bounded policy.
 
-The **live shard catalog** is runtime evidence and may evolve. Compare observed provenance with current deployment/project evidence when shard topology matters.
+The live shard catalog is runtime evidence and may evolve. Compare observed provenance with current deployment/project evidence when shard topology matters.
 
 ### Verified 2026-10-31 acceptance
 
