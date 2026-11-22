@@ -30,6 +30,12 @@ class ReviewGateWorkflowContractTests(unittest.TestCase):
         self.assertIn('--slurp', wrapper)
         self.assertIn('alternative_review_status.py', wrapper)
 
+    def test_review_job_uses_the_same_head_classified_by_first_job(self):
+        workflow = (ROOT / '.github/workflows/review-gate.yml').read_text()
+        self.assertIn('steps.classify.outputs.head_sha', workflow)
+        self.assertIn('echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"', workflow)
+        self.assertIn('needs.classify.outputs.head_sha', workflow)
+
     def test_posthog_review_receipt_is_advisory_and_scoped(self):
         qa = (ROOT / 'docs/qa.md').read_text()
         self.assertIn('POSTHOG_CI_HISTORY:', qa)

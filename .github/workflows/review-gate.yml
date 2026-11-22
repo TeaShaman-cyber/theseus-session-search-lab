@@ -13,6 +13,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       required: ${{ steps.classify.outputs.required }}
+      head_sha: ${{ steps.classify.outputs.head_sha }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -42,6 +43,7 @@ jobs:
           cat decision.json
           required=$(python3 -c 'import json; print(str(json.load(open("decision.json"))["required"]).lower())')
           echo "required=$required" >> "$GITHUB_OUTPUT"
+          echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
 
   review-gate:
     needs: classify
@@ -63,7 +65,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          EXPECTED_HEAD: ${{ needs.classify.outputs.head_sha }}
         shell: bash
         run: |
           set -euo pipefail

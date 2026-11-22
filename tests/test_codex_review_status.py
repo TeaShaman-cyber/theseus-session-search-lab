@@ -28,7 +28,7 @@ def summary(state, updated_at="2026-10-24T20:00:00Z"):
         },
     }
     return {
-        "user": {"login": "chatgpt-codex-connector[bot]"},
+        "user": {"login": "chatgpt-codex-connector[bot]", "type": "Bot"},
         "updated_at": updated_at,
         "body": (
             "<!-- codex-pull-request-review-summary -->\n"
@@ -103,6 +103,31 @@ class CodexReviewStatusTest(unittest.TestCase):
         ], HEAD)
         self.assertEqual(result["status"], "STALE")
         self.assertEqual(result["reason"], "review-not-for-head")
+
+    def test_similar_codex_login_is_not_trusted(self):
+        fake = summary({
+            "commit_sha": HEAD,
+            "has_any_findings": False,
+            "has_unresolved_findings": False,
+            "status": "completed",
+        })
+        fake["user"]["login"] = "chatgpt-codex-connector-evil"
+        fake["user"]["type"] = "User"
+        result = classify_codex_review([fake], HEAD)
+        self.assertEqual(result["status"], "PENDING")
+        self.assertEqual(result["reason"], "review-summary-missing")
+
+    def test_exact_codex_login_must_be_bot_type(self):
+        fake = summary({
+            "commit_sha": HEAD,
+            "has_any_findings": False,
+            "has_unresolved_findings": False,
+            "status": "completed",
+        })
+        fake["user"]["type"] = "User"
+        result = classify_codex_review([fake], HEAD)
+        self.assertEqual(result["status"], "PENDING")
+        self.assertEqual(result["reason"], "review-summary-missing")
 
     def test_missing_summary_is_pending(self):
         result = classify_codex_review([], HEAD)

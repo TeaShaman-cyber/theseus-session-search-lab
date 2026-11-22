@@ -9,7 +9,8 @@ from typing import Any
 
 MARKER_PREFIX = "<!-- codex-review-state:v1 "
 MARKER_SUFFIX = " -->"
-CODEX_LOGIN_PREFIX = "chatgpt-codex-connector"
+CODEX_LOGIN = "chatgpt-codex-connector[bot]"
+CODEX_USER_TYPE = "Bot"
 
 
 def _extract_state(body: str) -> dict[str, Any] | None:
@@ -47,8 +48,10 @@ def normalize_comments(value: Any) -> list[dict[str, Any]]:
 def classify_codex_review(comments: list[dict[str, Any]], head_sha: str) -> dict[str, Any]:
     observations = []
     for comment in comments:
-        login = str((comment.get("user") or {}).get("login") or "")
-        if not login.startswith(CODEX_LOGIN_PREFIX):
+        user = comment.get("user") or {}
+        login = str(user.get("login") or "")
+        user_type = str(user.get("type") or "")
+        if login != CODEX_LOGIN or user_type != CODEX_USER_TYPE:
             continue
         state = _extract_state(str(comment.get("body") or ""))
         if state is None:
