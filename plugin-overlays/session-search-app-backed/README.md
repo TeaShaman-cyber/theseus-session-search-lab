@@ -39,6 +39,43 @@ skill text. This repo's `scripts/verify_session_search_app_overlay.py` guards
 the current five-tool guidance and nullable notes readback contract on every
 canonical QA run; actual runtime state is checked separately, never inferred from Git.
 
+## Verified runtime checkpoint — 2026-11-22 / issue #304
+
+Fresh App-backed readback after the 2026-11-21 ChatGPT corpus promotion
+confirmed that the stable plugin identity is serving the new ChatGPT generation
+pair while preserving the same canonical Arcade worker and production router
+URI.
+
+Observed runtime evidence:
+
+- chatgpt-0001 generation
+  0f0153c6fbdbd747bfcef80779ebaae1327a8101d9bc3051711d038e301774c9;
+- chatgpt-0002 generation
+  5004e3c94709be89ed25e1fe51ada6e8bd691a493fecf86e13b0712378ed0e8a;
+- catalog bounds complete;
+- pre-watermark coverage:
+  VERIFIED_TO_PROVIDER_REPORTED_WATERMARK;
+- later coverage:
+  STALE_AFTER_PROVIDER_REPORTED_WATERMARK;
+- provider-export watermark:
+  2026-11-19T18:43:36.744Z;
+- strict ChatGPT and broad searches:
+  FOUND with unavailable_shards=[];
+- strict impossible control:
+  NO_SIGNAL with unavailable_shards=[].
+
+The rollout also established an operator-relevant cache rule: an env-only Neon
+Function deployment can be control-plane completed while a long-lived router
+still serves previously parsed module-scope configuration. A data-only catalog
+refresh therefore requires a fresh runtime deployment of the existing accepted
+router on the same production URI, followed by Arcade worker tool refresh and
+fresh App-backed readback. The canonical operator sequence lives in
+docs/federated-serving-promotion-runbook.md.
+
+This is dated runtime evidence, not a promise that the same generation IDs or
+watermark remain current forever. Source overlay and installed plugin are still
+separate states; host release/current skill text must be read back independently.
+
 ## Historical public-source / installed-App checkpoint — 2026-11-19
 
 The source overlay contains two complementary agent skills:

@@ -108,7 +108,17 @@ The canonical fresh router deployment returned:
 
 A deliberate unavailable-shard canary returned `PARTIAL`, preserved the healthy ChatGPT hit, and reported `hermes-0001 / QUERY_FAILED`.
 
-A prior router slug retained stale environment behavior after an env-only rollback despite a completed deployment. A fresh immutable router slug restored deterministic `FOUND`. The stale slug is diagnostic evidence, not the canonical route.
+Historical canaries showed that a router slug could retain stale environment
+behavior after an env-only deployment despite a completed control-plane status.
+Issue #304 reproduced the mechanism more precisely on the production path:
+module-scope catalog state remained stale until a fresh runtime deployment was
+created. The canonical data-only route therefore preserves the production
+router identity/URI, updates only the intended environment values, forces a
+fresh runtime deployment of the existing accepted bundle/runtime, refreshes
+Arcade worker discovery, and requires App-backed readback. Creating a new
+production router slug is not the normal cache-refresh mechanism.
+
+See [federated serving promotion runbook](federated-serving-promotion-runbook.md).
 
 ## Arcade
 
@@ -150,7 +160,43 @@ Verified after #264:
 
 This checkpoint proves the observed serving state only; live topology and deployment numbers must still be re-read when currentness matters.
 
-## Current production checkpoint — 2026-11-20
+## Current production checkpoint — 2026-11-22
+
+Verified after issue #304:
+
+- the canonical Arcade worker remains theseus-session-search and points to the
+  original production ssrouter2 URI; no replacement App/server/tool identity
+  was introduced;
+- production router deployment #24 was active/current completed after a
+  catalog/source-watermark update plus an explicit runtime-only redeploy;
+- live ChatGPT catalog generations are
+  0f0153c6fbdbd747bfcef80779ebaae1327a8101d9bc3051711d038e301774c9
+  (chatgpt-0001) and
+  5004e3c94709be89ed25e1fe51ada6e8bd691a493fecf86e13b0712378ed0e8a
+  (chatgpt-0002);
+- fresh App-backed session_coverage reports finite bounds with
+  catalog_bounds_complete=true; a pre-watermark ChatGPT window returns
+  OBSERVED_POSSIBLE / VERIFIED_TO_PROVIDER_REPORTED_WATERMARK, while a later
+  window returns OUTSIDE_OBSERVED_INDEX_RANGE /
+  STALE_AFTER_PROVIDER_REPORTED_WATERMARK;
+- the accepted provider watermark is 2026-11-19T18:43:36.744Z
+  (provider_export_manifest, PROVIDER_REPORTED_NO_KNOWN_GAPS); this is the
+  source snapshot boundary, not the current wall clock;
+- fresh strict broad and ChatGPT-only searches returned FOUND on the new
+  ChatGPT generation provenance with unavailable_shards=[]; a strict impossible
+  control returned NO_SIGNAL with all intended shards available;
+- the #304 data path used deterministic bundle -> private Drive -> existing
+  Arcade materializer -> Neon BUILDING -> READY. Candidate shard serving reused
+  reviewed Function source/auth by inheritance and rebound only the
+  least-privilege database URL; no routine Function-code upload is required for
+  a data-only refresh.
+
+The operational sequence is now versioned in
+[federated-serving-promotion-runbook.md](federated-serving-promotion-runbook.md).
+Deployment numbers and generation IDs above remain dated evidence, not future
+procedure.
+
+## Previous production checkpoint — 2026-11-20
 
 Verified after #275, #284, and #286:
 
