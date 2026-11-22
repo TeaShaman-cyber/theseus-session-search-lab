@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
 import pathlib
 import re
@@ -13,6 +14,7 @@ MARKER_SUFFIX = " -->"
 HEX40 = re.compile(r"^[0-9a-f]{40}$")
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 TRUSTED_ASSOCIATIONS = {"OWNER"}
+OPERATOR_VERSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 
 
 def normalize_comments(value: Any) -> list[dict[str, Any]]:
@@ -50,6 +52,17 @@ def _extract_receipt(body: str) -> tuple[bool, dict[str, Any] | None]:
     return False, None
 
 
+def _valid_reviewed_at(value: Any) -> bool:
+    text = str(value or "").strip()
+    if not text:
+        return False
+    try:
+        parsed = dt.datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return parsed.tzinfo is not None and parsed.utcoffset() is not None
+
+
 def _invalid(head_sha: str, reason: str) -> dict[str, Any]:
     return {
         "status": "INVALID",
@@ -78,10 +91,11 @@ def _validate_receipt(receipt: dict[str, Any], expected_head: str) -> dict[str, 
     status = str(receipt.get("status") or "")
     if status not in {"CLEAN", "FINDINGS"}:
         return _invalid(expected_head, "receipt-status-invalid")
-    if not str(receipt.get("reviewed_at") or "").strip():
-        return _invalid(expected_head, "reviewed-at-missing")
-    if not str(receipt.get("operator_version") or "").strip():
-        return _invalid(expected_head, "operator-version-missing")
+    if not _valid_reviewed_at(receipt.get("reviewed_at")):
+        return _invalid(expected_head, "reviewed-at-invalid")
+    operator_version = str(receipt.get("operator_version") or "").strip()
+    if not OPERATOR_VERSION_RE.fullmatch(operator_version):
+        return _invalid(expected_head, "operator-version-invalid")
 
     reviewers = receipt.get("reviewers")
     if not isinstance(reviewers, list) or not reviewers:
@@ -159,6 +173,9 @@ def classify_alternative_review(
             "reason": "trusted-review-receipt-missing",
         }
 
+    # The newest trusted marker is authoritative. A later malformed OWNER
+    # attestation intentionally blocks rather than silently resurrecting an
+    # older CLEAN receipt; the operator must post a corrected exact-head receipt.
     _updated, latest = max(markers, key=lambda item: item[0])
     if latest is None:
         return {**base, "status": "INVALID", "reason": "malformed-review-receipt"}

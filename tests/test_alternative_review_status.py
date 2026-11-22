@@ -10,7 +10,7 @@ from scripts.alternative_review_status import classify_alternative_review, norma
 HEAD = "a" * 40
 
 
-def receipt(*, head=HEAD, reviewers=None, status="CLEAN", association="OWNER", updated_at="2026-11-22T03:00:00Z"):
+def receipt(*, head=HEAD, reviewers=None, status="CLEAN", association="OWNER", updated_at="2026-11-22T03:00:00Z", reviewed_at="2026-11-22T03:00:00Z", operator_version="manual-v1"):
     if reviewers is None:
         reviewers = [
             {
@@ -30,8 +30,8 @@ def receipt(*, head=HEAD, reviewers=None, status="CLEAN", association="OWNER", u
         "head_sha": head,
         "status": status,
         "reviewers": reviewers,
-        "reviewed_at": "2026-11-22T03:00:00Z",
-        "operator_version": "manual-v1",
+        "reviewed_at": reviewed_at,
+        "operator_version": operator_version,
     }
     return {
         "user": {"login": "TeaShaman-cyber"},
@@ -117,6 +117,33 @@ class AlternativeReviewStatusTests(unittest.TestCase):
         comment = receipt()
         comment["body"] = "<!-- alternative-review-state:v1 {not-json} -->"
         result = classify_alternative_review([comment], HEAD)
+        self.assertEqual(result["status"], "INVALID")
+        self.assertEqual(result["reason"], "malformed-review-receipt")
+
+    def test_receipt_findings_with_all_clean_reviewers_is_invalid(self):
+        result = classify_alternative_review([receipt(status="FINDINGS")], HEAD)
+        self.assertEqual(result["status"], "INVALID")
+        self.assertEqual(result["reason"], "receipt-status-reviewer-mismatch")
+
+    def test_reviewed_at_must_be_timezone_aware_iso8601(self):
+        result = classify_alternative_review(
+            [receipt(reviewed_at="not-a-time")], HEAD
+        )
+        self.assertEqual(result["status"], "INVALID")
+        self.assertEqual(result["reason"], "reviewed-at-invalid")
+
+    def test_operator_version_has_bounded_safe_format(self):
+        result = classify_alternative_review(
+            [receipt(operator_version="bad version with spaces")], HEAD
+        )
+        self.assertEqual(result["status"], "INVALID")
+        self.assertEqual(result["reason"], "operator-version-invalid")
+
+    def test_latest_trusted_malformed_marker_blocks_older_clean_receipt(self):
+        older = receipt(updated_at="2026-11-22T03:00:00Z")
+        newer = receipt(updated_at="2026-11-22T03:01:00Z")
+        newer["body"] = "<!-- alternative-review-state:v1 {not-json} -->"
+        result = classify_alternative_review([older, newer], HEAD)
         self.assertEqual(result["status"], "INVALID")
         self.assertEqual(result["reason"], "malformed-review-receipt")
 
