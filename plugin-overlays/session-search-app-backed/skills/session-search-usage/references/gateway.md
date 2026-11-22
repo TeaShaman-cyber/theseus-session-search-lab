@@ -45,6 +45,41 @@ For retrieval-policy capable deployments, fresh discovery must expose `search_mo
 
 The authorized coverage rollout established five intentional consumer tools by adding only `TheseusSessionSearch.session_coverage`; the prior four identities remain present. Fresh host discovery must execute a bounded coverage preflight and observe `status=OBSERVED`, a valid `coverage.window_fit`, and one of the defined source-currentness states: `VERIFIED_TO_PROVIDER_REPORTED_WATERMARK`, `STALE_AFTER_PROVIDER_REPORTED_WATERMARK`, or fail-closed `UNKNOWN_WITHOUT_SOURCE_WATERMARK`. The preflight remains metadata-only; none of these states certifies raw ChatGPT account completeness or `SOURCE_COMPLETE`.
 
+## Verified serving refresh checkpoint — November 22 2026
+
+Issue #304 promoted the accepted 2026-11-21 ChatGPT refresh through the same
+private App/Gateway identity. Fresh host discovery and execution observed:
+
+- the canonical remote server remains theseus-session-search;
+- the production router URI returned to the preexisting ssrouter2 endpoint;
+- the new ChatGPT generation pair is
+  0f0153c6fbdbd747bfcef80779ebaae1327a8101d9bc3051711d038e301774c9
+  and
+  5004e3c94709be89ed25e1fe51ada6e8bd691a493fecf86e13b0712378ed0e8a;
+- catalog_bounds_complete=true;
+- a ChatGPT window ending before the provider watermark returns
+  VERIFIED_TO_PROVIDER_REPORTED_WATERMARK;
+- a later window returns STALE_AFTER_PROVIDER_REPORTED_WATERMARK;
+- the accepted provider-export watermark is
+  2026-11-19T18:43:36.744Z;
+- broad and ChatGPT-scoped strict searches returned FOUND with
+  unavailable_shards=[];
+- a strict impossible control returned NO_SIGNAL with all selected shards
+  available.
+
+One deployment behavior is now part of the operator contract: updating router
+environment alone is not sufficient proof that module-scope configuration has
+reloaded. After catalog/source-watermark changes, create a fresh runtime
+deployment on the same production router URI, then refresh the existing Arcade
+worker tools and perform fresh App-backed coverage/search readback. Do not
+create a replacement production worker/tool identity merely to clear stale
+runtime or discovery state.
+
+The source snapshot watermark and runtime deployment freshness are separate
+claims. The plugin can be correctly deployed against the latest accepted export
+while conversations later than that export still report stale/outside observed
+coverage.
+
 ## Verified private feedback readback checkpoint — November 19 2026
 
 From canonical Git `2f2d4777995915b927e0d725502b2b8243773ea2`, native Neon

@@ -40,6 +40,7 @@ The production router also emits a deliberately narrow PostHog semantic-event la
 
 - [Nine-panel Grafana dashboard-as-code](grafana/README.md) — the saved dashboard uses the historical `candidate` filter; an empty panel is not proof of missing live signals. Inspect current environment labels first.
 - [Current federated serving plane](docs/federated-serving-plane.md) — request path, live coverage/currentness semantics, App tool surface, and observability boundaries.
+- [Federated serving promotion runbook](docs/federated-serving-promotion-runbook.md) — canonical data-only refresh path from verified bundle through green data generations, serving candidates, same-URI production reload, Arcade refresh, and App-backed acceptance.
 
 ## Neon resource housekeeping
 
@@ -224,6 +225,13 @@ python3 -m session_search.corpus lock-status
 An explicit `--corpus PATH` always overrides `SESSION_SEARCH_CORPUS`. There is no hidden default corpus directory. `ingest` and `rebuild` serialize through one corpus mutation lock; search remains read-only.
 
 ### Operational corpus binding and promotion
+
+> **Scope note:** this section describes a local/runtime corpus binding. It is
+> not the federated Neon/App production promotion procedure. For the live
+> multi-shard serving path use the
+> [federated serving promotion runbook](docs/federated-serving-promotion-runbook.md).
+> In particular, a data-only federated refresh does not imply a new Function
+> code upload.
 
 The repository intentionally does not own a hidden production corpus path. A deployment may expose a stable **runtime binding** to one versioned corpus directory through `SESSION_SEARCH_CORPUS`, an explicit `--corpus` argument, or an external pointer such as a symlink managed outside this repository. That pointer is operational state, not evidence authority.
 

@@ -166,26 +166,36 @@ Private session IDs and source identifiers stay out of public receipts.
 
 ## Blue/green materialization and promotion
 
-On the Free plan, use separate-project blue/green candidates rather than assuming a near-full active project can hold a replacement full generation on a child branch.
+On the Free plan, use separate-project blue/green **data** candidates rather than assuming a near-full active data project can hold a replacement full generation on a child branch.
+
+Do not conflate a green data project with a shard Function host. The Function
+is a serving adapter with its own source/auth/runtime boundary; a routine
+data-only refresh should not upload Function code again merely because the data
+project is new. The canonical operator mechanics are in
+[federated-serving-promotion-runbook.md](federated-serving-promotion-runbook.md).
 
 For each candidate shard:
 
-1. create a fresh project with the versioned shard schema/migrations;
-2. build a deterministic `session-search-shard-bundle.v1` from accepted evidence and stage the exact private bundle in Google Drive;
-3. have the generic Arcade materializer verify that bundle and load only a `BUILDING` generation into the fresh target;
+1. create a fresh **data project** with the versioned shard schema/migrations;
+2. build a deterministic session-search-shard-bundle.v1 from accepted evidence and stage the exact private bundle in Google Drive;
+3. have the generic Arcade materializer verify that bundle and load only a BUILDING generation into the fresh target;
 4. read back actual session/message counts and actual Postgres/project size;
 5. verify accepted-evidence provenance and projection derivation;
-6. transition generation to `READY` only through the validated lifecycle function;
+6. transition generation to READY only through the validated lifecycle function;
 7. create/verify the least-privilege serving LOGIN role;
-8. deploy the bounded shard Function;
-9. run private bounded search/status acceptance against the candidate;
-10. add the candidate to a **non-production catalog generation**;
+8. create a candidate serving endpoint from the already accepted shard Function host, inheriting reviewed source/auth and rebinding only the least-privilege database URL;
+9. run private bounded authenticated positive/negative search acceptance with exact generation provenance;
+10. add the candidate to a **non-production catalog generation**, including verified finite time bounds;
 11. verify full fan-out/merge and failure semantics without changing the production catalog;
-12. only after all shards in the candidate catalog are READY and verified, atomically switch the router/catalog generation;
-13. read back the exact active catalog/shard/generation identities through the serving path;
-14. retain the old catalog/projects for a bounded rollback window;
-15. retire/delete old projects only after explicit cleanup disposition.
+12. only after all shards in the candidate catalog are READY and verified, update the existing production router catalog/source-watermark configuration;
+13. force a fresh runtime deployment on the same production router URI when module-scope configuration changed, then refresh the existing Arcade worker tools;
+14. read back exact catalog/shard/generation/currentness through a fresh App-backed serving path;
+15. retain the old data/serving catalog assets for a bounded rollback window;
+16. retire/delete old projects only after explicit cleanup disposition.
 
+The old-project Function hosting observed in November 2026 is transitional
+operational state, not a requirement for future project layout. A dedicated
+Function-host migration is a separate architecture change.
 
 ### Transport transition
 
