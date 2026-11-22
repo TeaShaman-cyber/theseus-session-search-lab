@@ -47,6 +47,22 @@ class ReviewGateRequiredTests(unittest.TestCase):
                 self.assertTrue(result['required'])
                 self.assertEqual(result['matches'][0]['path'], path)
 
+    def test_spec_d_patterns_do_not_match_noncanonical_paths(self):
+        cases = [
+            'docs/SPEC-gemini.md',
+            'specs/CAPABILITY_MAP.md',
+            'capability_map.md',
+            'spec-gemini.md',
+            'CAPABILITY_MAP.txt',
+            'SPEC.md',
+            'CAPABILITY_MAP.md.bak',
+        ]
+        for path in cases:
+            with self.subTest(path=path):
+                result = classify_paths([path])
+                self.assertFalse(result['required'])
+                self.assertEqual(result['matches'], [])
+
     def test_ordinary_paths_do_not_require_review(self):
         result = classify_paths([
             'README.md',
