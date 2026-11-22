@@ -39,8 +39,10 @@ specifications automatically.
 
 Each SPEC-gemini-*.md remains DRAFT FOR HUMAN REVIEW until separately
 approved. Implementation of a module starts only after that module spec is
-approved. gemini-serving-bootstrap additionally requires verified completion
-receipts from gemini-source-acceptance, gemini-provider-allocation, and
-gemini-currentness; a locally green draft is not sufficient.
+approved. gemini-serving-bootstrap additionally requires verified completion evidence
+from all three upstream capabilities: the source-acceptance recovery receipt,
+the allocator public summary plus VERIFIED shard-source integrity, and the
+accepted currentness source_snapshot binding plus router-focused tests. A
+locally green draft is not sufficient.
 
 The older docs/gemini-official-corpus-serving-spec.md is supporting architecture narrative, not the Spec D authority index.

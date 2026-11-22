@@ -40,7 +40,9 @@ The concrete shard ID in verification commands comes from allocator output; gemi
 ## Project Structure
 
 - session_search/shard_allocation.py — provider mapping and deterministic allocation
-- scripts/plan_neon_shards.py — public-safe allocation planning surface
+- scripts/plan_neon_shards.py — current canonical CLI for the allocator's
+  public-safe planning surface; the allocator contract, not this path name, is
+  authoritative
 - session_search/shard_integrity.py — accepted-source replay/integrity
 - scripts/verify_shard_source.py — bounded shard source verifier
 - tests/test_shard_allocation.py and related tests — provider/allocation contract

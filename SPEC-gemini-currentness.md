@@ -88,11 +88,12 @@ The pre-cutover readiness layer
 metadata is internally consistent and may report the provider currentness
 mode. It does not own the user-visible coverage verdict.
 
-functions/router/core.mjs owns provider-scoped user-visible source_currentness
-summarization in the federated serving path. The router must emit the bounded
-Gemini classification only from validated Gemini export metadata; the App
-reflects that router result. Semantic-event schemas must accept the new value
-only after router behavior and tests are updated.
+The federated router Function owns provider-scoped user-visible
+source_currentness summarization. Its current implementation location is
+functions/router/core.mjs. The router must emit the bounded Gemini
+classification only from validated Gemini export metadata; the App reflects
+that router result. Semantic-event schemas must accept the new value only after
+router behavior and tests are updated.
 
 This keeps one runtime owner for the coverage classification and prevents
 shard, readiness, and App layers from inventing competing meanings.

@@ -5,7 +5,10 @@ Capability map: CAPABILITY_MAP-gemini.md
 Tracking issue: #311
 Depends on: CAPABILITY_MAP-gemini.md (APPROVED); verified
 theseus.session-search-recovery-receipt.v1 from gemini-source-acceptance bound
-to the accepted_set_sha256; gemini-provider-allocation; gemini-currentness
+to the accepted_set_sha256; gemini-provider-allocation completion evidence
+(allocator public summary plus status=VERIFIED from scripts/verify_shard_source.py
+for every planned Gemini shard); gemini-currentness completion evidence
+(accepted source_snapshot binding plus focused federated-router currentness tests)
 
 ## Objective
 
@@ -25,7 +28,8 @@ This is a first-provider bootstrap, not a routine replacement shard.
 
 Normative mechanics remain in docs/federated-serving-promotion-runbook.md and
 docs/shard-bundle-transport.md; this module composes those contracts rather
-than redefining their output schemas.
+than redefining their output schemas. tools/dev/serving-promotion-readiness is
+the repository CLI wrapper around session_search/serving_promotion_readiness.py.
 
 ## Commands
 
