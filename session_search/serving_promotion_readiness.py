@@ -21,7 +21,9 @@ _NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 _ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 _TOP_KEYS = {"schema", "source_commit", "source_watermarks", "replacement_shards", "unchanged_catalog"}
+_OPTIONAL_TOP_KEYS = {"source_snapshots"}
 _WATERMARK_KEYS = {"provider", "observed_through", "status", "basis", "accepted_set_sha256"}
+_SNAPSHOT_KEYS = {"provider", "source_scope", "observed_through", "basis", "accepted_set_sha256"}
 _REPLACEMENT_KEYS = {
     "provider", "shard_id", "generation_id", "source_manifest_sha256",
     "bundle_sha256", "accepted_set_sha256", "session_count", "message_count",
@@ -149,6 +151,48 @@ def _validate_watermarks(raw: Any, blockers: list[str]) -> tuple[list[dict[str, 
             blockers.append(f"SOURCE_WATERMARK_BASIS_INVALID:{provider}")
         if not _is_hex(item["accepted_set_sha256"], _HEX64):
             blockers.append(f"ACCEPTED_SET_INVALID:{provider}")
+        normalized = dict(item)
+        by_provider[provider] = normalized
+        output.append(normalized)
+
+    output.sort(key=lambda item: item["provider"])
+    return output, by_provider
+
+
+def _validate_snapshots(raw: Any, blockers: list[str]) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
+    output: list[dict[str, Any]] = []
+    by_provider: dict[str, dict[str, Any]] = {}
+    if raw is None:
+        return output, by_provider
+    if not isinstance(raw, list):
+        blockers.append("SOURCE_SNAPSHOTS_INVALID")
+        return output, by_provider
+
+    for index, item in enumerate(raw):
+        if not isinstance(item, dict):
+            blockers.append(f"SOURCE_SNAPSHOT_NOT_OBJECT:{index}")
+            continue
+        if set(item) != _SNAPSHOT_KEYS:
+            blockers.append(f"SOURCE_SNAPSHOT_KEYS_MISMATCH:{index}")
+            continue
+        provider = item["provider"]
+        if not _is_name(provider):
+            blockers.append(f"SOURCE_SNAPSHOT_PROVIDER_INVALID:{index}")
+            continue
+        if provider != "gemini":
+            blockers.append(f"SOURCE_SNAPSHOT_PROVIDER_UNSUPPORTED:{provider}")
+            continue
+        if provider in by_provider:
+            blockers.append(f"DUPLICATE_SOURCE_SNAPSHOT:{provider}")
+            continue
+        if item["source_scope"] != "GEMINI_APPS_ACTIVITY":
+            blockers.append(f"SOURCE_SNAPSHOT_SCOPE_INVALID:{provider}")
+        if not _finite(item["observed_through"]):
+            blockers.append(f"SOURCE_SNAPSHOT_TIME_INVALID:{provider}")
+        if item["basis"] != "provider_takeout_request_receipt":
+            blockers.append(f"SOURCE_SNAPSHOT_BASIS_INVALID:{provider}")
+        if not _is_hex(item["accepted_set_sha256"], _HEX64):
+            blockers.append(f"SOURCE_SNAPSHOT_ACCEPTED_SET_INVALID:{provider}")
         normalized = dict(item)
         by_provider[provider] = normalized
         output.append(normalized)
@@ -317,6 +361,7 @@ def evaluate_serving_promotion_readiness(
 
     source_commit: str | None = None
     watermarks: list[dict[str, Any]] = []
+    snapshots: list[dict[str, Any]] = []
     source_currentness_modes: dict[str, str] = {}
     replacements: list[dict[str, Any]] = []
     unchanged: list[dict[str, Any]] = []
@@ -325,7 +370,8 @@ def evaluate_serving_promotion_readiness(
     if not isinstance(raw, dict):
         blockers.append("INPUT_NOT_OBJECT")
     else:
-        if set(raw) != _TOP_KEYS:
+        raw_keys = set(raw)
+        if not _TOP_KEYS.issubset(raw_keys) or not raw_keys.issubset(_TOP_KEYS | _OPTIONAL_TOP_KEYS):
             blockers.append("INPUT_KEYS_MISMATCH")
         if raw.get("schema") != INPUT_SCHEMA:
             blockers.append("INPUT_SCHEMA_UNSUPPORTED")
@@ -339,6 +385,7 @@ def evaluate_serving_promotion_readiness(
             blockers.append("SOURCE_COMMIT_INVALID")
 
         watermarks, watermark_by_provider = _validate_watermarks(raw.get("source_watermarks"), blockers)
+        snapshots, snapshot_by_provider = _validate_snapshots(raw.get("source_snapshots"), blockers)
         seen_shards: set[str] = set()
         replacements, rollback, provider_max, accepted_sets, new_shards = _validate_replacements(
             raw.get("replacement_shards"), blockers=blockers, seen_shards=seen_shards
@@ -355,12 +402,30 @@ def evaluate_serving_promotion_readiness(
                 blockers.append(f"ACCEPTED_SET_INCONSISTENT:{provider}")
 
             watermark = watermark_by_provider.get(provider)
+            snapshot = snapshot_by_provider.get(provider)
+            if watermark is not None and snapshot is not None:
+                source_currentness_modes[provider] = "UNKNOWN_WITHOUT_SOURCE_WATERMARK"
+                blockers.append(f"SOURCE_CURRENTNESS_BINDING_CONFLICT:{provider}")
+                continue
+
+            data_max = provider_max.get(provider)
+            if snapshot is not None:
+                source_currentness_modes[provider] = "BOUND_PROVIDER_SNAPSHOT"
+                if (
+                    data_max is not None
+                    and _finite(snapshot["observed_through"])
+                    and float(snapshot["observed_through"]) < data_max
+                ):
+                    blockers.append(f"SNAPSHOT_BEFORE_DATA_MAX:{provider}")
+                if len(sets) == 1 and snapshot["accepted_set_sha256"] not in sets:
+                    blockers.append(f"SOURCE_SNAPSHOT_ACCEPTED_SET_MISMATCH:{provider}")
+                continue
+
             if watermark is None:
                 source_currentness_modes[provider] = "UNKNOWN_WITHOUT_SOURCE_WATERMARK"
                 continue
 
             source_currentness_modes[provider] = "BOUND_PROVIDER_WATERMARK"
-            data_max = provider_max.get(provider)
             if (
                 data_max is not None
                 and _finite(watermark["observed_through"])
@@ -378,6 +443,7 @@ def evaluate_serving_promotion_readiness(
         "repo": {"head": head, "branch": branch, "clean": clean},
         "qa": qa,
         "source_watermarks": watermarks,
+        "source_snapshots": snapshots,
         "source_currentness_modes": dict(sorted(source_currentness_modes.items())),
         "replacement_shards": replacements,
         "unchanged_catalog": unchanged,

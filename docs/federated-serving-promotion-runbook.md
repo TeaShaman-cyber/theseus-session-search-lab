@@ -220,6 +220,7 @@ Change only the candidate values needed for the refresh:
 
 - SESSION_SEARCH_CATALOG;
 - SESSION_SEARCH_SOURCE_WATERMARKS;
+- SESSION_SEARCH_SOURCE_SNAPSHOTS;
 - a non-secret candidate environment/service label when useful.
 
 Every catalog entry must include the exact READY generation and the verified
