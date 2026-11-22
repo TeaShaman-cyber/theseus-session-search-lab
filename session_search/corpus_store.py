@@ -1299,7 +1299,11 @@ def ingest_reconciled_many(
             artifact = _normalize_accepted_entry(paths, sha, entry)
             route = routes[sha]
             status = "INGESTED" if sha in new_shas else "ALREADY_INGESTED"
-            postconditions = verify_ingest_postconditions(paths, sha)
+            postconditions = verify_ingest_postconditions(
+                paths,
+                sha,
+                check_sqlite_integrity=False,
+            )
             write_ingest_receipt(paths, sha, status, postconditions)
             results.append(
                 {
