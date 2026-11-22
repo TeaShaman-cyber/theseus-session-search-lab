@@ -2,7 +2,7 @@
 
 Status: DRAFT FOR HUMAN REVIEW
 Capability map: CAPABILITY_MAP-gemini.md
-Depends on: CAPABILITY_MAP-gemini.md (APPROVED)
+Depends on: CAPABILITY_MAP-gemini.md (APPROVED); gemini-source-acceptance (verified acceptance receipt)
 Tracking issue: #311
 Existing implementation lineage: #317 / merged PR #318
 

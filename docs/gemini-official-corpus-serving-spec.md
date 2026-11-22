@@ -360,7 +360,8 @@ Mutation sequence:
 Terminal App acceptance:
 
 - Gemini-only coverage sees expected generation/bounds and
-  UNKNOWN_WITHOUT_SOURCE_WATERMARK;
+  source_currentness=BOUNDED_PROVIDER_EXPORT_SNAPSHOT with
+  source_scope=GEMINI_APPS_ACTIVITY and the accepted Takeout request boundary;
 - Gemini-only positive search -> FOUND, unavailable_shards=[];
 - Gemini-only negative control -> NO_SIGNAL, unavailable_shards=[];
 - broad search includes Gemini where relevant with zero unavailable;
