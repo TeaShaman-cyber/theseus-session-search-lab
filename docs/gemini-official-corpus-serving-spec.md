@@ -1,3 +1,15 @@
+# Authority note
+
+INSTANCE-SPECIFIC EVIDENCE NOTE: dated timestamps, counts, hashes, and request/archive
+facts in this supporting document describe the initial #311 acceptance only. They
+must not be copied into reusable Gemini module logic or treated as constants. The
+root SPEC-gemini-*.md files define reusable behavior.
+
+This file is supporting architecture narrative. Canonical Spec D authority for
+the Gemini initiative is indexed by ../CAPABILITY_MAP-gemini.md and the four
+root SPEC-gemini-*.md module specifications. If this narrative conflicts with a
+module spec, the approved Spec D artifact wins.
+
 # Official Gemini corpus acceptance and first federated serving promotion
 
 ## Status
@@ -277,19 +289,55 @@ Required candidate acceptance:
 ## Gemini currentness semantics
 
 The official My Activity export is stronger provider-origin evidence than the
-NotebookLM rescue lane, but the currently observed export does not provide the
-same independently verified completeness/watermark contract used for the
-OpenAI account export.
+NotebookLM rescue lane. Google documents that Gemini Apps Activity can be
+exported through Takeout, while also documenting explicit classes that are not
+part of that activity surface: Temporary Chats, chats made while History is
+off, and activity deleted manually or by retention policy. Google also warns
+that changes made after an export request and before archive creation may be
+absent from the archive.
 
-Therefore initial Gemini serving must remain:
+For the accepted private export, independent provider evidence establishes:
 
-    source_currentness=UNKNOWN_WITHOUT_SOURCE_WATERMARK
+- Takeout request receipt: 2026-11-21T15:45:28Z;
+- archive-ready receipt: 2026-11-21T15:47:44Z;
+- the archive filename carries the same request timestamp;
+- parsed Gemini prompt activity spans 2025-03-22T03:41:03Z through
+  2026-11-21T15:28:40Z;
+- 0 of 2,106 parsed prompt activities are later than the request receipt.
 
-unless a separate current evidence review proves a legitimate Google
-provider-reported watermark/completeness contract.
+This supports a bounded provider-export claim that is stronger than
+UNKNOWN_WITHOUT_SOURCE_WATERMARK but weaker than provider-complete account
+history.
 
-Do not convert export creation time or newest activity timestamp into
-PROVIDER_REPORTED_NO_KNOWN_GAPS.
+Target serving semantics for the initial accepted snapshot:
+
+    source_scope=GEMINI_APPS_ACTIVITY
+    observed_through=2026-11-21T15:45:28Z
+    basis=provider_takeout_request_receipt
+
+    query bounded at/before observed_through
+      -> source_currentness=VERIFIED_TO_BOUNDED_PROVIDER_EXPORT_SNAPSHOT
+
+    query unbounded or after observed_through
+      -> source_currentness=STALE_AFTER_BOUNDED_PROVIDER_EXPORT_SNAPSHOT
+
+The claim means: the indexed source is the Gemini Apps Activity snapshot
+exported by Google for that Takeout request boundary. It does **not** mean every
+Gemini conversation that ever existed is present.
+
+Explicit exclusions remain outside this scope:
+
+- Temporary Chats;
+- chats created while Gemini History was off;
+- activity already manually deleted or auto-deleted before the export;
+- data excluded by other documented Google retention/deletion rules.
+
+The archive-ready timestamp must not be used as the upper bound because Google
+explicitly warns that changes between request time and archive creation may be
+missing.
+
+Do not map this evidence to PROVIDER_REPORTED_NO_KNOWN_GAPS: Google does not
+make that stronger claim. Runtime support for the bounded-snapshot verified/stale states must be added and tested separately before production Gemini serving uses them.
 
 ## Production cutover
 
@@ -315,8 +363,11 @@ Mutation sequence:
 
 Terminal App acceptance:
 
-- Gemini-only coverage sees expected generation/bounds and
-  UNKNOWN_WITHOUT_SOURCE_WATERMARK;
+- Gemini-only coverage bounded at/before the accepted Takeout request boundary
+  sees VERIFIED_TO_BOUNDED_PROVIDER_EXPORT_SNAPSHOT with
+  source_scope=GEMINI_APPS_ACTIVITY;
+- a paired unbounded/after-boundary coverage probe sees
+  STALE_AFTER_BOUNDED_PROVIDER_EXPORT_SNAPSHOT from the same snapshot binding;
 - Gemini-only positive search -> FOUND, unavailable_shards=[];
 - Gemini-only negative control -> NO_SIGNAL, unavailable_shards=[];
 - broad search includes Gemini where relevant with zero unavailable;
