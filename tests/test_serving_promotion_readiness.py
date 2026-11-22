@@ -191,6 +191,51 @@ class ServingPromotionReadinessTest(unittest.TestCase):
             receipt["blockers"],
         )
 
+    def test_new_provider_without_source_watermark_is_ready_with_unknown_currentness(self) -> None:
+        raw = manifest()
+        target = replacement("gemini-0001", "gemini-source", None)
+        target["provider"] = "gemini"
+        raw["replacement_shards"] = [target]
+        raw["source_watermarks"] = []
+
+        receipt = evaluate_serving_promotion_readiness(
+            raw, repo_state=repo_state(), qa_state=qa_state()
+        )
+
+        self.assertEqual(receipt["state"], "READY_FOR_RUNTIME_GATES")
+        self.assertEqual(receipt["blockers"], [])
+        self.assertEqual(
+            receipt["source_currentness_modes"],
+            {"gemini": "UNKNOWN_WITHOUT_SOURCE_WATERMARK"},
+        )
+
+    def test_same_provider_targets_must_share_accepted_set_without_watermark(self) -> None:
+        raw = manifest()
+        first = replacement("gemini-0001", "gemini-a", None)
+        second = replacement("gemini-0002", "gemini-b", None)
+        first["provider"] = "gemini"
+        second["provider"] = "gemini"
+        second["accepted_set_sha256"] = "8" * 64
+        raw["replacement_shards"] = [first, second]
+        raw["source_watermarks"] = []
+
+        receipt = evaluate_serving_promotion_readiness(
+            raw, repo_state=repo_state(), qa_state=qa_state()
+        )
+
+        self.assertEqual(receipt["state"], "BLOCKED")
+        self.assertIn("ACCEPTED_SET_INCONSISTENT:gemini", receipt["blockers"])
+
+    def test_supplied_watermark_marks_provider_as_bound(self) -> None:
+        receipt = evaluate_serving_promotion_readiness(
+            manifest(), repo_state=repo_state(), qa_state=qa_state()
+        )
+
+        self.assertEqual(
+            receipt["source_currentness_modes"],
+            {"chatgpt": "BOUND_PROVIDER_WATERMARK"},
+        )
+
     def test_generation_mismatch_blocks(self) -> None:
         raw = manifest()
         raw["replacement_shards"][0]["generation_id"] = "0" * 64
