@@ -1,3 +1,10 @@
+# Authority note
+
+This file is supporting architecture narrative. Canonical Spec D authority for
+the Gemini initiative is indexed by ../CAPABILITY_MAP-gemini.md and the four
+root SPEC-gemini-*.md module specifications. If this narrative conflicts with a
+module spec, the approved Spec D artifact wins.
+
 # Official Gemini corpus acceptance and first federated serving promotion
 
 ## Status
