@@ -77,6 +77,28 @@ The ordinary Barn Doctor importer still does not retroactively prove membership 
 
 If a portable artifact exposes multiple stable conversation identities, the ordinary importer remains fail-closed with `BLOCKED_MIXED_SESSION_ARTIFACT`. Provenance-aware preprocessing is a separate adapter/recovery layer; see [Mixed capture artifact recovery](mixed-artifact-recovery.md) and Issue #16.
 
+
+## Official Google My Activity / Gemini Apps adapter
+
+The official Gemini activity adapter consumes only the Gemini Apps product member from a Google Takeout My Activity archive. The currently verified parser contract is the observed Russian `Мои действия/Приложения Gemini` surface. An English `Gemini Apps/MyActivity.html` member is recognized but fails closed as an unsupported locale until its prompt and timestamp shapes are covered by explicit fixtures. AI Mode is treated as a distinct product and is never merged into Gemini chat history by proximity.
+
+For a supported prompt card, the source itself must expose:
+- the explicit prompt activity marker;
+- exactly one parseable provider activity timestamp;
+- prompt text;
+- zero or more response text;
+- zero, one, or multiple Gemini app IDs from the activity detail links.
+
+Exactly one app ID establishes provider conversation identity. Multiple or missing IDs do not authorize the adapter to guess; those cards are isolated under deterministic unresolved session identity while retaining all observed related IDs.
+
+The account-activity timestamp applies to the observed prompt event. The adapter must not manufacture an assistant response timestamp from that same value. Ordering is preserved separately through a snapshot-independent integer provider-order key derived from prompt second + activity signature + occurrence rank + role. A hash collision between different activity signatures within the same second blocks rather than silently reorders evidence.
+
+Attachment hrefs are provenance, not implicit file authority. Relative references are URL-decoded and resolved only when they map unambiguously to a regular member of the same captured Takeout. Resolved members record exact SHA-256 and byte size. Missing or malformed references remain explicit unresolved attachment references; they do not cause invented attachment content.
+
+Every child binds the exact parent Takeout SHA-256, source My Activity member SHA-256, provider app ID when available, source activity-card lineage, and `OFFICIAL_MY_ACTIVITY_EXPOSED_SNAPSHOT` scope. Coverage remains `PARTIAL_SESSION_SLICE`: an official account export is stronger evidence than a NotebookLM-preserved copy, but it is still a snapshot of exposed provider history and cannot prove that deleted or otherwise unexposed turns never existed.
+
+Reconciliation with NotebookLM rescue evidence is non-destructive. Exact canonical role/content overlap may establish that a rescue session has one best official counterpart, but partial overlap does not authorize ledger mutation, evidence deletion, or silent session routing. Rescue-only content remains accepted secondary evidence.
+
 ## NotebookLM-preserved Gemini rescue observation
 
 Google Takeout can preserve Gemini conversations indirectly as NotebookLM source HTML even when the ordinary Gemini product directory contains only non-chat data such as Gems or Scheduled Actions. The rescue adapter treats these HTML sources as **secondary captured evidence**, not as provider-complete Gemini history.

@@ -338,6 +338,39 @@ For xAI, `parent_response_id` is graph authority because official exports may om
 
 
 
+
+### Official Google My Activity / Gemini Apps adapter
+
+Google Takeout can expose Gemini chat history under `My Activity -> Gemini Apps`. The current adapter is empirically validated against the observed Russian Takeout surface `Мои действия/Приложения Gemini`. English `Gemini Apps/MyActivity.html` is recognized as a potential source member but currently fails closed with `BLOCKED_UNSUPPORTED_GEMINI_ACTIVITY_LOCALE` until locale-specific prompt/timestamp fixtures are implemented. This is stronger provenance than NotebookLM-preserved copies because each supported prompt activity can expose an official Gemini app/conversation URL and account activity timestamp.
+
+Inspect without ingesting:
+
+```bash
+python3 -m session_search.google_gemini_activity takeout.tgz --inspect
+```
+
+Include aggregate exact-overlap reconciliation against an existing corpus that already contains NotebookLM rescue evidence:
+
+```bash
+python3 -m session_search.google_gemini_activity takeout.tgz --inspect \
+  --existing-corpus /private/path/session-search-corpus
+```
+
+Materialize portable children or ingest into a separate candidate corpus:
+
+```bash
+python3 -m session_search.google_gemini_activity takeout.tgz --output-dir ./gemini-myactivity-artifacts
+python3 -m session_search.google_gemini_activity takeout.tgz --corpus /private/path/session-search-corpus-candidate
+```
+
+The adapter imports only the Gemini Apps activity surface; Google AI Mode is a separate source lane and is never folded into Gemini conversations implicitly. A prompt activity with exactly one official `gemini.google.com/app/<id>` reference is grouped under that provider conversation identity. A prompt activity with multiple or missing app IDs is preserved under a deterministic `gemini-unresolved:*` session rather than guessed into one provider conversation.
+
+Google My Activity exposes the prompt activity time but not an independent response timestamp. The user message therefore receives the observed account-activity timestamp; the assistant response keeps unknown time. A snapshot-independent provider-order key derived from the prompt second, activity signature, occurrence rank, and role preserves prompt/response adjacency across overlapping Takeout snapshots without pretending that the response has its own provider timestamp. Empty exported responses are not invented.
+
+Local attachment links are retained as provenance. When the referenced Takeout member resolves unambiguously, the adapter records exact member name, byte count, and SHA-256; unresolved references remain explicitly `UNRESOLVED_ATTACHMENT_REF`. Binary attachment bytes are not promoted into searchable dialogue.
+
+Official account-history exports are still snapshots rather than proof of every message that ever existed, so all children remain `PARTIAL_SESSION_SLICE`. Exact overlap with NotebookLM rescue evidence is reported but does not delete or route away that evidence: NotebookLM-only branches/fragments remain valid secondary preservation.
+
 ### NotebookLM-preserved Gemini rescue adapter
 
 A Google Takeout may contain Gemini conversations only as sources previously imported into NotebookLM even when the ordinary `Takeout/Gemini/` product export contains no chat history. These NotebookLM copies are **secondary preservation evidence**, not an official Gemini account-history export.
