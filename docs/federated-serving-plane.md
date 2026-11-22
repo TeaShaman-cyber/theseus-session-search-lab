@@ -16,7 +16,7 @@ ChatGPT
 
 At the verified 2026-11-10 production checkpoint the live catalog queried four shards: `chatgpt-0001`, `chatgpt-0002`, `deepseek-0001`, and `xai-0001`. Treat that list as dated runtime evidence, not a hard-coded future topology.
 
-MarcoPolo remains an engineering, ingest, QA, rebuild, and recovery workbench. It is not part of the deployed HTTP/MCP request path.
+The governed engineering/promotion route is exe.dev first under the current cloud-shell rules. Sprites and MarcoPolo are observed-need fallbacks, not the normal production-operations path. None of these engineering runtimes is part of the deployed HTTP/MCP request path.
 
 ## Function split
 
@@ -164,39 +164,22 @@ This checkpoint proves the observed serving state only; live topology and deploy
 
 ## Current production checkpoint — 2026-11-22
 
-Verified after issue #304:
+Verified after issues #311 and #332:
 
-- the canonical Arcade worker remains theseus-session-search and points to the
-  original production ssrouter2 URI; no replacement App/server/tool identity
-  was introduced;
-- production router deployment #24 was active/current completed after a
-  catalog/source-watermark update plus an explicit runtime-only redeploy;
-- live ChatGPT catalog generations are
-  0f0153c6fbdbd747bfcef80779ebaae1327a8101d9bc3051711d038e301774c9
-  (chatgpt-0001) and
-  5004e3c94709be89ed25e1fe51ada6e8bd691a493fecf86e13b0712378ed0e8a
-  (chatgpt-0002);
-- fresh App-backed session_coverage reports finite bounds with
-  catalog_bounds_complete=true; a pre-watermark ChatGPT window returns
-  OBSERVED_POSSIBLE / VERIFIED_TO_PROVIDER_REPORTED_WATERMARK, while a later
-  window returns OUTSIDE_OBSERVED_INDEX_RANGE /
-  STALE_AFTER_PROVIDER_REPORTED_WATERMARK;
-- the accepted provider watermark is 2026-11-19T18:43:36.744Z
-  (provider_export_manifest, PROVIDER_REPORTED_NO_KNOWN_GAPS); this is the
-  source snapshot boundary, not the current wall clock;
-- fresh strict broad and ChatGPT-only searches returned FOUND on the new
-  ChatGPT generation provenance with unavailable_shards=[]; a strict impossible
-  control returned NO_SIGNAL with all intended shards available;
-- the #304 data path used deterministic bundle -> private Drive -> existing
-  Arcade materializer -> Neon BUILDING -> READY. Candidate shard serving reused
-  reviewed Function source/auth by inheritance and rebound only the
-  least-privilege database URL; no routine Function-code upload is required for
-  a data-only refresh.
+- the canonical Arcade worker remains theseus-session-search and still points to the original production ssrouter2 URI; no replacement App, worker, gateway, or tool identity was introduced;
+- production router deployment #26 is active/current completed after the additive catalog update and a separate runtime-only reload;
+- the live production catalog has five READY shards: chatgpt-0001, chatgpt-0002, deepseek-0001, xai-0001, and gemini-0001;
+- Gemini is served from generation 88b7ccc6ff344cfd93cfef354e951446dfd0f5dd333c508fde91f2e51bdcffc6 with finite observed bounds 1742614863 through 1795274920;
+- ChatGPT provider-scoped coverage keeps the accepted provider watermark semantics: VERIFIED_TO_PROVIDER_REPORTED_WATERMARK at/before its accepted export watermark and STALE_AFTER_PROVIDER_REPORTED_WATERMARK beyond it;
+- Gemini provider-scoped coverage uses the weaker bounded export-snapshot contract: VERIFIED_TO_BOUNDED_PROVIDER_EXPORT_SNAPSHOT at/before the Gemini Apps Activity Takeout request boundary and STALE_AFTER_BOUNDED_PROVIDER_EXPORT_SNAPSHOT beyond it;
+- fresh App-backed Gemini strict search returns FOUND with exact Gemini generation provenance and unavailable_shards=[];
+- a broad impossible strict control queries all five intended shards and returns NO_SIGNAL with unavailable_shards=[];
+- separate ChatGPT, DeepSeek, and xAI controls remain healthy;
+- the pre-Gemini four-shard cold router is retained as rollback evidence and is not the current production catalog.
 
-The operational sequence is now versioned in
-[federated-serving-promotion-runbook.md](federated-serving-promotion-runbook.md).
-Deployment numbers and generation IDs above remain dated evidence, not future
-procedure.
+The production reload also re-confirmed an operator invariant: control-plane completed on a combined source/config deployment is not proof that module-scope router configuration reloaded. The catalog became observable at the original URI only after a distinct runtime-only deployment. Always verify direct health/runtime state, then refresh the existing Arcade worker tools and perform fresh App-backed readback.
+
+Deployment numbers and generation IDs above are dated runtime evidence, not reusable constants. The operational sequence remains versioned in federated-serving-promotion-runbook.md.
 
 ## Previous production checkpoint — 2026-11-20
 

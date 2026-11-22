@@ -16,7 +16,7 @@ module spec, the approved Spec D artifact wins.
 
 Issue: #311
 Prerequisite import line: #299 / PR #301
-Current state: SPECIFIED / OFFICIAL ADAPTER LINE EXISTS / OFFICIAL CORPUS NOT YET ACCEPTED / GEMINI NOT YET LIVE
+Current state: GEMINI LIVE / FIVE-SHARD PRODUCTION VERIFIED / ISSUE #311 COMPLETE / ROLLBACK RETAINED
 
 This document is the execution specification for moving the official Google My
 Activity -> Gemini Apps export from portable evidence into the durable Session

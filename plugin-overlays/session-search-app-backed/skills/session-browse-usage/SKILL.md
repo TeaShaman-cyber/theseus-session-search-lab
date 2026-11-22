@@ -9,17 +9,15 @@ This skill complements **session-search-usage**. Search finds occurrences; `sess
 
 ## Request route and tool discovery
 
-```text
 ChatGPT web/mobile -> existing App-backed Session Search plugin
   -> Arcade_SelectTools / Arcade_UseTool
   -> TheseusSessionSearch.session_browse
   -> existing Session Search router -> exactly one pinned Neon shard
   -> session_search.read_generation_session_v1(...)
-```
 
-On ChatGPT, use `Arcade_SelectTools` to discover the **exact** named tool and its current input schema before invoking `Arcade_UseTool`. Do not invent a raw top-level tool or call an undiscovered tool. The same App/Gateway also retains `TheseusSessionSearch.session_search` and `TheseusSessionSearch.session_feedback`. The existing private App additionally exposes the exact-reference read-only `TheseusSessionSearch.session_feedback_get` tool for stored feedback; this is not a substitute for `session_browse` conversation pagination. The existing OAuth App binding is the intended web/mobile route; do not add or replace a packaged `mcp.json`/`.mcp.json` or direct shard connection.
+On ChatGPT, use Arcade_SelectTools to discover the exact named tool and its current input schema before invoking Arcade_UseTool. Do not invent a raw top-level tool or call an undiscovered tool. The same App/Gateway currently exposes five intentional consumer tools: session_search, session_browse, session_coverage, session_feedback, and session_feedback_get. session_feedback_get is exact-reference feedback readback, not a substitute for session_browse conversation pagination. The existing OAuth App binding is the intended web/mobile route; do not add or replace a packaged mcp.json/.mcp.json or direct shard connection.
 
-If the gateway lists three tools but this host still discovers only the earlier two, report **STALE / REPROBE_REQUIRED at the host/tool-discovery boundary**; a refreshed conversation or reconnection may be necessary. A gateway control-plane update, a successful SQL call, or a healthy router does **not** prove that the new tool is invocable from this ChatGPT session. Do not re-register or rename a working server to bypass caching.
+If current Arcade worker discovery and this ChatGPT host disagree about any intentional tool, report STALE / REPROBE_REQUIRED at the host/tool-discovery boundary; a refreshed conversation or reconnection may be necessary. A gateway control-plane update, a successful SQL call, or a healthy router does not prove that a tool is invocable from this ChatGPT session. Do not re-register or rename a working server to bypass caching.
 
 ## When to browse
 
@@ -68,11 +66,11 @@ A generation identifies a rebuildable Neon projection of accepted evidence; it i
 
 ## Minimal host acceptance for the new tool
 
-1. Inspect current Gateway `Session Search`: canonical remote server `theseus-session-search`, existing OAuth App binding, existing search/feedback tools plus new `session_browse` tool. See `session-search-usage/references/gateway.md` for the existing connection boundary. Do not create a new gateway.
-2. In a fresh ChatGPT App connection use `Arcade_SelectTools` to observe `TheseusSessionSearch.session_browse` and inspect its input schema. `tools_count=3` in the Arcade management plane is insufficient without host discovery.
-3. Search a known safe term via `session_search`, choose an actual ChatGPT occurrence with pinned IDs, and browse with a small `limit`/`max_chars`. Check identities, ordered segments, page continuation and partial coverage.
-4. Follow `next_cursor` into a second page; optionally retry the same input cursor to check idempotent replay. Stop on `has_more=false` or `BLOCKED`, preserving prior evidence. Verify the old `session_search` tool still works.
-5. Mark `HOST_VERIFIED` **only** after a real host `Arcade_UseTool` call to `session_browse` succeeds with identity/provenance and pagination checks. Until then report `HOST_STALE` / `NOT_VERIFIED`; do not claim that Neon/Arcade gateway deployment alone finished host acceptance.
+1. Inspect current Gateway Session Search: canonical remote server theseus-session-search, existing OAuth App binding, and the current five-tool consumer set. See session-search-usage/references/gateway.md for the existing connection boundary. Do not create a new gateway.
+2. In a fresh ChatGPT App connection use Arcade_SelectTools to observe TheseusSessionSearch.session_browse and inspect its input schema. Any control-plane tool count is insufficient without host discovery and execution.
+3. Search a known safe term via session_search, choose an actual occurrence with pinned IDs, and browse with a small limit/max_chars. Check identities, ordered segments, page continuation and partial coverage.
+4. Follow next_cursor into a second page; optionally retry the same input cursor to check idempotent replay. Stop on has_more=false or BLOCKED, preserving prior evidence. Verify session_search still works.
+5. Mark HOST_VERIFIED only after a real host Arcade_UseTool call to session_browse succeeds with identity/provenance and pagination checks. Until then report HOST_STALE / NOT_VERIFIED; do not claim that Neon/Arcade gateway deployment alone finished host acceptance.
 
 ## Privacy and scope
 

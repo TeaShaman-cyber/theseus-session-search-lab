@@ -23,7 +23,7 @@ private App-backed Arcade Gateway and ChatGPT host exposed four concrete tools:
 `session_feedback_get`. Later coverage rollout under #275 added
 `session_coverage` as the fifth tool through the same stable App/Gateway
 identity; fresh host discovery executed a real read-only `OBSERVED` preflight.
-Current coverage guidance preserves the bounded source-watermark states `VERIFIED_TO_PROVIDER_REPORTED_WATERMARK`, `STALE_AFTER_PROVIDER_REPORTED_WATERMARK`, and fail-closed `UNKNOWN_WITHOUT_SOURCE_WATERMARK`; none is a `SOURCE_COMPLETE` claim.
+Current coverage guidance preserves both bounded evidence families: VERIFIED_TO_PROVIDER_REPORTED_WATERMARK / STALE_AFTER_PROVIDER_REPORTED_WATERMARK for provider-reporting exports, and VERIFIED_TO_BOUNDED_PROVIDER_EXPORT_SNAPSHOT / STALE_AFTER_BOUNDED_PROVIDER_EXPORT_SNAPSHOT for accepted provider snapshots such as Gemini Apps Activity. Missing or conflicting evidence fails closed to UNKNOWN_WITHOUT_SOURCE_WATERMARK; none is a SOURCE_COMPLETE claim.
 The feedback read-only method accepts an exact `feedback_ref` on the same
 authenticated private App, returning metadata and its original nullable, bounded
 `notes` when the updated router source is promoted. The original production
@@ -75,6 +75,16 @@ docs/federated-serving-promotion-runbook.md.
 This is dated runtime evidence, not a promise that the same generation IDs or
 watermark remain current forever. Source overlay and installed plugin are still
 separate states; host release/current skill text must be read back independently.
+
+## Verified Gemini production checkpoint — 2026-11-22 / issues #311 and #332
+
+Fresh App-backed readback after the official Gemini promotion confirmed five READY shards in the same production identity: chatgpt-0001, chatgpt-0002, deepseek-0001, xai-0001, and gemini-0001. The canonical Arcade worker remains theseus-session-search on the original production router URI, and the plugin still exposes the same five consumer tools.
+
+Gemini provider-scoped coverage reports VERIFIED_TO_BOUNDED_PROVIDER_EXPORT_SNAPSHOT at/before the accepted Gemini Apps Activity Takeout request boundary and STALE_AFTER_BOUNDED_PROVIDER_EXPORT_SNAPSHOT beyond it. This is intentionally weaker than a provider-completeness watermark. Fresh Gemini strict search returned FOUND with exact gemini-0001 generation provenance and unavailable_shards=[]; a broad impossible control queried all five shards with unavailable_shards=[].
+
+The same rollout re-confirmed that a control-plane completed router deployment is not sufficient evidence for module-scope config activation: the original URI showed five READY shards only after a distinct runtime-only redeploy, followed by Arcade worker tool refresh and App-backed readback.
+
+This is dated runtime evidence. The live catalog remains runtime state rather than a permanent constant, and the Gemini snapshot contract does not claim complete lifetime Gemini history.
 
 ## Historical public-source / installed-App checkpoint — 2026-11-19
 
