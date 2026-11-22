@@ -14,6 +14,8 @@ ADAPTER_PROVIDERS: dict[str, str] = {
     "speed-booster-export": "chatgpt",
     "deepseek-export": "deepseek",
     "xai-export": "xai",
+    "google-gemini-myactivity": "gemini",
+    "notebooklm-preserved-gemini": "gemini",
 }
 
 SEARCHABLE_CLASSES = ("dialogue", "evidence", "trace")
