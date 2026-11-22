@@ -3,7 +3,7 @@
 Status: DRAFT FOR HUMAN REVIEW
 Capability map: CAPABILITY_MAP-gemini.md
 Tracking issue: #311
-Depends on: gemini-provider-allocation, gemini-currentness
+Depends on: verified gemini-source-acceptance receipt, gemini-provider-allocation, gemini-currentness
 
 ## Objective
 
@@ -83,6 +83,10 @@ Neither value is inferred from provider name or wall-clock order.
 - positive and negative authenticated candidate shard smoke;
 - unauthenticated shard search returns 401;
 - candidate router broad/provider-scoped controls with unavailable_shards=[];
+- candidate router provider=gemini coverage returns
+  source_currentness=BOUNDED_PROVIDER_EXPORT_SNAPSHOT,
+  source_scope=GEMINI_APPS_ACTIVITY, and observed_through=T_request from the
+  accepted source_snapshot binding;
 - exact Gemini generation provenance;
 - post-cutover same-URI direct router readback;
 - existing Arcade worker refresh;
@@ -122,7 +126,8 @@ Never:
 - production catalog change uses the existing router identity/URI;
 - same-URI runtime reload is observed;
 - existing Arcade worker refresh succeeds;
-- fresh App-backed Gemini coverage/search returns exact generation provenance and accepted currentness semantics;
+- fresh App-backed Gemini coverage/search returns exact generation provenance
+  and the currentness tuple required by SPEC-gemini-currentness.md;
 - existing ChatGPT/DeepSeek/xAI controls remain healthy;
 - pre-Gemini catalog rollback remains available through final disposition.
 

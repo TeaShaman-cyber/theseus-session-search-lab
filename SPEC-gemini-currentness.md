@@ -54,6 +54,30 @@ the accepted export. It is data, not a constant in the capability.
 
 Never collapse that state into PROVIDER_REPORTED_NO_KNOWN_GAPS.
 
+## Persistence Contract
+
+The bounded Gemini export boundary is durable corpus metadata, not a chat-local
+observation. The currentness implementation must persist a provider-scoped
+source_snapshot record with the accepted recovery authority and bind it to the
+same accepted_set_sha256.
+
+Minimum Gemini source_snapshot fields:
+
+    provider = gemini
+    source_scope = GEMINI_APPS_ACTIVITY
+    observed_through = T_request
+    basis = provider_takeout_request_receipt
+    accepted_set_sha256 = <accepted corpus set>
+
+source_snapshot is deliberately distinct from source_watermark. The existing
+source_watermark contract carries the stronger provider-reported-no-known-gaps
+meaning and must not be overloaded for Takeout snapshot semantics.
+
+Recovery validation must read back the snapshot binding before promotion.
+Provider-specific shard/promotion metadata copies the accepted Gemini snapshot
+for the router. The production router then computes user-visible currentness
+from that validated metadata.
+
 ## Runtime Ownership
 
 The pre-cutover readiness layer

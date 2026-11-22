@@ -98,7 +98,9 @@ Never:
 - unknown/conflicting adapters remain fail-closed;
 - current accepted corpus allocation produces an explainable Gemini shard plan;
 - shard count, IDs, estimated bytes and bounds are recorded from allocator output;
-- every planned Gemini shard passes accepted-source integrity verification before bundle promotion.
+- every planned Gemini shard passes scripts/verify_shard_source.py against the
+  accepted corpus before bundle promotion; passing means exit 0 with
+  status=VERIFIED from the canonical shard-integrity contract.
 
 ## Open Questions
 

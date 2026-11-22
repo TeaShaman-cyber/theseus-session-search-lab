@@ -119,7 +119,7 @@ Never:
 
 ## Success Criteria
 
-- final official adapter head is merged and exact-source dry-run remains structurally supported;
+- the official adapter implementation from merged PR #301 is present in the exact source head and its exact-source dry-run remains structurally supported;
 - official artifacts are ingested into a candidate built from the current accepted baseline;
 - all previously accepted NotebookLM rescue artifacts remain accepted;
 - full projection verification is VERIFIED;
