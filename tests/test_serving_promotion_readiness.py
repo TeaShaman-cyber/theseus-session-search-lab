@@ -25,7 +25,7 @@ def generation_id(source_manifest_sha256: str) -> str:
     ).hexdigest()
 
 
-def replacement(shard_id: str, source_seed: str, previous: str) -> dict:
+def replacement(shard_id: str, source_seed: str, previous: str | None) -> dict:
     source_manifest = hashlib.sha256(source_seed.encode()).hexdigest()
     return {
         "provider": "chatgpt",
@@ -122,10 +122,73 @@ class ServingPromotionReadinessTest(unittest.TestCase):
             ["chatgpt-0001", "chatgpt-0002"],
         )
         self.assertEqual(receipt["rollback_generations"]["chatgpt-0001"], "c" * 64)
+        self.assertEqual(
+            [item["promotion_mode"] for item in receipt["replacement_shards"]],
+            ["REPLACEMENT", "REPLACEMENT"],
+        )
         self.assertEqual(receipt["qa"]["status"], "PASS")
         self.assertLess(
             len(json.dumps(receipt, separators=(",", ":"), sort_keys=True).encode()),
             8192,
+        )
+
+
+    def test_new_shard_allows_null_previous_generation_and_preserves_null_rollback(self) -> None:
+        raw = manifest()
+        raw["replacement_shards"] = [
+            replacement("chatgpt-0003", "source-new", None)
+        ]
+
+        receipt = evaluate_serving_promotion_readiness(
+            raw, repo_state=repo_state(), qa_state=qa_state()
+        )
+
+        self.assertEqual(receipt["state"], "READY_FOR_RUNTIME_GATES")
+        self.assertEqual(receipt["blockers"], [])
+        self.assertEqual(
+            receipt["replacement_shards"][0]["promotion_mode"],
+            "NEW_SHARD",
+        )
+        self.assertIsNone(receipt["rollback_generations"]["chatgpt-0003"])
+
+    def test_new_shard_null_previous_blocks_if_shard_already_exists_in_unchanged_catalog(self) -> None:
+        raw = manifest()
+        raw["replacement_shards"] = [
+            replacement("chatgpt-0003", "source-new", None)
+        ]
+        raw["unchanged_catalog"].append(
+            {
+                "provider": "chatgpt",
+                "shard_id": "chatgpt-0003",
+                "generation_id": "7" * 64,
+                "time_min": 800.0,
+                "time_max": 1800.0,
+                "state": "READY",
+            }
+        )
+
+        receipt = evaluate_serving_promotion_readiness(
+            raw, repo_state=repo_state(), qa_state=qa_state()
+        )
+
+        self.assertEqual(receipt["state"], "BLOCKED")
+        self.assertIn(
+            "NEW_SHARD_ALREADY_EXISTS:chatgpt-0003",
+            receipt["blockers"],
+        )
+
+    def test_replacement_still_rejects_invalid_non_null_previous_generation(self) -> None:
+        raw = manifest()
+        raw["replacement_shards"][0]["previous_generation_id"] = "not-a-generation"
+
+        receipt = evaluate_serving_promotion_readiness(
+            raw, repo_state=repo_state(), qa_state=qa_state()
+        )
+
+        self.assertEqual(receipt["state"], "BLOCKED")
+        self.assertIn(
+            "PREVIOUS_GENERATION_INVALID:chatgpt-0001",
+            receipt["blockers"],
         )
 
     def test_generation_mismatch_blocks(self) -> None:
