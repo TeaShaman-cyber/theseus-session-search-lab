@@ -56,6 +56,150 @@ class RecoveryHandoffTest(unittest.TestCase):
         )
         return receipt, transport, evidence
 
+    def test_source_snapshot_round_trips_with_exact_accepted_set_binding(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            db = self._projection_db(root, "snapshot.sqlite3", "snapshot")
+            transport = root / "snapshot.zst"
+            evidence = root / "snapshot-evidence.tgz"
+            transport.write_bytes(b"transport-snapshot")
+            evidence.write_bytes(b"evidence-snapshot")
+            snapshot = {
+                "provider": "gemini",
+                "source_scope": "GEMINI_APPS_ACTIVITY",
+                "observed_through": 1795275928.0,
+                "basis": "provider_takeout_request_receipt",
+                "accepted_set_sha256": "b" * 64,
+            }
+
+            receipt = build_receipt(
+                projection_transport_path=transport,
+                projection_drive_file_id="drive-projection-snapshot",
+                projection_db_path=db,
+                evidence_path=evidence,
+                evidence_drive_file_id="drive-evidence-snapshot",
+                source_commit="a" * 40,
+                accepted_set_sha256="b" * 64,
+                verification={"status": "VERIFIED"},
+                source_snapshot=snapshot,
+            )
+
+            receipt_path = root / "receipt.json"
+            locator_path = root / "current.json"
+            write_private_json(receipt_path, receipt)
+            write_private_json(
+                locator_path,
+                build_locator(receipt_path, receipt_drive_file_id="drive-receipt-snapshot"),
+            )
+
+            loaded = load_verified_handoff(locator_path, receipt_path)
+            self.assertEqual(loaded["receipt"]["source_snapshot"], snapshot)
+
+    def test_existing_receipt_without_source_snapshot_remains_valid(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            receipt, _, _ = self._verified_receipt(root)
+            self.assertNotIn("source_snapshot", receipt)
+
+    def test_source_snapshot_rejects_accepted_set_mismatch(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            db = self._projection_db(root, "mismatch.sqlite3", "mismatch")
+            transport = root / "mismatch.zst"
+            evidence = root / "mismatch-evidence.tgz"
+            transport.write_bytes(b"transport-mismatch")
+            evidence.write_bytes(b"evidence-mismatch")
+            with self.assertRaisesRegex(
+                ValueError,
+                "RECOVERY_SOURCE_SNAPSHOT_ACCEPTED_SET_MISMATCH",
+            ):
+                build_receipt(
+                    projection_transport_path=transport,
+                    projection_drive_file_id="drive-projection-mismatch",
+                    projection_db_path=db,
+                    evidence_path=evidence,
+                    evidence_drive_file_id="drive-evidence-mismatch",
+                    source_commit="a" * 40,
+                    accepted_set_sha256="b" * 64,
+                    verification={"status": "VERIFIED"},
+                    source_snapshot={
+                        "provider": "gemini",
+                        "source_scope": "GEMINI_APPS_ACTIVITY",
+                        "observed_through": 1795275928.0,
+                        "basis": "provider_takeout_request_receipt",
+                        "accepted_set_sha256": "c" * 64,
+                    },
+                )
+
+    def test_source_snapshot_rejects_malformed_required_fields(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            db = self._projection_db(root, "malformed.sqlite3", "malformed")
+            transport = root / "malformed.zst"
+            evidence = root / "malformed-evidence.tgz"
+            transport.write_bytes(b"transport-malformed")
+            evidence.write_bytes(b"evidence-malformed")
+            base = {
+                "provider": "gemini",
+                "source_scope": "GEMINI_APPS_ACTIVITY",
+                "observed_through": 1795275928.0,
+                "basis": "provider_takeout_request_receipt",
+                "accepted_set_sha256": "b" * 64,
+            }
+            cases = [
+                ({**base, "provider": ""}, "RECOVERY_SOURCE_SNAPSHOT_PROVIDER_INVALID"),
+                ({**base, "source_scope": ""}, "RECOVERY_SOURCE_SNAPSHOT_SCOPE_INVALID"),
+                ({**base, "observed_through": float("inf")}, "RECOVERY_SOURCE_SNAPSHOT_OBSERVED_THROUGH_INVALID"),
+                ({**base, "observed_through": True}, "RECOVERY_SOURCE_SNAPSHOT_OBSERVED_THROUGH_INVALID"),
+                ({**base, "basis": ""}, "RECOVERY_SOURCE_SNAPSHOT_BASIS_INVALID"),
+                ({**base, "accepted_set_sha256": "bad"}, "RECOVERY_SOURCE_SNAPSHOT_ACCEPTED_SET_INVALID"),
+            ]
+            for snapshot, code in cases:
+                with self.subTest(code=code):
+                    with self.assertRaisesRegex(ValueError, code):
+                        build_receipt(
+                            projection_transport_path=transport,
+                            projection_drive_file_id="drive-projection-malformed",
+                            projection_db_path=db,
+                            evidence_path=evidence,
+                            evidence_drive_file_id="drive-evidence-malformed",
+                            source_commit="a" * 40,
+                            accepted_set_sha256="b" * 64,
+                            verification={"status": "VERIFIED"},
+                            source_snapshot=snapshot,
+                        )
+
+    def test_source_snapshot_rejects_extra_strengthening_fields(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            db = self._projection_db(root, "extra.sqlite3", "extra")
+            transport = root / "extra.zst"
+            evidence = root / "extra-evidence.tgz"
+            transport.write_bytes(b"transport-extra")
+            evidence.write_bytes(b"evidence-extra")
+            with self.assertRaisesRegex(
+                ValueError,
+                "RECOVERY_SOURCE_SNAPSHOT_FIELDS_INVALID",
+            ):
+                build_receipt(
+                    projection_transport_path=transport,
+                    projection_drive_file_id="drive-projection-extra",
+                    projection_db_path=db,
+                    evidence_path=evidence,
+                    evidence_drive_file_id="drive-evidence-extra",
+                    source_commit="a" * 40,
+                    accepted_set_sha256="b" * 64,
+                    verification={"status": "VERIFIED"},
+                    source_snapshot={
+                        "provider": "gemini",
+                        "source_scope": "GEMINI_APPS_ACTIVITY",
+                        "observed_through": 1795275928.0,
+                        "basis": "provider_takeout_request_receipt",
+                        "accepted_set_sha256": "b" * 64,
+                        "status": "PROVIDER_REPORTED_NO_KNOWN_GAPS",
+                    },
+                )
+
     def test_receipt_requires_verified_terminal_state(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)
@@ -194,6 +338,13 @@ class RecoveryHandoffTest(unittest.TestCase):
                         "status": "VERIFIED",
                         "verified_at": "2026-11-08T00:00:00Z",
                     },
+                    "source_snapshot": {
+                        "provider": "gemini",
+                        "source_scope": "GEMINI_APPS_ACTIVITY",
+                        "observed_through": 1795275928.0,
+                        "basis": "provider_takeout_request_receipt",
+                        "accepted_set_sha256": "b" * 64,
+                    },
                 },
             )
             result = subprocess.run(
@@ -216,6 +367,11 @@ class RecoveryHandoffTest(unittest.TestCase):
             self.assertNotIn("private-projection-id", result.stdout)
             self.assertNotIn("private-evidence-id", result.stdout)
             self.assertEqual(out.stat().st_mode & 0o777, 0o600)
+            built = json.loads(out.read_text(encoding="utf-8"))
+            self.assertEqual(
+                built["source_snapshot"]["source_scope"],
+                "GEMINI_APPS_ACTIVITY",
+            )
 
     def test_private_writer_uses_mode_0600(self):
         with tempfile.TemporaryDirectory() as td:
