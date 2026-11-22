@@ -1,6 +1,6 @@
 # Implementation Plan: Official Gemini corpus and federated serving
 
-Status: DRAFT FOR HUMAN REVIEW
+Status: APPROVED 2026-11-22
 Tracking issue: #311
 Capability map: CAPABILITY_MAP-gemini.md
 Approved specs:
