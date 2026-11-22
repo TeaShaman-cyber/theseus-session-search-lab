@@ -1,6 +1,6 @@
 # Spec: gemini-provider-allocation
 
-Status: DRAFT FOR HUMAN REVIEW
+Status: APPROVED 2026-11-22
 Capability map: CAPABILITY_MAP-gemini.md
 Depends on: CAPABILITY_MAP-gemini.md (APPROVED); gemini-source-acceptance (verified acceptance receipt)
 Tracking issue: #311
@@ -50,11 +50,12 @@ The concrete shard ID in verification commands comes from allocator output; gemi
 
 ## Code Style
 
-Provider mapping is explicit and fail-closed:
+Provider mapping follows the existing provider-aware-v1 contract:
 
-    known_adapter -> provider family
-    unknown_adapter -> unresolved
-    conflicting evidence -> blocked
+    known adapters from exactly one provider -> that provider
+    unknown-only adapters -> unresolved
+    known adapters from more than one provider -> blocked conflict
+    one known provider plus unknown adapters -> known provider, with all adapter provenance preserved
 
 Normative mappings for this capability are:
 
@@ -71,7 +72,8 @@ constructing an ID independently.
 ## Testing Strategy
 
 - exact adapter-to-provider mapping tests for official Gemini My Activity and NotebookLM rescue adapters;
-- negative tests for unknown Gemini-like adapter names;
+- negative tests for unknown-only Gemini-like adapter names and provider conflicts;
+- mixed known-plus-unknown tests preserving provenance while retaining the single known provider;
 - deterministic allocation repeatability;
 - hard-limit/target-size contract checks;
 - shard source replay verification against the accepted corpus;
@@ -83,7 +85,7 @@ Always:
 - derive allocation from accepted corpus state;
 - preserve source_adapter provenance even when multiple adapters share provider=gemini;
 - let the canonical allocator determine shard count and IDs;
-- fail closed on provider conflict/unresolved routing.
+- fail closed on provider conflicts and unknown-only unresolved routing; preserve unknown co-routed provenance when exactly one known provider is present.
 
 Ask first:
 - allocation contract-version change;
@@ -98,7 +100,7 @@ Never:
 ## Success Criteria
 
 - both accepted Gemini adapters map deterministically to provider=gemini;
-- unknown/conflicting adapters remain fail-closed;
+- unknown-only adapters remain unresolved, provider conflicts block, and mixed known-plus-unknown sessions retain the one known provider without dropping unknown provenance;
 - current accepted corpus allocation produces an explainable Gemini shard plan;
 - shard count, IDs, estimated bytes and bounds are recorded from allocator output;
 - every planned Gemini shard passes scripts/verify_shard_source.py against the

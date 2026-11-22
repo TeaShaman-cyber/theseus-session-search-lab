@@ -1,6 +1,6 @@
 # Spec: gemini-currentness
 
-Status: DRAFT FOR HUMAN REVIEW
+Status: APPROVED 2026-11-22
 Capability map: CAPABILITY_MAP-gemini.md
 Depends on: CAPABILITY_MAP-gemini.md (APPROVED); gemini-source-acceptance (verified acceptance receipt with accepted_set_sha256)
 Tracking issue: #311
@@ -47,39 +47,49 @@ Use scoped evidence vocabulary.
 
 Target semantic shape:
 
-    source_currentness = BOUNDED_PROVIDER_EXPORT_SNAPSHOT
     source_scope = GEMINI_APPS_ACTIVITY
-    observed_through = T_request
-    basis = provider_takeout_request_receipt
+    source_snapshot.observed_through = T_request
+    source_snapshot.basis = provider_takeout_request_receipt
+
+For provider-scoped coverage queries, source_currentness is query-relative:
+
+    to_time <= T_request
+        -> VERIFIED_TO_BOUNDED_PROVIDER_EXPORT_SNAPSHOT
+
+    to_time is absent, or to_time > T_request
+        -> STALE_AFTER_BOUNDED_PROVIDER_EXPORT_SNAPSHOT
 
 T_request is the independently observed Google Takeout request receipt time for
 the accepted export. It is data, not a constant in the capability.
 
-Never collapse that state into PROVIDER_REPORTED_NO_KNOWN_GAPS.
+Never collapse either state into PROVIDER_REPORTED_NO_KNOWN_GAPS or the
+provider-watermark states used by ChatGPT.
 
 ## Persistence Contract
 
-The bounded Gemini export boundary is durable corpus metadata, not a chat-local
-observation. The currentness implementation must persist a provider-scoped
-source_snapshot record with the accepted recovery authority and bind it to the
-same accepted_set_sha256.
+The bounded Gemini export boundary is durable accepted-source evidence, not a
+chat-local observation. gemini-source-acceptance owns persistence of the
+provider-scoped source_snapshot in the accepted recovery receipt. This module
+does not mutate that upstream recovery authority after acceptance.
 
-Minimum Gemini source_snapshot fields:
+The currentness implementation consumes the already recovered snapshot and
+requires:
 
     provider = gemini
     source_scope = GEMINI_APPS_ACTIVITY
     observed_through = T_request
     basis = provider_takeout_request_receipt
-    accepted_set_sha256 = <accepted corpus set>
+    source_snapshot.accepted_set_sha256 = recovery_receipt.accepted_set_sha256
 
 source_snapshot is deliberately distinct from source_watermark. The existing
 source_watermark contract carries the stronger provider-reported-no-known-gaps
 meaning and must not be overloaded for Takeout snapshot semantics.
 
-Recovery validation must read back the snapshot binding before promotion.
-Provider-specific shard/promotion metadata copies the accepted Gemini snapshot
-for the router. The production router then computes user-visible currentness
-from that validated metadata.
+Before any runtime classification is emitted, recovery validation must have
+verified the snapshot binding. Provider-specific shard/promotion metadata may
+copy the accepted Gemini snapshot for transport to the router, but it cannot
+strengthen or reinterpret the evidence. The production router computes
+user-visible currentness from that validated metadata.
 
 ## Runtime Ownership
 
@@ -102,7 +112,7 @@ shard, readiness, and App layers from inventing competing meanings.
 
 - prove the accepted export request boundary from independent Google receipt evidence;
 - prove parsed activity does not exceed the request boundary;
-- test currentness serialization through readiness/router/App layers;
+- test currentness serialization through readiness/router/App layers, including one query bounded at or before T_request and one query extending past T_request;
 - negative tests must preserve explicit exclusions and reject stronger completeness labels;
 - existing ChatGPT provider-watermark semantics must remain unchanged;
 - canonical ./tools/dev/check plus runtime readback before production use.
@@ -130,6 +140,8 @@ Never:
 
 For each accepted official Gemini export:
 
+- the verified gemini-source-acceptance recovery receipt contains the Gemini
+  source_snapshot bound to its accepted_set_sha256;
 - an independent Google provider receipt establishes T_request;
 - archive-ready time T_ready is recorded as delivery evidence but is not used
   as the currentness upper bound;
@@ -140,8 +152,12 @@ For each accepted official Gemini export:
 - the accepted export identity, activity count/range, and request/archive
   receipts are recorded in an acceptance receipt or covering Issue evidence,
   not hard-coded into this reusable module specification;
-- runtime support returns BOUNDED_PROVIDER_EXPORT_SNAPSHOT for provider gemini
-  with source_scope=GEMINI_APPS_ACTIVITY and observed_through=T_request;
+- provider-scoped runtime coverage bounded at or before T_request returns
+  VERIFIED_TO_BOUNDED_PROVIDER_EXPORT_SNAPSHOT with
+  source_scope=GEMINI_APPS_ACTIVITY and observed_through=T_request;
+- provider-scoped runtime coverage with no upper bound or to_time > T_request
+  returns STALE_AFTER_BOUNDED_PROVIDER_EXPORT_SNAPSHOT with the same snapshot
+  metadata;
 - existing ChatGPT provider-watermark semantics remain unchanged.
 
 The currently accepted export's concrete timestamps/counts belong to the #311

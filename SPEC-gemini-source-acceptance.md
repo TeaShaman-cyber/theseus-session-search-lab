@@ -1,6 +1,6 @@
 # Spec: gemini-source-acceptance
 
-Status: DRAFT FOR HUMAN REVIEW
+Status: APPROVED 2026-11-22
 Capability map: CAPABILITY_MAP-gemini.md
 Depends on: CAPABILITY_MAP-gemini.md (APPROVED)
 Tracking issue: #311
@@ -88,6 +88,32 @@ theseus.session-search-recovery-locator.v1 current pointer, provider-side
 byte/hash readback, and fresh-runtime verification through
 python -m session_search.recovery_handoff verify-local.
 
+### Source snapshot evidence
+
+When independently verified provider evidence gives a conservative export
+boundary, source acceptance persists that evidence before the recovery current
+pointer moves. For the initial Gemini import this is an optional
+source_snapshot object in the existing
+theseus.session-search-recovery-receipt.v1; it is not a second receipt and
+does not upgrade the receipt schema identifier.
+
+Minimum Gemini snapshot shape:
+
+    provider = gemini
+    source_scope = GEMINI_APPS_ACTIVITY
+    observed_through = T_request
+    basis = provider_takeout_request_receipt
+    accepted_set_sha256 = <same value as receipt.accepted_set_sha256>
+
+The recovery validator must require the nested accepted_set_sha256 to equal the
+receipt's top-level accepted_set_sha256. Existing v1 receipts without
+source_snapshot remain valid. The snapshot is source evidence only; this module
+does not assign the user-visible BOUNDED_PROVIDER_EXPORT_SNAPSHOT classification.
+That interpretation belongs to gemini-currentness.
+
+The snapshot must survive receipt byte readback, locator publication, and
+fresh-runtime recovery before source acceptance is complete.
+
 ## Testing Strategy
 
 - adapter-focused deterministic tests for locale, prompt structure, provider IDs, timestamps and attachments;
@@ -126,6 +152,8 @@ Never:
 - full projection verification is VERIFIED;
 - immutable recovery generation is published only after verification;
 - uploaded bytes, receipt/current pointer and independent empty-runtime recovery are VERIFIED;
+- when a verified provider export boundary is available, its source_snapshot is
+  bound to the same accepted_set_sha256 and survives independent recovery;
 - aggregate official/rescue overlap and unresolved counts are recorded public-safely.
 
 ## Open Questions

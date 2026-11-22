@@ -309,12 +309,17 @@ This supports a bounded provider-export claim that is stronger than
 UNKNOWN_WITHOUT_SOURCE_WATERMARK but weaker than provider-complete account
 history.
 
-Target serving semantics:
+Target serving semantics for the initial accepted snapshot:
 
-    source_currentness=BOUNDED_PROVIDER_EXPORT_SNAPSHOT
     source_scope=GEMINI_APPS_ACTIVITY
     observed_through=2026-11-21T15:45:28Z
     basis=provider_takeout_request_receipt
+
+    query bounded at/before observed_through
+      -> source_currentness=VERIFIED_TO_BOUNDED_PROVIDER_EXPORT_SNAPSHOT
+
+    query unbounded or after observed_through
+      -> source_currentness=STALE_AFTER_BOUNDED_PROVIDER_EXPORT_SNAPSHOT
 
 The claim means: the indexed source is the Gemini Apps Activity snapshot
 exported by Google for that Takeout request boundary. It does **not** mean every
@@ -332,8 +337,7 @@ explicitly warns that changes between request time and archive creation may be
 missing.
 
 Do not map this evidence to PROVIDER_REPORTED_NO_KNOWN_GAPS: Google does not
-make that stronger claim. Runtime support for BOUNDED_PROVIDER_EXPORT_SNAPSHOT
-must be added and tested separately before production Gemini serving uses it.
+make that stronger claim. Runtime support for the bounded-snapshot verified/stale states must be added and tested separately before production Gemini serving uses them.
 
 ## Production cutover
 
@@ -359,9 +363,11 @@ Mutation sequence:
 
 Terminal App acceptance:
 
-- Gemini-only coverage sees expected generation/bounds and
-  source_currentness=BOUNDED_PROVIDER_EXPORT_SNAPSHOT with
-  source_scope=GEMINI_APPS_ACTIVITY and the accepted Takeout request boundary;
+- Gemini-only coverage bounded at/before the accepted Takeout request boundary
+  sees VERIFIED_TO_BOUNDED_PROVIDER_EXPORT_SNAPSHOT with
+  source_scope=GEMINI_APPS_ACTIVITY;
+- a paired unbounded/after-boundary coverage probe sees
+  STALE_AFTER_BOUNDED_PROVIDER_EXPORT_SNAPSHOT from the same snapshot binding;
 - Gemini-only positive search -> FOUND, unavailable_shards=[];
 - Gemini-only negative control -> NO_SIGNAL, unavailable_shards=[];
 - broad search includes Gemini where relevant with zero unavailable;

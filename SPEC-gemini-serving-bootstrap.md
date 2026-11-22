@@ -1,6 +1,6 @@
 # Spec: gemini-serving-bootstrap
 
-Status: DRAFT FOR HUMAN REVIEW
+Status: APPROVED 2026-11-22
 Capability map: CAPABILITY_MAP-gemini.md
 Tracking issue: #311
 Depends on: CAPABILITY_MAP-gemini.md (APPROVED); verified
@@ -89,9 +89,12 @@ Neither value is inferred from provider name or wall-clock order.
 - positive and negative authenticated candidate shard smoke;
 - unauthenticated shard search returns 401;
 - candidate router broad/provider-scoped controls with unavailable_shards=[];
-- candidate router provider=gemini coverage returns
-  source_currentness=BOUNDED_PROVIDER_EXPORT_SNAPSHOT,
+- candidate router provider=gemini coverage bounded at or before T_request
+  returns source_currentness=VERIFIED_TO_BOUNDED_PROVIDER_EXPORT_SNAPSHOT,
   source_scope=GEMINI_APPS_ACTIVITY, and observed_through=T_request from the
+  accepted source_snapshot binding;
+- a paired provider=gemini coverage probe with no upper bound or to_time after
+  T_request returns STALE_AFTER_BOUNDED_PROVIDER_EXPORT_SNAPSHOT from the same
   accepted source_snapshot binding;
 - exact Gemini generation provenance;
 - post-cutover same-URI direct router readback;
