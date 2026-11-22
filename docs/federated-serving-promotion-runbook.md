@@ -152,6 +152,45 @@ Before any production mutation:
 A dated deployment number, resource name, or housekeeping inventory is evidence,
 not the procedure.
 
+## Bounded pre-cutover readiness receipt
+
+Before opening live candidate/cutover gates, collapse deterministic repository
+mechanics into one runtime job:
+
+    tools/dev/serving-promotion-readiness \
+      --manifest /private/path/promotion-readiness.json \
+      --run-qa \
+      --output /private/path/promotion-readiness-receipt.json
+
+This command is deliberately **read-only** with respect to Session Search
+providers. It does not call Neon, Arcade, Drive, GitHub mutation APIs, the App,
+or the router. It:
+
+- pins the exact Git HEAD / branch and requires a clean worktree;
+- runs canonical ./tools/dev/check once when --run-qa is supplied;
+- hashes the complete QA stdout/stderr instead of copying it into the receipt;
+- validates target generation identity from source-manifest identity;
+- validates READY state, aggregate counts, finite observed bounds, accepted-set
+  consistency and provider watermark coverage;
+- preserves explicit previous generation IDs as rollback metadata;
+- emits a compact terminal READY_FOR_RUNTIME_GATES or BLOCKED receipt plus
+  the remaining independent runtime gates.
+
+The input is a versioned public-safe metadata manifest. It must not contain
+database URLs, bearer/token/secret fields, Authorization material, private Drive
+IDs, raw transcript text or other credential-bearing values. Unknown or
+secret-like fields fail closed.
+
+READY_FOR_RUNTIME_GATES does **not** authorize or prove promotion. It means the
+deterministic/local layer is ready for the independently observed candidate
+shard, candidate router, same-URI runtime reload, Arcade refresh and App-backed
+acceptance gates described below.
+
+Keep the manifest/receipt outside the repository when it describes a private
+operational refresh. The command's JSON receipt is intended to replace repeated
+chat-mediated git-status / QA / receipt-parsing / generation-comparison
+round-trips with one bounded execution result.
+
 ## Candidate shard acceptance
 
 For each replacement shard serving endpoint:
