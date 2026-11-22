@@ -162,15 +162,22 @@ def _validate_replacements(
     *,
     blockers: list[str],
     seen_shards: set[str],
-) -> tuple[list[dict[str, Any]], dict[str, str | None], dict[str, float], dict[str, set[str]]]:
+) -> tuple[
+    list[dict[str, Any]],
+    dict[str, str | None],
+    dict[str, float],
+    dict[str, set[str]],
+    set[str],
+]:
     output: list[dict[str, Any]] = []
     rollback: dict[str, str | None] = {}
     provider_max: dict[str, float] = {}
     accepted_sets: dict[str, set[str]] = {}
+    new_shards: set[str] = set()
 
     if not isinstance(raw, list) or not raw:
         blockers.append("REPLACEMENT_SHARDS_EMPTY")
-        return output, rollback, provider_max, accepted_sets
+        return output, rollback, provider_max, accepted_sets, new_shards
 
     for index, item in enumerate(raw):
         if not isinstance(item, dict):
@@ -202,7 +209,14 @@ def _validate_replacements(
             blockers.append(f"BUNDLE_SHA256_INVALID:{shard_id}")
         if not _is_hex(item["accepted_set_sha256"], _HEX64):
             blockers.append(f"ACCEPTED_SET_INVALID:{shard_id}")
-        if not _is_hex(item["previous_generation_id"], _HEX64):
+        previous_generation = item["previous_generation_id"]
+        if previous_generation is None:
+            promotion_mode = "NEW_SHARD"
+            new_shards.add(shard_id)
+        elif _is_hex(previous_generation, _HEX64):
+            promotion_mode = "REPLACEMENT"
+        else:
+            promotion_mode = "REPLACEMENT"
             blockers.append(f"PREVIOUS_GENERATION_INVALID:{shard_id}")
         if item["state"] != "READY":
             blockers.append(f"GENERATION_NOT_READY:{shard_id}")
@@ -223,18 +237,26 @@ def _validate_replacements(
                 blockers.append(f"{code}:{shard_id}")
 
         accepted_sets.setdefault(provider, set()).add(item["accepted_set_sha256"])
-        rollback[shard_id] = item["previous_generation_id"]
-        output.append({key: item[key] for key in (
+        rollback[shard_id] = previous_generation
+        normalized = {key: item[key] for key in (
             "provider", "shard_id", "generation_id", "source_manifest_sha256",
             "bundle_sha256", "accepted_set_sha256", "session_count",
             "message_count", "time_min", "time_max", "state",
-        )})
+        )}
+        normalized["promotion_mode"] = promotion_mode
+        output.append(normalized)
 
     output.sort(key=lambda item: item["shard_id"])
-    return output, rollback, provider_max, accepted_sets
+    return output, rollback, provider_max, accepted_sets, new_shards
 
 
-def _validate_unchanged(raw: Any, *, blockers: list[str], seen_shards: set[str]) -> list[dict[str, Any]]:
+def _validate_unchanged(
+    raw: Any,
+    *,
+    blockers: list[str],
+    seen_shards: set[str],
+    new_shards: set[str],
+) -> list[dict[str, Any]]:
     output: list[dict[str, Any]] = []
     if not isinstance(raw, list):
         blockers.append("UNCHANGED_CATALOG_INVALID")
@@ -254,7 +276,10 @@ def _validate_unchanged(raw: Any, *, blockers: list[str], seen_shards: set[str])
             blockers.append(f"UNCHANGED_SHARD_ID_INVALID:{index}")
             continue
         if shard_id in seen_shards:
-            blockers.append(f"DUPLICATE_SHARD_ID:{shard_id}")
+            if shard_id in new_shards:
+                blockers.append(f"NEW_SHARD_ALREADY_EXISTS:{shard_id}")
+            else:
+                blockers.append(f"DUPLICATE_SHARD_ID:{shard_id}")
         seen_shards.add(shard_id)
         if not _is_hex(item["generation_id"], _HEX64):
             blockers.append(f"UNCHANGED_GENERATION_INVALID:{shard_id}")
@@ -314,10 +339,15 @@ def evaluate_serving_promotion_readiness(
 
         watermarks, watermark_by_provider = _validate_watermarks(raw.get("source_watermarks"), blockers)
         seen_shards: set[str] = set()
-        replacements, rollback, provider_max, accepted_sets = _validate_replacements(
+        replacements, rollback, provider_max, accepted_sets, new_shards = _validate_replacements(
             raw.get("replacement_shards"), blockers=blockers, seen_shards=seen_shards
         )
-        unchanged = _validate_unchanged(raw.get("unchanged_catalog"), blockers=blockers, seen_shards=seen_shards)
+        unchanged = _validate_unchanged(
+            raw.get("unchanged_catalog"),
+            blockers=blockers,
+            seen_shards=seen_shards,
+            new_shards=new_shards,
+        )
 
         for provider, data_max in provider_max.items():
             watermark = watermark_by_provider.get(provider)
