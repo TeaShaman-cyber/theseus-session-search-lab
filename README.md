@@ -41,6 +41,7 @@ The production router also emits a deliberately narrow PostHog semantic-event la
 - [Nine-panel Grafana dashboard-as-code](grafana/README.md) — the saved dashboard uses the historical `candidate` filter; an empty panel is not proof of missing live signals. Inspect current environment labels first.
 - [Current federated serving plane](docs/federated-serving-plane.md) — request path, live coverage/currentness semantics, App tool surface, and observability boundaries.
 - [Federated serving promotion runbook](docs/federated-serving-promotion-runbook.md) — canonical data-only refresh path from verified bundle through green data generations, serving candidates, same-URI production reload, Arcade refresh, and App-backed acceptance.
+- [Official Gemini corpus + serving spec](docs/gemini-official-corpus-serving-spec.md) — staged official My Activity acceptance, Gemini provider allocation, first-shard bootstrap, and stable-App serving promotion.
 
 ## Neon resource housekeeping
 
