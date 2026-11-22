@@ -52,6 +52,20 @@ class CodexReviewStatusTest(unittest.TestCase):
         self.assertEqual(result["reason"], "review-running")
         self.assertTrue(result["advisory"])
 
+    def test_failed_review_is_unavailable_terminal_for_fallback(self):
+        state = classify_codex_review([
+            summary({
+                "commit_sha": HEAD,
+                "has_any_findings": True,
+                "has_unresolved_findings": True,
+                "status": "failed",
+            })
+        ], HEAD)
+        self.assertEqual(state["status"], "UNAVAILABLE")
+        self.assertEqual(state["reason"], "review-provider-failed")
+        waited = classify_codex_wait(state, elapsed_seconds=1, timeout_seconds=120)
+        self.assertEqual(waited["wait_disposition"], "TERMINAL")
+
     def test_completed_review_with_findings_is_advisory_findings(self):
         result = classify_codex_review([
             summary({

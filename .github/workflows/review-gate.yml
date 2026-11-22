@@ -72,19 +72,46 @@ jobs:
           rc=$?
           set -e
           printf '%s\n' "$result"
-          if [ "$rc" -ne 0 ]; then
-            echo "::error::Codex review did not reach a terminal exact-head state (rc=$rc)."
+
+          if [ "$rc" -eq 0 ]; then
+            status=$(printf '%s\n' "$result" | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"])')
+            case "$status" in
+              CLEAN)
+                echo 'PASS: exact-head Codex review completed clean.'
+                exit 0
+                ;;
+              FINDINGS)
+                echo '::error::Codex review has unresolved findings; alternative fallback is not allowed.'
+                exit 1
+                ;;
+              UNAVAILABLE)
+                echo 'NOTICE: Codex review provider unavailable; checking alternative exact-head receipt.'
+                ;;
+              *)
+                echo "::error::Unexpected terminal Codex status: $status"
+                exit 2
+                ;;
+            esac
+          elif [ "$rc" -eq 3 ]; then
+            echo 'NOTICE: Codex review timed out; checking alternative exact-head receipt.'
+          else
+            echo "::error::Codex review helper failed (rc=$rc); alternative fallback is not allowed."
             exit "$rc"
           fi
-          status=$(printf '%s\n' "$result" | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"])')
-          case "$status" in
-            CLEAN) echo 'PASS: exact-head Codex review completed clean.' ;;
+
+          fallback=$(./tools/pr/alternative-review-status.sh "$PR_NUMBER" "$EXPECTED_HEAD")
+          printf '%s\n' "$fallback"
+          fallback_status=$(printf '%s\n' "$fallback" | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"])')
+          case "$fallback_status" in
+            CLEAN)
+              echo 'PASS: Alternative exact-head review completed clean.'
+              ;;
             FINDINGS)
-              echo '::error::Exact-head Codex review has unresolved findings.'
+              echo '::error::Alternative exact-head review has findings.'
               exit 1
               ;;
             *)
-              echo "::error::Unexpected terminal Codex status: $status"
-              exit 2
+              echo "::error::Alternative exact-head review is not acceptable: $fallback_status"
+              exit 1
               ;;
           esac

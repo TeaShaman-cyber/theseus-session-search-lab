@@ -16,6 +16,20 @@ class ReviewGateWorkflowContractTests(unittest.TestCase):
         self.assertIn('persist-credentials: false', workflow)
         self.assertIn('git diff --no-renames --name-only', workflow)
 
+    def test_workflow_has_fail_closed_alternative_review_fallback(self):
+        workflow = (ROOT / '.github/workflows/review-gate.yml').read_text()
+        self.assertIn('tools/pr/alternative-review-status.sh', workflow)
+        self.assertIn('UNAVAILABLE', workflow)
+        self.assertIn('Codex review has unresolved findings', workflow)
+        self.assertIn('Alternative exact-head review completed clean', workflow)
+        self.assertIn('fallback_status', workflow)
+
+    def test_alternative_review_wrapper_requests_all_comment_pages(self):
+        wrapper = (ROOT / 'tools/pr/alternative-review-status.sh').read_text()
+        self.assertIn('--paginate', wrapper)
+        self.assertIn('--slurp', wrapper)
+        self.assertIn('alternative_review_status.py', wrapper)
+
     def test_posthog_review_receipt_is_advisory_and_scoped(self):
         qa = (ROOT / 'docs/qa.md').read_text()
         self.assertIn('POSTHOG_CI_HISTORY:', qa)

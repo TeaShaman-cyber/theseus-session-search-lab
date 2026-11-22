@@ -80,6 +80,14 @@ def classify_codex_review(comments: list[dict[str, Any]], head_sha: str) -> dict
     status = str(review.get("status") or "").lower()
     unresolved = review.get("has_unresolved_findings")
 
+    if status == "failed":
+        return {
+            **base,
+            "status": "UNAVAILABLE",
+            "reason": "review-provider-failed",
+            "reviewed_commit": review.get("commit_sha"),
+        }
+
     if status != "completed":
         return {
             **base,
@@ -135,7 +143,7 @@ def classify_codex_wait(
     if timeout_seconds < 0:
         raise ValueError("timeout_seconds must be non-negative")
     status = str(review_state.get("status") or "")
-    if status in {"CLEAN", "FINDINGS"}:
+    if status in {"CLEAN", "FINDINGS", "UNAVAILABLE"}:
         disposition = "TERMINAL"
     elif elapsed_seconds >= timeout_seconds:
         disposition = "TIMEOUT"

@@ -108,3 +108,22 @@ A green review-gate job means exact-head Codex review only when classification
 returned required=true. When classification returns required=false, the job
 means only that the protected boundary was not touched. Codex quota exhaustion,
 timeout, or incomplete review on a required path is BLOCKED, never PASS.
+
+
+### Alternative exact-head review fallback
+
+Codex remains the first review route. A Codex CLEAN result passes directly and
+Codex FINDINGS always block; findings are never overridden by another model.
+
+If Codex reports provider failure or the bounded wait times out, the gate may
+accept a versioned alternative-review-state:v1 receipt from an OWNER-associated
+GitHub comment on the exact PR head. The receipt is accepted only when it binds
+the exact head SHA and records at least two distinct provider-route/model
+identities, every verdict is CLEAN, and every model-result digest is a valid
+SHA-256. A stale, malformed, single-reviewer, duplicate-reviewer, untrusted, or
+FINDINGS receipt remains blocking.
+
+The receipt is an operator attestation of reviews performed through governed
+model integrations; GitHub Actions receives no provider API keys. Prompts,
+private corpus content, credentials, database URLs, Drive IDs, and provider
+secrets must not be embedded in the public receipt.
