@@ -3,7 +3,6 @@
 Status: DRAFT FOR HUMAN REVIEW
 Capability map: CAPABILITY_MAP-gemini.md
 Tracking issue: #311
-Evidence refinement: PR #319 content is incorporated here.
 
 ## Objective
 
@@ -47,10 +46,29 @@ Target semantic shape:
 
     source_currentness = BOUNDED_PROVIDER_EXPORT_SNAPSHOT
     source_scope = GEMINI_APPS_ACTIVITY
-    observed_through = 2026-11-21T15:45:28Z
+    observed_through = T_request
     basis = provider_takeout_request_receipt
 
+T_request is the independently observed Google Takeout request receipt time for
+the accepted export. It is data, not a constant in the capability.
+
 Never collapse that state into PROVIDER_REPORTED_NO_KNOWN_GAPS.
+
+## Runtime Ownership
+
+The pre-cutover readiness layer
+(session_search/serving_promotion_readiness.py) validates that promotion
+metadata is internally consistent and may report the provider currentness
+mode. It does not own the user-visible coverage verdict.
+
+functions/router/core.mjs owns provider-scoped user-visible source_currentness
+summarization in the federated serving path. The router must emit the bounded
+Gemini classification only from validated Gemini export metadata; the App
+reflects that router result. Semantic-event schemas must accept the new value
+only after router behavior and tests are updated.
+
+This keeps one runtime owner for the coverage classification and prevents
+shard, readiness, and App layers from inventing competing meanings.
 
 ## Testing Strategy
 
@@ -82,17 +100,25 @@ Never:
 
 ## Success Criteria
 
-For the accepted export, evidence records:
+For each accepted official Gemini export:
 
-- Takeout request receipt: 2026-11-21T15:45:28Z;
-- archive-ready receipt: 2026-11-21T15:47:44Z;
-- archive filename request timestamp matches the provider request receipt;
-- 2,106 parsed prompt activities;
-- earliest prompt activity 2025-03-22T03:41:03Z;
-- latest prompt activity 2026-11-21T15:28:40Z;
-- zero parsed prompt activities later than the request boundary.
+- an independent Google provider receipt establishes T_request;
+- archive-ready time T_ready is recorded as delivery evidence but is not used
+  as the currentness upper bound;
+- if an archive filename embeds a timestamp, it is supporting evidence only and
+  must not be authoritative unless it independently matches provider evidence;
+- parsing yields a finite activity range [T_earliest, T_latest];
+- zero parsed Gemini Apps Activity prompts have timestamps later than T_request;
+- the accepted export identity, activity count/range, and request/archive
+  receipts are recorded in an acceptance receipt or covering Issue evidence,
+  not hard-coded into this reusable module specification;
+- runtime support returns BOUNDED_PROVIDER_EXPORT_SNAPSHOT for provider gemini
+  with source_scope=GEMINI_APPS_ACTIVITY and observed_through=T_request;
+- existing ChatGPT provider-watermark semantics remain unchanged.
 
-Runtime support then returns BOUNDED_PROVIDER_EXPORT_SNAPSHOT for provider=gemini while preserving existing provider semantics elsewhere.
+The currently accepted export's concrete timestamps/counts belong to the #311
+acceptance evidence and supporting architecture narrative, not to this
+capability's reusable acceptance constants.
 
 ## Open Questions
 

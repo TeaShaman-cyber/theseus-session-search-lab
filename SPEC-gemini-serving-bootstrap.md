@@ -21,6 +21,10 @@ This is a first-provider bootstrap, not a routine replacement shard.
 - existing Arcade worker and Session Search App
 - tools/dev/serving-promotion-readiness
 
+Normative mechanics remain in docs/federated-serving-promotion-runbook.md and
+docs/shard-bundle-transport.md; this module composes those contracts rather
+than redefining their output schemas.
+
 ## Commands
 
 Verify accepted source for the allocator-produced shard:
@@ -63,6 +67,15 @@ Keep authority layers explicit:
     -> Arcade refresh -> App-backed acceptance
 
 A successful earlier layer never implies success of the next layer.
+
+Generation identity follows the existing materializer contract:
+
+    generation_id = sha256("session-search-generation-v1\n" + source_manifest_sha256)
+
+For a REPLACEMENT, previous_generation_id is the production generation
+previously bound to the same shard_id. For the first allocator-produced Gemini
+shard, promotion mode is NEW_SHARD and previous_generation_id is null.
+Neither value is inferred from provider name or wall-clock order.
 
 ## Testing Strategy
 
@@ -115,4 +128,7 @@ Never:
 
 ## Open Questions
 
-- Transitional Function-host choice must be selected from current accepted live lineage at execution time; cached project IDs are not specification authority.
+- Transitional Function-host choice must be selected from the current accepted
+  live serving lineage at execution time using the production router/catalog
+  readback and the canonical promotion runbook. Cached project IDs, remembered
+  endpoints, or a historical Issue are not specification authority.

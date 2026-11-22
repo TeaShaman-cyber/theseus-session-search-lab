@@ -31,4 +31,16 @@ Canonical module specs:
 - SPEC-gemini-currentness.md
 - SPEC-gemini-serving-bootstrap.md
 
+## Approval semantics
+
+APPROVED on this capability map means the module boundaries, dependency
+direction, and build order were human-approved. It does not approve the module
+specifications automatically.
+
+Each SPEC-gemini-*.md remains DRAFT FOR HUMAN REVIEW until separately
+approved. Implementation of a module starts only after that module spec is
+approved. gemini-serving-bootstrap additionally requires verified completion
+receipts from gemini-source-acceptance, gemini-provider-allocation, and
+gemini-currentness; a locally green draft is not sufficient.
+
 The older docs/gemini-official-corpus-serving-spec.md is supporting architecture narrative, not the Spec D authority index.

@@ -20,6 +20,15 @@ Success means the accepted corpus can be reconstructed and independently verifie
 - governed Google Drive recovery transport
 - Git/GitHub issue and receipt history for public-safe evidence
 
+Normative accepted adapter identities for this initiative:
+
+| Evidence lane | source_adapter |
+|---|---|
+| Official Google My Activity / Gemini Apps | google-gemini-myactivity |
+| NotebookLM-preserved rescue evidence | notebooklm-preserved-gemini |
+
+These identifiers are provenance, not interchangeable aliases.
+
 ## Commands
 
 Inspect official export without mutation:
@@ -63,12 +72,27 @@ Example policy shape:
         preserve_as_unresolved()
         do_not_guess()
 
+Reconciliation is evidence-only and non-destructive. The existing official
+adapter compares accepted rescue and official sessions by exact
+canonical_message_sha256 sets, records unique/ambiguous/zero-overlap aggregate
+facts, and does not rewrite either source lane. A best overlap is not permission
+to delete or merge accepted artifacts.
+
+## Recovery Authority
+
+docs/corpus-recovery-handoff.md is the normative durable-recovery contract.
+This module does not invent a second receipt format. Acceptance uses the
+existing theseus.session-search-recovery-receipt.v1 immutable receipt,
+theseus.session-search-recovery-locator.v1 current pointer, provider-side
+byte/hash readback, and fresh-runtime verification through
+python -m session_search.recovery_handoff verify-local.
+
 ## Testing Strategy
 
 - adapter-focused deterministic tests for locale, prompt structure, provider IDs, timestamps and attachments;
 - exact-overlap tests against NotebookLM rescue evidence;
 - full artifact-derived candidate projection verification;
-- independent empty-runtime recovery after durable publication;
+- independent empty-runtime recovery after durable publication using the normative recovery-handoff contract;
 - canonical ./tools/dev/check before promotion.
 
 Private transcript text must not appear in public test fixtures or receipts.

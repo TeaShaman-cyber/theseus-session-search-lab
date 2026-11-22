@@ -28,7 +28,7 @@ Plan provider-aware allocation from an accepted corpus using the checked-in plan
 
 Verify an allocator-produced Gemini shard against accepted source authority:
 
-    python3 scripts/verify_shard_source.py --corpus /private/path/session-search-corpus --provider gemini --shard-id gemini-0001
+    python3 scripts/verify_shard_source.py --corpus /private/path/session-search-corpus --provider gemini --shard-id <allocator-shard-id>
 
 Canonical repository QA:
 
@@ -53,7 +53,17 @@ Provider mapping is explicit and fail-closed:
     unknown_adapter -> unresolved
     conflicting evidence -> blocked
 
+Normative mappings for this capability are:
+
+- google-gemini-myactivity -> gemini;
+- notebooklm-preserved-gemini -> gemini.
+
 Do not infer provider from arbitrary filename or free text.
+
+Shard identity is allocator-owned. Under the current provider-aware-v1
+contract, _finalize_shard emits <provider>-<four-digit-number> (for example
+gemini-0001). Specs and serving commands consume allocator output rather than
+constructing an ID independently.
 
 ## Testing Strategy
 
