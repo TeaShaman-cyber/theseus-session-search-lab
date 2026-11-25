@@ -40,3 +40,47 @@ Tests exercise actual synthetic ingest, recapture, distinct equal-text
 events, unrelated sessions, time and coverage changes, rebuild equivalence,
 bounds and corrupt receipts. A synthetic removal receipt tests classification,
 not a demonstrated live rerouting case.
+
+## Shared SQLite / federated Neon projection contract
+
+The current Neon v1 materializer transfers session ID, ordinal, materialized
+message ID (provider ID or existing anonymous local identity), role, search
+class, create time and text. It does not transfer the full canonical message
+digest, content type, provider order, coverage reason or artifact/page/source
+object links. Full source provenance therefore remains the separate
+accepted-corpus receipt above. Do not reconstruct it from a Neon search or
+browse hit.
+
+`session_search.projected_evidence` is the common bounded comparison layer.
+Its SQLite adapter reads the materializable fields under the existing corpus
+lock and projection check. Its Neon adapter consumes complete, explicitly
+generation-pinned `session_browse` pages from the existing router contract;
+it requires the matching provider/shard/generation/session, pinning witness,
+queried shard and no unavailable shards, and validates positions, offsets,
+Unicode character lengths, coverage and bounded exhaustion. No ACTIVE fallback
+or lexical query. Both use one event normalization, fingerprint and comparison
+implementation, independent of backend and generation. The caller provides
+a stable trusted corpus scope; scope/provider/session must match. Standalone
+event fingerprints exclude absolute ordinal; order changes are reported
+separately for contextual analysis. Coverage and backend lineage are retained.
+UTF-8 byte, event and page limits fail closed; they bound returned data rather
+than total scan I/O. The common receipt is metadata only and weaker than the
+source receipt. A matching common fingerprint alone does not authorize
+skipping source/provenance-dependent work.
+
+The existing bundle format and database schema are unchanged. A disposable
+PostgreSQL 16 acceptance job ingests synthetic captures with the actual Python
+runtime, builds and verifies canonical shard bundles for two generations, loads
+those rows using the existing restricted BUILDING capability and marks READY
+with the existing marker. The test uses actual shard and router JS handlers,
+including their MCP session_browse path, with a psql test transport to the
+real SQL function. It compares both snapshots and deltas against SQLite,
+including equal-text distinct events, anonymous identity, Unicode pagination,
+time change and incomplete coverage. It rejects BUILDING reads and direct
+reader table access. The test transport is not an Arcade/Neon cloud deployment
+or the actual Arcade loader client. No new route or permission is introduced.
+
+Remaining integration: a trusted source-to-generation binding for full
+provenance, affected-session selection across shard movement/branch changes,
+and bounded Dreaming Worker admission with explicit custody and dependency
+checks. This common projection reader is a library, not an unattended feed.

@@ -24,3 +24,39 @@ jobs:
         run: python -m pip install --disable-pip-version-check --quiet -r requirements-dev.txt
       - name: Run canonical repository QA
         run: ./tools/dev/check
+  projected-evidence-postgres:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16@sha256:07abc3f43c9395b0bdbbab36bc25ddb0e8d83cd4fcafb5fb7d6abe14ff156dd8
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: contract-fixture
+          POSTGRES_DB: ss_projection_contract
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ss_projection_contract"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: contract-fixture
+      PGDATABASE: ss_projection_contract
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+      - name: Install existing serving dependencies
+        run: npm ci --prefix functions --ignore-scripts --no-audit --no-fund
+      - name: Compare actual SQLite ingest and PostgreSQL READY projections
+        run: PYTHONPATH=.:tests python3 qa/projected-evidence-postgres.py
