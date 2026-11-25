@@ -670,13 +670,17 @@ def materialize_export(source: pathlib.Path, output_dir: pathlib.Path) -> list[p
     return list(_materialize_export_snapshot(source, output_dir).artifacts)
 
 
-def ingest_export(source: pathlib.Path, corpus_root: pathlib.Path) -> dict:
+def ingest_export(source: pathlib.Path, corpus_root: pathlib.Path, *,
+                  report_session_delta: bool = False) -> dict:
     from .corpus_store import ingest_reconciled_many
 
     with tempfile.TemporaryDirectory(prefix="session-search-chatgpt-") as td:
         snapshot = _materialize_export_snapshot(pathlib.Path(source), pathlib.Path(td))
         child_ids = {str(path): f"chatgpt-child-sha256:{_sha256(path.read_bytes())}" for path in snapshot.artifacts}
-        result = ingest_reconciled_many(list(snapshot.artifacts), pathlib.Path(corpus_root))
+        result = ingest_reconciled_many(
+            list(snapshot.artifacts), pathlib.Path(corpus_root),
+            report_session_delta=report_session_delta,
+        )
         for item in result.get("results", []):
             source_value = item.get("source")
             if source_value in child_ids:
@@ -699,10 +703,14 @@ def main(argv: list[str] | None = None) -> int:
     dest = parser.add_mutually_exclusive_group(required=True)
     dest.add_argument("--output-dir", type=pathlib.Path)
     dest.add_argument("--corpus", type=pathlib.Path)
+    parser.add_argument("--report-session-delta", action="store_true",
+                        help="Report observed conversation changes during corpus import")
     args = parser.parse_args(argv)
+    if args.report_session_delta and args.corpus is None:
+        parser.error("--report-session-delta requires --corpus")
     try:
         if args.corpus is not None:
-            result = ingest_export(args.source, args.corpus)
+            result = ingest_export(args.source, args.corpus, report_session_delta=args.report_session_delta)
             print(json.dumps(result, ensure_ascii=False, sort_keys=True))
             return 0 if result.get("status") == "COMPLETE" else 1
         outputs = materialize_export(args.source, args.output_dir)
