@@ -49,3 +49,24 @@ authoritative. This branch is not a deployed host or Arcade acceptance.
 
 The existing lexical session_search path and its exact-text grouping remain
 unchanged.
+
+## Native internal reader — laboratory candidate (#345)
+
+The existing router handler optionally accepts a separate
+`sessionBrowseAuthToken` constructor parameter for POST /session-browse.
+The default is null (404); no environment binding is introduced, so the
+existing deployed entry point cannot enable this route. The synthetic lab
+passes a distinct token and reuses the exact makeSessionBrowser function.
+The route checks auth before parsing or dispatch, rejects token reuse with
+the existing router/shard token, and the dedicated token does not authorize
+search, coverage, MCP (including feedback), or the grouped canary.
+
+Successful and BLOCKED bodies use the existing browse contract. HTTP 200
+alone does not establish success; invalid input is 400. This is a
+route-scoped read credential, NOT authorization for a particular session
+or source scope. Do not deploy, expose private history, provision real
+credentials, or enable the route before the source-access and durable
+refresh/serving handoff design is accepted. No new service, schema, DB role,
+cursor format or reader implementation. Tests use synthetic shard results;
+live latency, costs, full provenance and cloud authorization are unverified.
+See theseus-research PR #140 for the comparative architecture.

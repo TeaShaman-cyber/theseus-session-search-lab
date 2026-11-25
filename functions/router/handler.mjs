@@ -24,6 +24,7 @@ function routeFor(request, url) {
   if (request.method === 'POST' && url.pathname === '/search') return 'search';
   if (request.method === 'POST' && url.pathname === '/coverage') return 'coverage';
   if (request.method === 'POST' && url.pathname === '/mcp') return 'mcp';
+  if (request.method === 'POST' && url.pathname === '/session-browse') return 'session_browse';
   if (request.method === 'POST' && url.pathname === '/internal/grouped-search') return 'grouped_search_canary';
   return 'not_found';
 }
@@ -35,6 +36,7 @@ export function makeRouterHandler({
   telemetry = createNoopTelemetry(),
   authToken,
   shardAuthToken,
+  sessionBrowseAuthToken = null,
   feedbackWriter = null,
   feedbackReader = null,
   resultShape = 'grouped_v1',
@@ -45,6 +47,12 @@ export function makeRouterHandler({
   }
   if (typeof shardAuthToken !== 'string' || shardAuthToken.length === 0) {
     throw new Error('SHARD_AUTH_TOKEN_MISSING');
+  }
+  if (sessionBrowseAuthToken !== null && (
+    typeof sessionBrowseAuthToken !== 'string' || !/^[^\s]+$/.test(sessionBrowseAuthToken)
+    || sessionBrowseAuthToken === authToken || sessionBrowseAuthToken === shardAuthToken
+  )) {
+    throw new Error('SESSION_BROWSE_AUTH_TOKEN_INVALID');
   }
   if (!Number.isFinite(shardTimeoutMs) || shardTimeoutMs <= 0) {
     throw new Error('SHARD_TIMEOUT_OUT_OF_BOUNDS');
@@ -261,6 +269,13 @@ export function makeRouterHandler({
   return {
     async fetch(request) {
       const url = new URL(request.url);
+      const nativeBrowseRoute = request.method === 'POST' && url.pathname === '/session-browse';
+      if (nativeBrowseRoute) {
+        if (sessionBrowseAuthToken === null) return json({ error: 'NOT_FOUND' }, 404);
+        if (!hasValidBearerToken(request, sessionBrowseAuthToken)) {
+          return json({ error: 'UNAUTHORIZED' }, 401);
+        }
+      }
       const groupedCanaryRoute = request.method === 'POST' && url.pathname === '/internal/grouped-search';
       const protectedRoute = request.method === 'POST'
         && (url.pathname === '/search' || url.pathname === '/mcp' || url.pathname === '/coverage'
@@ -300,6 +315,21 @@ export function makeRouterHandler({
           } catch (error) {
             observation.setErrorClass('validation');
             return json({ error: String(error?.message ?? error) }, 400);
+          }
+        }
+
+        if (nativeBrowseRoute) {
+          try {
+            const result = await browseSession(await request.json(), observation.context);
+            observation.setResult({
+              resultStatus: result.status,
+              queriedShards: result.queried_shards?.length ?? 0,
+              unavailableShards: result.unavailable_shards?.length ?? 0,
+            });
+            return json(result);
+          } catch (error) {
+            observation.setErrorClass('validation');
+            return json({ error: 'BROWSE_INPUT_INVALID' }, 400);
           }
         }
 
