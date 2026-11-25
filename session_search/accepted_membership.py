@@ -85,25 +85,29 @@ def capture_accepted_membership(corpus_root: Path, *, scope: str) -> dict:
     if not paths.accepted_ledger.is_dir() or not paths.db.is_file():
         raise ValueError("CORPUS_NOT_INITIALIZED")
     with CorpusMutationLock(paths, "accepted-membership-snapshot"):
-        verification = verify_projection_consistency(paths.root)
-        if verification.get("status") != "PROJECTION_CONSISTENT":
-            raise ValueError("PROJECTION_NOT_CONSISTENT")
-        ledger = read_accepted_ledger(paths)
-        core = {
-            "schema": SCHEMA,
-            "scope": scope,
-            "currentness": CURRENTNESS,
-            "verification_level": "projection_consistency",
-            "members": [
-                {"artifact_sha256": sha, "ledger_sha256": accepted_entry_digest(entry)}
-                for sha, entry in sorted(ledger.items())
-            ],
-            "accepted_set_sha256": set_digest(ledger),
-        }
-        snapshot = {**core, "snapshot_sha256": _digest(core)}
-        _validated_members(snapshot)
-        return snapshot
+        return _capture_locked(paths, scope)
 
+
+def _capture_locked(paths: CorpusPaths, scope: str) -> dict:
+    """Internal helper: caller holds the existing corpus mutation lock."""
+    verification = verify_projection_consistency(paths.root)
+    if verification.get("status") != "PROJECTION_CONSISTENT":
+        raise ValueError("PROJECTION_NOT_CONSISTENT")
+    ledger = read_accepted_ledger(paths)
+    core = {
+        "schema": SCHEMA,
+        "scope": scope,
+        "currentness": CURRENTNESS,
+        "verification_level": "projection_consistency",
+        "members": [
+            {"artifact_sha256": sha, "ledger_sha256": accepted_entry_digest(entry)}
+            for sha, entry in sorted(ledger.items())
+        ],
+        "accepted_set_sha256": set_digest(ledger),
+    }
+    snapshot = {**core, "snapshot_sha256": _digest(core)}
+    _validated_members(snapshot)
+    return snapshot
 
 def compare_accepted_membership(previous: dict, current: dict) -> dict:
     """Compare two trusted-custody receipts, rejecting non-append-only drift.
