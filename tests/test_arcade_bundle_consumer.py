@@ -110,6 +110,61 @@ class ArcadeBundleConsumerTest(unittest.TestCase):
             self.assertEqual(len(messages), result['message_count'])
             self.assertEqual(messages[0][2], 'm1')
 
+    def test_private_selection_reuses_streaming_verifier_without_public_ids(self):
+        from session_search_arcade_materializer.bundle_consumer import verify_bundle_session_selection
+        with tempfile.TemporaryDirectory() as td:
+            bundle = self.make_bundle(Path(td))
+            expected = hashlib.sha256(bundle.read_bytes()).hexdigest()
+            public = verify_bundle(bundle, expected_bundle_sha256=expected)
+            with mock.patch(
+                'session_search_arcade_materializer.bundle_consumer._read_csv',
+                side_effect=AssertionError('must stream'),
+            ), mock.patch(
+                'session_search_arcade_materializer.bundle_consumer.iter_bundle_messages',
+                side_effect=AssertionError('must not reread messages'),
+            ), mock.patch(
+                'session_search_arcade_materializer.bundle_consumer.iter_bundle_sessions',
+                side_effect=AssertionError('must not reread sessions'),
+            ):
+                receipt, selected = verify_bundle_session_selection(
+                    bundle, expected_bundle_sha256=expected,
+                    session_ids=['missing', 'private-s2'],
+                )
+            self.assertEqual(receipt, public)
+            self.assertEqual(selected, ('private-s2',))
+            self.assertNotIn('private-s2', json.dumps(receipt))
+            self.assertNotIn('secret', json.dumps(receipt))
+            self.assertEqual(verify_bundle_session_selection(
+                bundle, expected_bundle_sha256=expected, session_ids=[],
+            ), (public, ()))
+
+    def test_private_selection_cannot_return_rows_on_verification_failure(self):
+        from session_search_arcade_materializer.bundle_consumer import verify_bundle_session_selection
+        from zipfile import ZipFile
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            bundle = self.make_bundle(root)
+            expected = hashlib.sha256(bundle.read_bytes()).hexdigest()
+            with self.assertRaisesRegex(BundleVerificationError, 'BUNDLE_SHA256_MISMATCH'):
+                verify_bundle_session_selection(
+                    bundle, expected_bundle_sha256='0'*64, session_ids=['private-s1'],
+                )
+            with ZipFile(bundle) as zf:
+                members = {name: zf.read(name) for name in zf.namelist()}
+            members['messages.csv'] = b'tampered'
+            tampered = root / 'tampered.zip'
+            with ZipFile(tampered, 'w') as zf:
+                for name, body in members.items():
+                    zf.writestr(name, body)
+            with self.assertRaisesRegex(BundleVerificationError, 'BUNDLE_FILE_DIGEST_MISMATCH'):
+                verify_bundle_session_selection(
+                    tampered, expected_bundle_sha256=hashlib.sha256(tampered.read_bytes()).hexdigest(),
+                    session_ids=['private-s1'],
+                )
+            for ids in ([''], ['private-s1', 'private-s1'], [None], 'private-s1'):
+                with self.assertRaisesRegex(BundleVerificationError, 'BUNDLE_SESSION_SELECTION_INVALID'):
+                    verify_bundle_session_selection(bundle, expected_bundle_sha256=expected, session_ids=ids)
+
     def test_expected_bundle_sha_is_required_and_must_match(self):
         with tempfile.TemporaryDirectory() as td:
             bundle = self.make_bundle(Path(td))

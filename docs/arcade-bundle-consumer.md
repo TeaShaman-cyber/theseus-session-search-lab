@@ -63,3 +63,25 @@ The versioned operator path for this READY boundary is `.github/workflows/promot
 Activation is compare-and-set: callers must provide the exact currently active generation ID, or literal `NULL` when the pointer is empty. The database function locks the singleton active-pointer row, rejects stale expectations, requires the candidate generation to be READY, and only then changes `active_generation`.
 
 The versioned operator path is `.github/workflows/activate-session-search-generation.yml`, backed by `scripts/arcade_activate_generation.py`. It has no router, external serving catalog, publication, or production-cutover parameter. Independent Neon readback of the active pointer remains the acceptance check.
+
+## Private verified session selection for source handoff (#59)
+
+The existing independent streaming verifier can collect only requested
+session IDs while verifying the exact immutable bundle:
+`verify_bundle_session_selection(path, expected_bundle_sha256=..., session_ids=...)`.
+It returns the unchanged aggregate verification receipt and a separate sorted
+tuple of matched IDs. Both are returned only after the existing full
+verification succeeds. It retains O(requested IDs) selection state and does
+not collect or reread message rows. Unlike the all-rows compatibility
+helper, this uses the existing streaming path without a second CSV parse.
+Existing member digest and outer SHA passes are unchanged.
+
+This is an internal Python library operation for trusted source/refresh
+execution, not a new Arcade tool or public output. The caller must supply
+the expected digest from independently verified promotion custody and
+maintain immutable file custody during verification. An unmatched ID is
+only absent from this one verified bundle; not proof of corpus absence or
+scope completeness. The caller must check provider, accepted-set identity,
+exact generation, complete catalog coverage and unique placement across
+the relevant bundle set. No production deploy, permission changes or
+private-history egress are implied.
