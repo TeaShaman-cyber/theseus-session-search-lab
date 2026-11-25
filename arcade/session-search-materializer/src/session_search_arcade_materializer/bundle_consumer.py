@@ -7,7 +7,7 @@ import json
 import re
 import threading
 from pathlib import Path
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from typing import Any
 from urllib.parse import quote
 from zipfile import ZIP_STORED, BadZipFile, ZipFile
@@ -243,6 +243,48 @@ def verify_bundle(
     expected_bundle_sha256: str,
     max_bundle_bytes: int = DEFAULT_MAX_BUNDLE_BYTES,
 ) -> dict[str, Any]:
+    result, _ = _verify_bundle(
+        path, expected_bundle_sha256=expected_bundle_sha256,
+        max_bundle_bytes=max_bundle_bytes, wanted=frozenset(),
+    )
+    return result
+
+
+def verify_bundle_session_selection(
+    path: Path,
+    *,
+    expected_bundle_sha256: str,
+    session_ids: Sequence[str],
+    max_bundle_bytes: int = DEFAULT_MAX_BUNDLE_BYTES,
+) -> tuple[dict[str, Any], tuple[str, ...]]:
+    """Internal/private selection during verification of an immutable bundle.
+
+    Caller owns trusted expected digest and immutable file custody. Returns
+    only matched IDs, not messages or a source completeness assertion.
+    The public aggregate receipt is unchanged; no hosted tool exposes IDs.
+    """
+    if isinstance(session_ids, (str, bytes)) or not isinstance(session_ids, Sequence):
+        raise BundleVerificationError("BUNDLE_SESSION_SELECTION_INVALID")
+    ids = tuple(session_ids)
+    if any(not isinstance(sid, str) or not sid.strip() for sid in ids):
+        raise BundleVerificationError("BUNDLE_SESSION_SELECTION_INVALID")
+    wanted = frozenset(ids)
+    if len(wanted) != len(ids):
+        raise BundleVerificationError("BUNDLE_SESSION_SELECTION_INVALID")
+    return _verify_bundle(
+        path, expected_bundle_sha256=expected_bundle_sha256,
+        max_bundle_bytes=max_bundle_bytes, wanted=wanted,
+    )
+
+
+def _verify_bundle(
+    path: Path,
+    *,
+    expected_bundle_sha256: str,
+    max_bundle_bytes: int,
+    wanted: frozenset[str],
+) -> tuple[dict[str, Any], tuple[str, ...]]:
+    matched: set[str] = set()
     expected = _require_sha256(expected_bundle_sha256)
     path = Path(path)
     if not path.is_file():
@@ -265,6 +307,10 @@ def verify_bundle(
                 zf, "sessions.csv", SESSION_COLUMNS, field_limit=max_bundle_bytes
             ):
                 row = _typed_session(raw)
+                if row[0] in wanted:
+                    if row[0] in matched:
+                        raise BundleVerificationError("BUNDLE_SELECTED_SESSION_DUPLICATE")
+                    matched.add(row[0])
                 _update_projection_digest(projection, "session", row)
                 session_count += 1
             for raw in _iter_csv(
@@ -300,7 +346,7 @@ def verify_bundle(
 
     return _result_from_manifest(
         manifest, actual_sha256=actual, bundle_size_bytes=size
-    )
+    ), tuple(sorted(matched))
 
 
 def iter_bundle_sessions(
