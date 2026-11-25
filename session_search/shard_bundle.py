@@ -116,7 +116,7 @@ def build_bundle(
 ) -> dict[str, Any]:
     corpus_root = Path(corpus_root)
     output_path = Path(output_path)
-    source_manifest, sessions, messages = _capture_source_snapshot(
+    source_manifest, sessions, messages, _ = _capture_source_snapshot(
         corpus_root,
         provider=provider,
         shard_id=shard_id,

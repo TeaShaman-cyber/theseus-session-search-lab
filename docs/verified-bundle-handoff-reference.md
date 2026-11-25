@@ -87,3 +87,39 @@ requires explicit consumer disposition; an empty selection does not
 acknowledge work. No publication, persistence, or checkpoint advance
 occurs. Cross-provider and partial replacement remain unsupported until
 their exact source-to-serving equivalence is established.
+
+## Scoped source evidence metadata (recovery only)
+
+`capture_source_evidence_index` reuses the canonical materializer snapshot
+and corpus lock, including full derivation verification. It matches the
+complete trusted membership receipt (including ledger entry digests) and
+exact requested generation, then returns selected searchable message
+identities, text SHA-256, canonical normalized message SHA-256, and existing
+artifact/member/position/source-object links. Message rows used for the
+hashes are the same rows used to derive the serving manifest, not a new
+conversation reader. All selected source metadata is private. No message
+body is emitted. Titles, IDs and source-object references are still private
+metadata, not public receipts. The links identify accepted normalized
+artifacts; they are not a claim to retain the original provider ZIP or
+that every linked object has identical content (linked projection promotion
+may retain earlier observations).
+
+Each session content digest includes its title, coverage state and ordered
+searchable message metadata, excluding the source links and generation.
+It is an explicit conservative candidate for content-dependent tasks,
+not a general dependency identity: provenance-sensitive analysis, hidden
+rows and analysis-version changes need separate treatment. The digest
+uses the existing Python canonical JSON serialization (including numeric
+timestamps); do not assume JS serialization matches for all numbers.
+The consumer must bind the actual text received through the existing
+reader to the expected message hashes and metadata, enforce bounded
+complete paging, and preserve the exact generation and source links
+separately from the stable work identity. No inference, durable delivery,
+checkpoint advance or real source authority is implied.
+
+This is a rare recovery operation and repeats full verification for each
+requested shard; it is not a normal incremental refresh performance claim.
+The ordinary materializer/bundle outputs are unchanged. No schema or
+external API changes. Tests compare selected metadata to independently
+verified actual synthetic bundle rows and demonstrate unrelated-refresh
+content identity stability.

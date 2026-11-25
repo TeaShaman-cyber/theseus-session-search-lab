@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import sqlite3
@@ -8,7 +9,8 @@ from typing import Any
 
 from .artifact_overlap import load_accepted_ledger, set_digest
 from .shard_allocation import ADAPTER_PROVIDERS, allocate_sessions, load_session_rows
-from .corpus_store import CorpusMutationLock, CorpusPaths, verify_corpus
+from .corpus_store import CorpusMutationLock, CorpusPaths, verify_corpus, read_accepted_ledger
+from .accepted_membership import _membership_receipt
 
 
 MATERIALIZER_CONTRACT_VERSION = "neon-shard-materializer-v2"
@@ -151,6 +153,8 @@ def _capture_source_snapshot(
     provider: str,
     shard_id: str,
     require_verified: bool = False,
+    provenance_selection: tuple[str, ...] = (),
+    expected_membership: dict | None = None,
 ):
     corpus_root = Path(corpus_root)
     paths = CorpusPaths.from_root(corpus_root)
@@ -167,6 +171,14 @@ def _capture_source_snapshot(
             database_artifacts = {str(r[0]) for r in con.execute("SELECT sha256 FROM artifacts ORDER BY sha256")}
             shard, session_ids, adapters = _select_shard_assignment(con, provider=provider, shard_id=shard_id)
             sessions, messages = _load_rows_for_sessions(con, session_ids)
+            provenance = None
+            if expected_membership is not None:
+                actual = _membership_receipt(read_accepted_ledger(paths), expected_membership["scope"])
+                if actual != expected_membership:
+                    raise ValueError("EVIDENCE_MEMBERSHIP_MISMATCH")
+                if not set(provenance_selection).issubset(session_ids):
+                    raise ValueError("EVIDENCE_SELECTION_MISMATCH")
+                provenance = _selected_provenance(con, sessions, messages, provenance_selection)
         finally:
             con.close()
 
@@ -189,11 +201,96 @@ def _capture_source_snapshot(
         manifest = _manifest_from_snapshot(
             accepted, sessions, messages, adapters, provider=provider, shard_id=shard_id
         )
-        return manifest, sessions, messages
+        return manifest, sessions, messages, provenance
+
+
+def _selected_provenance(con, sessions, messages, selection):
+    wanted = set(selection)
+    metadata = {}
+    for sid in selection:
+        for row in con.execute(
+            """SELECT m.ordinal, COALESCE(m.message_id,m.local_identity),
+                      m.canonical_message_sha256, a.sha256,p.member_name,
+                      ms.page_position,ms.source_message_id,ms.source_object_sha256
+               FROM messages m
+               JOIN message_sources ms ON ms.message_row_id=m.row_id
+               JOIN payload_pages p ON p.page_id=ms.page_id
+               JOIN artifacts a ON a.artifact_id=p.artifact_id
+               WHERE m.session_id=? AND m.search_class IN ('dialogue','evidence','trace')
+               ORDER BY m.ordinal,m.local_identity,a.sha256,p.member_name,ms.page_position""", (sid,)
+        ):
+            ordinal, mid, canonical, artifact, member, position, source_mid, source_hash = row
+            key = (sid, ordinal, mid)
+            entry = metadata.setdefault(key, {"canonical_message_sha256": canonical, "sources": []})
+            entry["sources"].append({
+                "artifact_sha256": artifact, "member_name": member,
+                "page_position": position, "source_message_id": source_mid,
+                "source_object_sha256": source_hash,
+            })
+    selected = {row[0]: {"session_id": row[0], "title": row[1],
+                         "coverage_state": row[2], "messages": []}
+                for row in sessions if row[0] in wanted}
+    for sid, ordinal, mid, role, search_class, created, text in messages:
+        if sid not in wanted:
+            continue
+        key = (sid, ordinal, mid)
+        source = metadata.pop(key, None)
+        if source is None or not source["sources"]:
+            raise ValueError("EVIDENCE_SOURCE_MISSING")
+        selected[sid]["messages"].append({
+            "ordinal": ordinal, "message_id": mid, "role": role,
+            "search_class": search_class, "create_time": created,
+            "text_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+            **source,
+        })
+    if metadata:
+        raise ValueError("EVIDENCE_SOURCE_UNMATCHED")
+    output = []
+    for sid in sorted(selected):
+        entry = selected[sid]
+        content = {**entry, "messages": [
+            {k: v for k, v in row.items() if k != "sources"}
+            for row in entry["messages"]
+        ]}
+        output.append({**entry, "content_sha256": _canonical_sha256(content)})
+    return output
+
+
+def capture_source_evidence_index(
+    corpus_root: Path, *, provider: str, shard_id: str,
+    expected_generation_id: str, expected_membership: dict,
+    session_ids: list[str],
+) -> dict:
+    """Recovery metadata from the same verified materializer snapshot, not a reader.
+
+    Caller owns trusted handoff, bundle and catalog custody. No text is returned;
+    source links refer to accepted normalized artifacts, not necessarily the
+    original provider export. Content identity excludes custody/generation.
+    """
+    if (not isinstance(session_ids, list) or not session_ids
+        or any(not isinstance(sid, str) or not sid.strip() for sid in session_ids)
+        or len(set(session_ids)) != len(session_ids)):
+        raise ValueError("EVIDENCE_SELECTION_INVALID")
+    membership = copy.deepcopy(expected_membership)
+    manifest, _, _, provenance = _capture_source_snapshot(
+        corpus_root, provider=provider, shard_id=shard_id, require_verified=True,
+        provenance_selection=tuple(session_ids), expected_membership=membership,
+    )
+    if manifest["generation_id"] != expected_generation_id:
+        raise ValueError("EVIDENCE_GENERATION_MISMATCH")
+    return {
+        "schema": "theseus.session-search-source-evidence-index.v1",
+        "provider": provider, "shard_id": shard_id,
+        "generation_id": manifest["generation_id"],
+        "source_manifest_sha256": manifest["source_manifest_sha256"],
+        "membership_snapshot_sha256": membership["snapshot_sha256"],
+        "currentness": membership["currentness"],
+        "sessions": provenance,
+    }
 
 
 def build_source_manifest(corpus_root: Path, *, provider: str, shard_id: str) -> dict[str, Any]:
-    manifest, _sessions, _messages = _capture_source_snapshot(
+    manifest, _sessions, _messages, _ = _capture_source_snapshot(
         corpus_root, provider=provider, shard_id=shard_id
     )
     return manifest
@@ -206,7 +303,7 @@ def load_building_generation(
         raise ValueError("DATABASE_URL_MISSING")
     if batch_size < 1 or batch_size > 5000:
         raise ValueError("BATCH_SIZE_OUT_OF_BOUNDS")
-    manifest, sessions, messages = _capture_source_snapshot(
+    manifest, sessions, messages, _ = _capture_source_snapshot(
         corpus_root, provider=provider, shard_id=shard_id, require_verified=True
     )
 
