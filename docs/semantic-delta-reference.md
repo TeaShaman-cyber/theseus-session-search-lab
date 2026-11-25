@@ -52,3 +52,40 @@ Separate metadata/provenance-only changes from content-dependent analysis
 work; verify affected closure against the existing rebuild oracle before
 changing refresh behavior. Read selected history through existing readers.
 Do not infer freshness or source completeness from a changed generation.
+
+## Optional report from the existing import
+
+The normal official-export importer now optionally returns a
+`session_delta` object:
+
+    python3 -m session_search.chatgpt_export EXPORT.zip --corpus CORPUS --report-session-delta
+
+The default invocation and import result remain unchanged. While holding the
+existing mutation lock, the reconciled import compares the old projection and
+the already constructed candidate using the existing canonical session and
+message stream queries. Hashes are per session; content, order, role, type,
+message identity, time, title and coverage participate. Artifact custody and
+acceptance times do not. There is no additional persistent index or new
+rebuild for the comparison. The opt-in costs two sequential projection
+scans (one for bootstrap), plus small per-session digest state.
+
+The report returns sorted added/changed/removed session IDs, previous and
+current accepted-set digests, baseline verification level, and explicitly
+unknown source currentness. BOOTSTRAP denotes an uninitialized local corpus,
+OBSERVED a comparison against the existing integrity-checked projection,
+NO_NEW_ARTIFACTS an exact import replay, and BASELINE_UNVERIFIED means the
+old projection was not verified and the lists are null. The existing final
+derivation verification remains required for a newly published import.
+A failed comparison aborts before ledger publication. The old projection's
+integrity check is not a proof of its full derivation; OBSERVED is deliberately
+not an authoritative complete source feed. Provenance-only additions may
+require work for consumers whose task depends on provenance.
+
+The report is an ordinary command result, not a durable delivery receipt.
+If a caller loses it after successful publication, an import replay cannot
+reconstruct the prior transition. It must not acknowledge a Dreaming cursor
+or conclude that no pending analysis exists. Durable handoff and exact
+source-to-serving-generation binding remain separate acceptance requirements.
+No raw message bodies are returned; session IDs and accepted-set digests
+still need private custody. No change to Neon schema, serving endpoints,
+source permissions or model inference.

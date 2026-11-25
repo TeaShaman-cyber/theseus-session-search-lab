@@ -15,6 +15,7 @@ from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 
 from .artifact import NormalizedArtifact, file_sha256, normalize_artifact
+from .artifact_overlap import set_digest
 from .branch_routing import (
     ROUTING_VERSION,
     ProjectionRoute,
@@ -1181,6 +1182,8 @@ def _has_accepted_branched_chatgpt_family(paths: CorpusPaths, session_id: str) -
 def ingest_reconciled_many(
     sources: Sequence[pathlib.Path],
     corpus_root: pathlib.Path,
+    *,
+    report_session_delta: bool = False,
 ) -> dict:
     paths = CorpusPaths.from_root(pathlib.Path(corpus_root))
     source_paths = [pathlib.Path(source) for source in sources]
@@ -1229,6 +1232,21 @@ def ingest_reconciled_many(
             del artifact
 
         current_verify = _verify_projection(paths, paths.db)
+        delta = None
+        if report_session_delta:
+            bootstrap = not existing_entries and not paths.db.exists()
+            baseline_ok = current_verify.get("status") == "VERIFIED"
+            delta = {
+                "schema": "theseus.session-search-reconciled-session-delta.v1",
+                "status": "BASELINE_UNVERIFIED",
+                "previous_accepted_set_sha256": None if bootstrap else set_digest(existing_entries),
+                "current_accepted_set_sha256": set_digest(combined_entries),
+                "baseline_verification": "projection_integrity" if baseline_ok else "unavailable",
+                "currentness": "UNKNOWN_WITHOUT_SOURCE_WATERMARK",
+                "added": None, "changed": None, "removed": None,
+            }
+            if bootstrap:
+                delta["baseline_verification"] = "empty_uninitialized_corpus"
         if not new_shas and current_verify.get("status") == "VERIFIED":
             results = []
             conn = _connect_corpus(paths)
@@ -1250,10 +1268,13 @@ def ingest_reconciled_many(
                     )
             finally:
                 conn.close()
+            if delta is not None:
+                delta.update(status="NO_NEW_ARTIFACTS", added=[], changed=[], removed=[])
             return {
                 "status": "COMPLETE",
                 "results": results,
                 "batch_verification": current_verify,
+                **({"session_delta": delta} if delta is not None else {}),
             }
 
         candidate = paths.staging / f"reconciled-{uuid.uuid4().hex}.sqlite3"
@@ -1269,6 +1290,16 @@ def ingest_reconciled_many(
             if candidate_verify.get("status") != "VERIFIED":
                 raise RuntimeError(
                     f"RECONCILIATION_REQUIRED: candidate verification failed: {candidate_verify}"
+                )
+            if delta is not None and (bootstrap or baseline_ok):
+                before = {} if bootstrap else _session_content_fingerprints(paths.db)
+                after = _session_content_fingerprints(candidate)
+                delta.update(
+                    status="BOOTSTRAP" if bootstrap else "OBSERVED",
+                    added=sorted(after.keys() - before.keys()),
+                    changed=sorted(key for key in before.keys() & after.keys()
+                                   if before[key] != after[key]),
+                    removed=sorted(before.keys() - after.keys()),
                 )
             for sha in sorted(new_shas):
                 entry = combined_entries[sha]
@@ -1317,7 +1348,10 @@ def ingest_reconciled_many(
                     **postconditions,
                 }
             )
-        return {"status": "COMPLETE", "results": results, "batch_verification": final}
+        return {
+            "status": "COMPLETE", "results": results, "batch_verification": final,
+            **({"session_delta": delta} if delta is not None else {}),
+        }
 
 
 class _RetryReconciledIngest(Exception):
@@ -1987,6 +2021,32 @@ _SEMANTIC_STREAM_QUERIES = (
         """,
     ),
 )
+
+
+def _session_content_fingerprints(db_path: pathlib.Path) -> dict[str, str]:
+    """Compare existing canonical projection rows, excluding custody-only metadata.
+
+    Caller holds the mutation lock. One sequential pass per projection, no
+    search or new persistent index. This is not a full derivation verifier.
+    """
+    conn = _open_existing_projection(db_path)
+    if conn is None:
+        raise RuntimeError("SESSION_DELTA_PROJECTION_MISSING")
+    try:
+        digests = {}
+        for label, sql in _SEMANTIC_STREAM_QUERIES:
+            if label not in ("sessions", "messages"):
+                continue
+            for row in conn.execute(sql):
+                sid = row[0]
+                if label == "sessions":
+                    digests[sid] = hashlib.sha256()
+                values = tuple(row)[:6] if label == "sessions" else tuple(row)
+                digests[sid].update(_stable_json_bytes([label, *values]))
+                digests[sid].update(b"\n")
+        return {sid: digest.hexdigest() for sid, digest in digests.items()}
+    finally:
+        conn.close()
 
 
 def _semantic_projection_equal(left_db: pathlib.Path, right_db: pathlib.Path) -> tuple[bool, str | None]:

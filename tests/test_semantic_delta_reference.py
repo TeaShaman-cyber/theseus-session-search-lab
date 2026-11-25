@@ -152,3 +152,93 @@ class SemanticDeltaReferenceTest(unittest.TestCase):
         self.assertEqual({key: value for key, value in before.items() if key.startswith("missing")},
                          {key: value for key, value in after.items() if key.startswith("missing")})
         self.check_rebuild(b)
+
+    def test_opt_in_import_reports_projection_changes_not_archive_repeats(self):
+        from session_search.chatgpt_export import ingest_export
+
+        f = self.fixture
+        first = f.write_export(self.root, [f.conversation(cid="one"), f.conversation(cid="two")])
+        initial = ingest_export(first, self.corpus, report_session_delta=True)["session_delta"]
+        self.assertEqual(initial["status"], "BOOTSTRAP")
+        self.assertIsNone(initial["previous_accepted_set_sha256"])
+        self.assertEqual(initial["added"], sorted(projected_conversations(semantic_snapshot(self.corpus))))
+        second = f.write_export(self.root, [f.conversation(cid="one", current="a"), f.conversation(cid="two")])
+        repeated = ingest_export(second, self.corpus, report_session_delta=True)["session_delta"]
+        self.assertEqual(repeated["status"], "OBSERVED")
+        self.assertEqual(repeated["previous_accepted_set_sha256"], initial["current_accepted_set_sha256"])
+        self.assertNotEqual(repeated["previous_accepted_set_sha256"], repeated["current_accepted_set_sha256"])
+        self.assertEqual(repeated["added"], [])
+        self.assertEqual(repeated["changed"], [])
+        self.assertEqual(repeated["removed"], [])
+        self.assertEqual(repeated["baseline_verification"], "projection_integrity")
+        self.assertEqual(repeated["currentness"], "UNKNOWN_WITHOUT_SOURCE_WATERMARK")
+        self.assertNotIn("session_delta", ingest_export(second, self.corpus))
+        replay = ingest_export(second, self.corpus, report_session_delta=True)["session_delta"]
+        self.assertEqual(replay["status"], "NO_NEW_ARTIFACTS")
+        self.assertEqual(replay["previous_accepted_set_sha256"], replay["current_accepted_set_sha256"])
+        self.assertEqual(replay["changed"], [])
+
+    def test_opt_in_import_matches_reference_after_branch_reroute(self):
+        f = self.fixture
+        single = f.conversation(cid="one")
+        del single["mapping"]["a"]
+        first = self.export("first", [single, f.conversation(cid="stable")])
+        raw = f.write_raw_capture(self.root / "raw.zip", "one", [
+            f.message("m-b", "assistant", "text", ["answer B"], 30.0),
+            f.message("extra", "assistant", "text", ["raw-only"], 35.0),
+        ])
+        before = self.ingest([*first, raw])
+        second = self.export("second", [f.conversation(cid="one"), f.conversation(cid="stable")])
+        result = ingest_reconciled_many(second, self.corpus, report_session_delta=True)
+        delta = result["session_delta"]
+        a, b = projected_conversations(before), projected_conversations(semantic_snapshot(self.corpus))
+        self.assertEqual(delta["added"], sorted(b.keys() - a.keys()))
+        self.assertEqual(delta["changed"], sorted(key for key in a.keys() & b.keys() if a[key] != b[key]))
+        self.assertEqual(delta["removed"], sorted(a.keys() - b.keys()))
+        self.assertIn("one", delta["changed"])
+        self.assertTrue(delta["added"])
+        self.assertFalse(any(key.startswith("stable") for key in delta["changed"] + delta["added"]))
+        self.assertNotIn("raw-only", str(delta))
+
+    def test_bad_baseline_never_reports_an_empty_successful_delta(self):
+        import sqlite3
+        from session_search.corpus_store import CorpusPaths
+
+        f = self.fixture
+        first = self.export("first", [f.conversation(cid="one")])
+        self.ingest(first)
+        with sqlite3.connect(CorpusPaths.from_root(self.corpus).db) as conn:
+            conn.execute("UPDATE sessions SET title='damaged'")
+        second = self.export("second", [f.conversation(cid="one", current="a")])
+        delta = ingest_reconciled_many(second, self.corpus, report_session_delta=True)["session_delta"]
+        self.assertEqual(delta["status"], "BASELINE_UNVERIFIED")
+        for key in ("added", "changed", "removed"):
+            self.assertIsNone(delta[key])
+        self.assertEqual(verify_corpus(self.corpus)["status"], "VERIFIED")
+
+    def test_import_delta_cli_and_failed_publication(self):
+        import json
+        import subprocess
+        import sys
+        from unittest import mock
+        from session_search.corpus_store import CorpusPaths, read_accepted_ledger
+
+        f = self.fixture
+        source = f.write_export(self.root, [f.conversation(cid="one")])
+        result = subprocess.run(
+            [sys.executable, "-m", "session_search.chatgpt_export", str(source),
+             "--corpus", str(self.corpus), "--report-session-delta"],
+            check=True, text=True, capture_output=True,
+        )
+        self.assertEqual(json.loads(result.stdout)["session_delta"]["status"], "BOOTSTRAP")
+        paths = CorpusPaths.from_root(self.corpus)
+        before = semantic_snapshot(self.corpus)
+        ledger = read_accepted_ledger(paths)
+        second = self.export("second", [f.conversation(cid="two")])
+        with mock.patch("session_search.corpus_store._session_content_fingerprints",
+                        side_effect=RuntimeError("fixture delta computation failed")):
+            with self.assertRaisesRegex(RuntimeError, "publication failed"):
+                ingest_reconciled_many(second, self.corpus, report_session_delta=True)
+        self.assertEqual(read_accepted_ledger(paths), ledger)
+        self.assertEqual(semantic_snapshot(self.corpus), before)
+        self.assertEqual(verify_corpus(self.corpus)["status"], "VERIFIED")
