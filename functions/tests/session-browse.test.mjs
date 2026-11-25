@@ -331,3 +331,81 @@ test('canonical complete exposed conversation marks coverage only at final page'
   assert.equal(last.coverage_complete, true);
   assert.equal(calls, 2);
 });
+
+const workerReadToken = 'synthetic-worker-read';
+const nativeBrowse = (router, args, token = workerReadToken) => router.fetch(new Request('https://router.test/session-browse', {
+  method: 'POST',
+  headers: token === null ? {} : { authorization: 'Bearer ' + token },
+  body: JSON.stringify(args),
+}));
+
+test('native conversation read is disabled unless a separate scoped token is configured', async () => {
+  const disabled = makeRouterHandler({ catalog: catalog(), ...auth });
+  assert.equal((await nativeBrowse(disabled, browseInput())).status, 404);
+  for (const token of [auth.authToken, auth.shardAuthToken, '', 'with space']) {
+    assert.throws(() => makeRouterHandler({
+      catalog: catalog(), ...auth, sessionBrowseAuthToken: token,
+    }), /SESSION_BROWSE_AUTH_TOKEN_INVALID/);
+  }
+});
+
+test('native browse token cannot use other protected routes and rejects wrong tokens before dispatch', async () => {
+  let dispatched = 0;
+  const router = makeRouterHandler({
+    catalog: catalog(), ...auth, sessionBrowseAuthToken: workerReadToken,
+    groupedCanaryEnabled: true,
+    fetchImpl: async () => { dispatched++; return Response.json({}); },
+  });
+  for (const token of [null, 'wrong', auth.authToken, auth.shardAuthToken]) {
+    assert.equal((await nativeBrowse(router, browseInput(), token)).status, 401);
+  }
+  for (const route of ['/search', '/coverage', '/mcp', '/internal/grouped-search']) {
+    const res = await router.fetch(new Request('https://router.test' + route, {
+      method: 'POST', headers: { authorization: 'Bearer ' + workerReadToken },
+      body: JSON.stringify({}),
+    }));
+    assert.equal(res.status, 401);
+  }
+  assert.equal(dispatched, 0);
+});
+
+test('native browse reuses exact MCP result and rejects stale generation before shard dispatch', async () => {
+  let dispatched = 0;
+  const shard = makeShardHandler(async () => page({
+    messages: [{ ordinal: 0, message_id: 'm0', role: 'user', search_class: 'dialogue',
+      text: '🍵', text_offset: 0, text_total_chars: 1, complete_message: true }],
+  }), { authToken: 'shard' });
+  const config = {
+    catalog: catalog(), ...auth, sessionBrowseAuthToken: workerReadToken,
+    fetchImpl: (_url, init) => {
+      dispatched++;
+      return shard.fetch(new Request('https://shard.test/session-read', init));
+    },
+  };
+  const router = makeRouterHandler(config);
+  const native = await nativeBrowse(router, browseInput());
+  assert.equal(native.status, 200);
+  assert.deepEqual(await native.json(), (await toolCall(router, browseInput())).structuredContent);
+  assert.equal(dispatched, 2);
+  const current = makeRouterHandler({ ...config, catalog: catalog(B) });
+  const stale = await nativeBrowse(current, browseInput());
+  assert.equal(stale.status, 200);
+  assert.deepEqual((await stale.json()).unavailable_shards, [{ shard_id: 'chatgpt-0001', reason: 'STALE_GENERATION' }]);
+  assert.equal(dispatched, 2);
+  const invalid = await nativeBrowse(router, browseInput({ limit: 0 }));
+  assert.equal(invalid.status, 400);
+  assert.equal(dispatched, 2);
+});
+
+test('native browse preserves unavailable shard rather than empty complete history', async () => {
+  const router = makeRouterHandler({
+    catalog: catalog(), ...auth, sessionBrowseAuthToken: workerReadToken,
+    fetchImpl: async () => new Response('', { status: 503 }),
+  });
+  const res = await nativeBrowse(router, browseInput());
+  assert.equal(res.status, 200);
+  const result = await res.json();
+  assert.equal(result.status, 'BLOCKED');
+  assert.equal(result.coverage_complete, false);
+  assert.equal(result.unavailable_shards[0].reason, 'QUERY_FAILED');
+});
