@@ -53,3 +53,37 @@ session placement in the same verified operation if later needed; never
 add private IDs to the public bundle summary. Before implementation, inspect
 the existing refresh custody and Dreaming ledger checkpoint contracts.
 Do not infer historical equivalence across analysis/normalization changes.
+
+## Private recovery candidate
+
+`session_search.refresh_handoff_candidate.prepare_recovery_handoff`
+now composes the established recovery and bundle checks. It consumes a
+trusted rederived delta and previous membership, existing promotion
+readiness receipt, independently observed complete current catalog,
+exact bundle paths in immutable custody, and the independent
+`verify_bundle_session_selection` library function. The latter is passed
+as a callable, not invoked through a new service, tool or MCP route.
+
+The first implementation intentionally handles a single provider-exclusive
+corpus scope and full replacement of its serving shards. It rejects
+unchanged shards of that provider, mismatched or duplicate catalog
+entries, wrong external bundle digests and accepted-set/manifest/count
+mismatches. Every added/changed ID must occur exactly once; removed IDs
+must not occur. It preserves both full membership receipts, current
+catalog vector, placement and removal list, plus a deterministic candidate
+digest. No message bodies, local paths or credentials are emitted.
+
+This is a candidate under trusted caller custody, not authenticated
+delivery or proof of live source completeness. In particular, the
+caller must independently establish the provider-exclusive scope,
+authenticity/completeness of the input delta, readiness receipt and
+catalog observation; their digests are not signatures. A readiness
+receipt alone is insufficient. Unselected source sessions have not been
+independently enumerated by this function. The existing recovery is a
+rare full rederivation under current code; this is not the normal
+incremental refresh path or proof of equivalence to an earlier executable.
+Upstream currentness remains unknown. A missing/removed conversation
+requires explicit consumer disposition; an empty selection does not
+acknowledge work. No publication, persistence, or checkpoint advance
+occurs. Cross-provider and partial replacement remain unsupported until
+their exact source-to-serving equivalence is established.
