@@ -1296,10 +1296,7 @@ def ingest_reconciled_many(
                 after = _session_content_fingerprints(candidate)
                 delta.update(
                     status="BOOTSTRAP" if bootstrap else "OBSERVED",
-                    added=sorted(after.keys() - before.keys()),
-                    changed=sorted(key for key in before.keys() & after.keys()
-                                   if before[key] != after[key]),
-                    removed=sorted(before.keys() - after.keys()),
+                    **_session_content_delta(before, after),
                 )
             for sha in sorted(new_shas):
                 entry = combined_entries[sha]
@@ -2021,6 +2018,15 @@ _SEMANTIC_STREAM_QUERIES = (
         """,
     ),
 )
+
+
+def _session_content_delta(before: dict[str, str], after: dict[str, str]) -> dict:
+    return {
+        "added": sorted(after.keys() - before.keys()),
+        "changed": sorted(key for key in before.keys() & after.keys()
+                          if before[key] != after[key]),
+        "removed": sorted(before.keys() - after.keys()),
+    }
 
 
 def _session_content_fingerprints(db_path: pathlib.Path) -> dict[str, str]:

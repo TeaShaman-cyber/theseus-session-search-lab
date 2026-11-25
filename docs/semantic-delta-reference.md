@@ -89,3 +89,34 @@ source-to-serving-generation binding remain separate acceptance requirements.
 No raw message bodies are returned; session IDs and accepted-set digests
 still need private custody. No change to Neon schema, serving endpoints,
 source permissions or model inference.
+
+## Recovery from a retained accepted-membership receipt
+
+`accepted_membership.rederive_session_delta(corpus_root, previous, scope=...)`
+uses the existing #339 membership receipt and canonical corpus rebuild code.
+Under the existing mutation lock it validates the prior receipt against the
+current append-only ledger, including each retained ledger-entry digest. It
+requires full current corpus derivation verification. It reconstructs the
+prior accepted subset into a temporary SQLite database, verifies that
+projection against the subset, and uses the same content comparison as the
+optional import report. The temporary database is removed; the current
+projection and accepted ledger are not replaced. Results include the current
+membership receipt captured under the same lock.
+
+REDERIVED describes a comparison of two accepted sets under the **currently
+running code**, not proof that the historical executable had the same
+normalization or that a consumer previously processed that subset. Receipts
+must remain in trusted custody. A consumer must independently bind the
+analysis contract/version and exact previously processed evidence; it must
+not acknowledge its checkpoint merely because this comparison succeeds.
+The operation does not prove source currentness or the currently served
+Neon generation. It performs a full current verification/rebuild plus a
+historical subset rebuild, appropriate as a rare recovery/reference path,
+not a normal refresh optimization. A corrupt projection, invalid membership,
+wrong scope, or lock conflict fails without a successful delta report.
+
+Tests reconstruct the lost report from actual synthetic accepted exports,
+compare it with the original import report and ensure that the corpus is
+unchanged. Negative cases exercise wrong scope, tampered receipts, a busy
+corpus and a projection with text not derived from accepted evidence.
+No private corpus access or new storage service.
